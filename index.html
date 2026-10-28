@@ -233,6 +233,8 @@ table.grid td.best{color:var(--ok);font-weight:500}
 .prio{border:1px solid var(--line2);border-radius:8px;padding:8px 10px;margin:0 0 10px} .prio-h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline} .prio-h b{font-size:12.5px} .prio-h span{font-size:11px;opacity:.7}
 .prio-s{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px 14px;margin:8px 0} .prio-s label{display:flex;flex-direction:column;font-size:11.5px} .prio-s input{width:100%}
 .prio-r{display:flex;flex-wrap:wrap;gap:6px} .prio-r button{font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line2);border-radius:5px;background:var(--white);color:inherit;cursor:pointer} .prio-r button.top{border-color:#2f6fd6;background:#2f6fd6;color:#fff;font-weight:600}
+.evid{border-left:3px solid #2f6fd6;padding:4px 8px;margin-bottom:6px;font-size:12px} .evid .sub{font-size:11px;opacity:.75} .kv.ms.bad .v{color:var(--bad);font-weight:700}
+.methseg button.soon{opacity:.45;cursor:help} .methseg sup{font-size:8.5px;margin-left:2px}
 .snd-row{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px} #soundBtn{font-size:13px;line-height:1}
 .cmp{width:100%;border-collapse:collapse;margin:6px 0;font-size:11.5px}
 .cmp th,.cmp td{padding:4px 6px;border-bottom:1px solid var(--hair);text-align:right;font-family:var(--mono)}
@@ -1338,7 +1340,8 @@ checkEngine();
 async function handleText(text, opt = {}) {
   text = text.trim(); if (!text) return;
   addUser(text);
-  if (referenceNote(text) && !Object.keys(parseText(text)).filter((k) => k !== 'goals').length) return;
+  const refN = referenceNote(text), methN = methodNote(text);
+  if ((refN || methN) && !Object.keys(parseText(text)).filter((k) => k !== 'goals').length) return;
   if (state.busy) { say(para(L('One moment — I am still working on the previous request.', 'Sebentar — permintaan sebelumnya masih diproses.'), 'm')); return; }
   if (!opt.local && !state.chatOff) return chatAI(text);
   return handleLocal(text);
@@ -1598,7 +1601,7 @@ function normRefs(j) {
   else if (src && typeof src === 'object') for (const [k, x] of Object.entries(src)) if (x && typeof x === 'object' && (x.label || x.status)) out[k] = x;
   return Object.keys(out).length ? out : null;
 }
-async function loadRefs() { try { const r = await fetch(API + '/references'); if (r.ok) state.refs = normRefs(await r.json()); } catch (e) { /* older engine: keep defaults */ } renderTree(); }
+async function loadRefs() { try { const r = await fetch(API + '/references'); if (r.ok) state.refs = normRefs(await r.json()); } catch (e) { /* older engine: keep defaults */ } loadMethods(); renderTree(); }
 const refsAll = () => state.refs || REF_DEFAULT;
 function curRef() {
   const d = state.data, k = state.userSet.reference || (d && d.requirements && typeof d.requirements.reference === 'string' && d.requirements.reference) || (d && d.reference && d.reference.key);
@@ -1736,7 +1739,7 @@ const STEPS = ['Reading requirements', 'Sweeping the design space (module × tee
 const EXTRA_KEYS = new Set();
 function buildBody() {
   const b = {}; for (const k of ['power_kw', 'input_rpm', 'gear_ratio', 'envelope_width', 'envelope_height', 'envelope_depth', 'wall_thickness',
-    'gear_material', 'housing_material', 'min_sf_bending', 'min_sf_contact', 'goals', 'envelope_basis', 'ambient_c', 'reference', ...EXTRA_KEYS]) if (state.userSet[k] != null) b[k] = state.userSet[k];
+    'gear_material', 'housing_material', 'min_sf_bending', 'min_sf_contact', 'goals', 'envelope_basis', 'ambient_c', 'reference', 'design_method', ...EXTRA_KEYS]) if (state.userSet[k] != null) b[k] = state.userSet[k];
   if (b.goals) { const { larger_housing_allowed, ...g } = b.goals; b.goals = g; }   // UI/cfd-only flag
   return b;
 }
@@ -1793,7 +1796,7 @@ function presentResults(box, d) {
   if (d.envelope_note) box.append(para(String(d.envelope_note), 'm'));
   box.append(vlist(vs, bal));
   if (isBeginner()) box.append(plainSummary(vs[bal]));
-  box.append(para('Screening-level results, not a certified analysis.', 'm scr-note'));
+  box.append(para('Screening-level results, not a certified analysis.' + (d.design_method ? ' ' + L(`Design method: ${methodName(d.design_method)}.`, `Bentuk desain: ${methodName(d.design_method)}.`) : ''), 'm scr-note'));
   if (d.assumed_defaults && d.assumed_defaults.length)
     box.append(para(`${d.assumed_defaults.length} values were assumed (marked in the design tree). Tell me the real ones and I will re-run.`, 'm'));
   box.append(chips(refineChips()));
@@ -2170,6 +2173,7 @@ function renderTree() {
     ...(state.envBasis || state.userSet.envelope_basis ? [prop('Measured to', (state.userSet.envelope_basis || state.envBasis) === 'overall' ? 'shaft tips' : 'housing', 'set')] : []),
     ...goalProps(state.userSet.goals),
     refSwitch(),
+    methodSwitch(),
   ];
   const mat = [
     prop('Gear', g('gear_material') ?? DEFAULTS.gear_material, tag('gear_material')),
@@ -2297,6 +2301,10 @@ function thermalScreenCard(v) {
   const ok = t.pass_natural === true, ms = t.measure && typeof t.measure === 'object' ? t.measure : null, amb = state.userSet.ambient_c || 25;
   const body = [kvs([[L('Heat to remove', 'Panas yang dibuang'), t.heat_w != null ? fi(t.heat_w) + ' W' : '–'], [L('Oil, natural cooling', 'Oli, pendinginan alami'), t.oil_temp_natural_c != null ? f(t.oil_temp_natural_c, 0) + ' °C' : '–'],
     [L('Max power, natural cooling', 'Daya maks, pendinginan alami'), t.max_power_natural_kw != null ? f(t.max_power_natural_kw, 1) + ' kW' : '–'], [L('Outer surface', 'Luas luar'), t.area_outer_m2 != null ? f(t.area_outer_m2, 3) + ' m²' : '–']])];
+  const le = t.load_loss_estimate && typeof t.load_loss_estimate === 'object' ? t.load_loss_estimate : null;
+  if (le && le.oil_temp_natural_c != null) body.push(h('div', { class: 'note' }, L(`With computed losses (ISO/TR 14179-2, lower bound): oil ≥ ${f(le.oil_temp_natural_c, 0)} °C natural${le.load_losses_w != null ? `, ${fi(Math.round(le.load_losses_w))} W load losses` : ''}. Churning is not computed, so the real value lies between this and the figure above.`,
+    `Dengan rugi dihitung (ISO/TR 14179-2, batas bawah): oli ≥ ${f(le.oil_temp_natural_c, 0)} °C alami${le.load_losses_w != null ? `, rugi beban ${fi(Math.round(le.load_losses_w))} W` : ''}. Churning belum dihitung, jadi nilai sebenarnya di antara angka ini dan angka di atas.`)));
+  if (v.lubricant) body.push(h('div', { class: 'hint2' }, L(`Oil: ISO VG ${v.lubricant.iso_vg} (picked by Idris for bearing life)`, `Oli: ISO VG ${v.lubricant.iso_vg} (dipilih Idris untuk umur bearing)`)));
   if (!ok && ms) body.push(h('div', { class: 'fixes' }, h('b', null, L('Cheapest measure that works', 'Tindakan termurah yang cukup')), h('div', null, `${ms.label}${ms.oil_temp_c != null ? ' → ' + f(ms.oil_temp_c, 0) + ' °C' : ''}${ms.added_mass_kg ? ` (+${f(ms.added_mass_kg, 2)} kg)` : ''}`, ...tagsOf(ms))));
   else if (!ok && t.closest) body.push(h('div', { class: 'warnbox' }, h('b', null, L('No single measure is enough', 'Tidak ada satu tindakan yang cukup')), h('div', null, typeof t.closest === 'string' ? t.closest : (t.closest.label || '') + (t.closest.oil_temp_c != null ? ' → ' + f(t.closest.oil_temp_c, 0) + ' °C' : ''))));
   const lim = Number(t.oil_limit_c ?? t.limit_c ?? (state.userSet.goals && state.userSet.goals.oil_temp_max_c) ?? OIL_HOT_C);
@@ -2305,7 +2313,7 @@ function thermalScreenCard(v) {
   if (tOil != null) body.push(h('div', { class: 'warnbox thin-margin' }, h('b', null, L(`Thin margin: ${f(tOil, 1)} °C vs the ${f(lim, 0)} °C limit (${f(lim - tOil, 1)} °C to spare)`, `Margin tipis: ${f(tOil, 1)} °C vs batas ${f(lim, 0)} °C (sisa ${f(lim - tOil, 1)} °C)`)),
     h('div', null, L(`That is inside the screen's own uncertainty (about ±1–2 °C here), so treat it as borderline, not a sure pass. Confirm with the 3D thermal solver, or pick a measure with ≥ ${THIN_MARGIN_C} °C to spare.`,
       `Itu masih di dalam ketidakpastian screen sendiri (sekitar ±1–2 °C di sini), jadi anggap batas, bukan pasti lulus. Konfirmasi dengan solver termal 3D, atau pilih tindakan dengan sisa ≥ ${THIN_MARGIN_C} °C.`))));
-  if (!ok && ms && ms.change && AN.thermal) body.push(h('button', { class: 'chip', onclick: () => runAnalysis('thermal', { ambient_c: amb, cooling: 'natural', air_speed_ms: 0, oil: 'ISO VG 100', ...ms.change }) }, L('Confirm with the 3D thermal solver', 'Konfirmasi dengan solver termal 3D')));
+  if (!ok && ms && ms.change && AN.thermal) body.push(h('button', { class: 'chip', onclick: () => runAnalysis('thermal', { ambient_c: amb, cooling: 'natural', air_speed_ms: 0, oil: varOil(v), ...ms.change }) }, L('Confirm with the 3D thermal solver', 'Konfirmasi dengan solver termal 3D')));
   body.push(h('div', { class: 'hint2' }, L(`Screen (L1, lumped model) at ${amb} °C ambient, continuous running — confirm with the 3D thermal solver.`, `Screen (L1, model lumped) pada lingkungan ${amb} °C, kerja kontinu — konfirmasi dengan solver termal 3D.`)));
   return card(L('Thermal screen', 'Screen termal'), body, h('span', { class: 'st ' + (ok ? (tOil != null ? 'marg' : 'pass') : 'fail') }, ok ? (tOil != null ? L('PASS · thin', 'LULUS · tipis') : 'PASS') : 'FAIL'));
 }
@@ -2346,7 +2354,9 @@ function shaftCard(v) {
           `Ø torsi saja ${n(s.torsion_only_diameter_mm, 0)} → desain Ø${n(s.journal_diameter_mm, 0)}${s.seat_diameter_mm != null ? ' / Ø' + n(s.seat_diameter_mm, 0) : ''} (dipakai di model 3D)`)) : null),
       h('td', null, s.seat_diameter_mm != null ? `${n(s.journal_diameter_mm, 0)} / ${n(s.seat_diameter_mm, 0)}` : n(s.journal_diameter_mm, 0), h('div', { class: 'sub' + (small ? ' rq' : '') }, `model Ø${n(sg.model != null ? sg.model : s.diameter_in_model_mm, 0)}${small ? ' · needs Ø' + n(sg.need, 0) : ''}`)),
       h('td', null, s.min_fatigue_safety_factor == null ? '—' : h('span', { class: 'st ' + (s.min_fatigue_safety_factor >= 1.5 ? 'pass' : s.min_fatigue_safety_factor >= 1 ? 'marg' : 'fail') }, f(s.min_fatigue_safety_factor, 2))),
-      h('td', null, bs.length ? bs.map((b) => h('div', null, `${b.designation || '?'} `, b.life_h_L10 != null ? h('span', { class: 'sub' }, L10(b.life_h_L10)) : null)) : '—'),
+      h('td', null, bs.length ? bs.map((b) => { const ml = b.modified_life && typeof b.modified_life === 'object' ? b.modified_life : null, lnm = ml ? Number(ml.L_nm_h) : NaN;
+        return h('div', { title: ml ? [ml.basis, ml.note].filter(Boolean).join(' · ') : '' }, `${b.designation || '?'} `, b.life_h_L10 != null ? h('span', { class: 'sub' }, 'L10 ' + L10(b.life_h_L10)) : null,
+          isFinite(lnm) ? h('span', { class: 'sub' + (lnm < BEARING_TARGET_H ? ' rq' : '') }, ` · ISO 281 ${L10(lnm)}${ml.oil_iso_vg ? ` (VG ${ml.oil_iso_vg}${ml.kappa != null ? `, κ ${f(ml.kappa, 2)}` : ''})` : ''}`) : null); }) : '—'),
       hasDef ? h('td', null, n(s.max_deflection_mm, 3, ' mm')) : null,
       hasCrit ? h('td', null, n(s.critical_speed_rpm, 0, ' rpm')) : null);
     tr.addEventListener('click', () => { if (s.name && typeof focusPartByName === 'function') focusPartByName(s.name); });
@@ -2355,9 +2365,10 @@ function shaftCard(v) {
   const meth = sh.find((s) => s.method);
   return h('div', { class: 'rcard wide' + (allOk ? '' : ' verdict-fail') }, h('h4', null, 'Shafts & bearings', allOk ? h('span', { class: 'st pass' }, 'PASS') : h('span', { class: 'st fail' }, 'CHECK')),
     h('div', { class: 'rb' }, h('div', { class: 'shwrap' }, h('table', { class: 'shtbl' },
-      h('thead', null, h('tr', null, ['Shaft', sh.some((s) => s.seat_diameter_mm != null) ? 'Ø journal / seat mm' : 'Ø journal mm', 'SF fatigue', hasL10 ? 'Bearings · L10' : 'Bearings', hasDef ? 'Deflection' : null, hasCrit ? 'Critical speed' : null].filter(Boolean).map((t) => h('th', null, t)))),
+      h('thead', null, h('tr', null, ['Shaft', sh.some((s) => s.seat_diameter_mm != null) ? 'Ø journal / seat mm' : 'Ø journal mm', 'SF fatigue', hasL10 ? (sh.some((s) => s.bearings.some((b) => b.modified_life)) ? L('Bearings · life (L10 · ISO 281 modified)', 'Bearing · umur (L10 · ISO 281 termodifikasi)') : 'Bearings · L10') : 'Bearings', hasDef ? 'Deflection' : null, hasCrit ? 'Critical speed' : null].filter(Boolean).map((t) => h('th', null, t)))),
       h('tbody', null, rows))),
-      meth ? h('div', { class: 'rp-f' }, 'Method: ' + meth.method) : null));
+      meth ? h('div', { class: 'rp-f' }, 'Method: ' + meth.method) : null,
+      v.lubricant ? h('div', { class: 'rp-f' }, lubeNote(v)) : null));
 }
 
 function renderSim() {
@@ -2800,7 +2811,7 @@ function analysisTone(kind, rec) {
   const res = rec.res || {}, vi = verdictInfo(res);
   if (kind === 'review') { const fd = rec.findings || res.findings || []; return fd.some((y) => y.severity === 'critical') ? 'fail' : fd.some((y) => y.severity === 'warning') ? 'warn' : 'done'; }
   if (kind === 'thermal') { const oil = oilOf(res, rec), lim = res.oil_limit_c != null ? Number(res.oil_limit_c) : OIL_HOT_C;
-    if ((vi && vi.cls === 'fail') || (oil != null && oil > lim)) return 'fail'; if (oil != null && lim - oil < 5) return 'warn'; }
+    if ((vi && vi.cls === 'fail') || (oil != null && oil > lim)) return 'fail'; if ((oil != null && lim - oil < 5) || (rec.opts && rec.opts.loss_model === 'iso14179_load')) return 'warn'; }
   if (kind === 'modal' && Array.isArray(rec.modes) && rec.modes.some((m) => m.risk)) return 'warn';
   return vi ? (vi.cls === 'fail' ? 'fail' : vi.cls === 'marg' ? 'warn' : 'done') : 'done';
 }
@@ -2941,7 +2952,7 @@ async function requestStep(btn, rec) {
   try {
     const a = await api('/generate-assembly?step=1', { design: v.design, kinematics: v.kinematics, shaft: v.shaft, housing_params: v.housing_params, materials: v.materials, export_step: true }, 300000);
     if (!a.step || !a.step.download_url) throw new Error(L('this engine does not export STEP yet', 'engine ini belum bisa ekspor STEP'));
-    rec.step = a.step; btn.disabled = false; btn.textContent = t0;
+    rec.step = a.step; rec.stepMode = a.step_mode || a.step.step_mode || 'faceted'; btn.disabled = false; btn.textContent = t0; setTimeout(renderSim, 0);
     if (a.step.self_check_ok === false) { openChatIfNarrow(); say(h('div', { class: 'warnbox' }, L('The STEP self-check reported a mismatch with the STL. Downloading anyway — check it in your CAD tool.', 'Cek mandiri STEP melaporkan selisih dengan STL. Tetap diunduh — cek di software CAD-mu.'))); }
     return saveUrl(a.step.download_url, fileBase() + '_assembly.step', btn);
   } catch (e) { openChatIfNarrow(); say(h('div', { class: 'err' }, L('STEP export failed: ', 'Ekspor STEP gagal: ') + e.message)); }
@@ -2963,7 +2974,10 @@ function shopCard(v, rec) {
       h('tbody', null, rows.map((r) => h('tr', { title: r.desc }, h('td', null, String(r.no)), h('td', null, h('b', null, r.name), r.desc ? h('div', { class: 'sub' }, r.desc) : null), h('td', null, String(r.qty)), h('td', null, r.src),
         h('td', null, r.std), h('td', null, r.mat), h('td', null, isFinite(r.mass) && r.mass > 0 ? (r.mass < 0.1 ? f(r.mass * 1000, 1) + ' g' : f(r.mass, 2) + ' kg') : '—'))))))) : null;
   const c = card(L('Shop files', 'File untuk bengkel'), [btns,
-    h('div', { class: 'hint2' }, L('STEP: faceted solids (flat faces merged, round faces as facets), not exact geometry — no fillets or threads yet. About 10 MB; prepared on request.', 'STEP: solid faceted (muka datar digabung, muka bulat berupa faset), bukan geometri eksak — belum ada fillet dan ulir. Sekitar 10 MB; disiapkan saat diminta.')),
+    h('div', { class: 'hint2' }, rec.stepMode === 'exact'
+      ? L('STEP: exact solids from OpenCascade (cylinders stay cylinders). Gears may still be faceted; no fillets or threads yet — see the engine notes.', 'STEP: solid eksak dari OpenCascade (silinder tetap silinder). Gear mungkin masih faceted; belum ada fillet dan ulir — lihat catatan engine.')
+      : L('STEP: faceted solids (flat faces merged, round faces as facets), not exact geometry — no fillets or threads yet. About 10 MB; prepared on request.', 'STEP: solid faceted (muka datar digabung, muka bulat berupa faset), bukan geometri eksak — belum ada fillet dan ulir. Sekitar 10 MB; disiapkan saat diminta.')),
+    v.lubricant ? h('div', { class: 'hint2' }, L(`Fill with ISO VG ${v.lubricant.iso_vg} gear oil.`, `Isi dengan oli gear ISO VG ${v.lubricant.iso_vg}.`)) : null,
     dwRow, dw.length ? h('div', { class: 'hint2' }, L('A3 working drawings, cut from the same 3D mesh as the STL; fits per ISO 286.', 'Gambar kerja A3, dipotong dari mesh 3D yang sama dengan STL; suaian menurut ISO 286.')) : null, table]);
   c.classList.add('wide'); return c;
 }
@@ -3142,6 +3156,99 @@ function prioPanel(vs) {
     h('div', { class: 'prio-s' }, sliders), res);
 }
 
+/* ---------------------------------------------------------------- v35: solver v0.13–v0.15 */
+/** Six evidence levels (specs/arsitektur-produk-idris-core.md §2). Shown only when the solver states the level; never inferred by the UI. */
+const EVIDENCE = { 1: ['AI estimate', 'Estimasi AI'], 2: ['Surrogate prediction', 'Prediksi surrogate'], 3: ['Numerical solver result', 'Hasil solver numerik'], 4: ['Verified on benchmark cases', 'Terverifikasi di kasus benchmark'], 5: ['Validated by experiment (in its domain)', 'Tervalidasi eksperimen (di domainnya)'], 6: ['Approved by an engineer for this use', 'Disetujui engineer untuk penggunaan ini'] };
+function evidenceBadge(x) {
+  const e = x && (x.evidence_level ?? x.evidence ?? x.trust_level); if (e == null) return null;
+  const lv = Number(typeof e === 'object' ? (e.level ?? e.value) : e), why = typeof e === 'object' ? (e.basis || e.note || e.reason) : null;
+  if (!EVIDENCE[lv]) return null;
+  return h('div', { class: 'evid' }, h('b', null, L(`Evidence level ${lv}/6: `, `Tingkat bukti ${lv}/6: `)), L(...EVIDENCE[lv]), why ? h('div', { class: 'sub' }, String(why)) : null,
+    h('div', { class: 'sub' }, L('Screening-level, not certified.', 'Tingkat screening, belum tersertifikasi.')));
+}
+const BEARING_TARGET_H = 5000;   // solver v0.15 sizes the oil so every bearing reaches this modified life
+/** the oil class Idris picked for this variant (v0.15 `lubricant`), as the /cfd text value */
+const varOil = (v) => (v && v.lubricant && v.lubricant.iso_vg != null ? 'ISO VG ' + v.lubricant.iso_vg : 'ISO VG 100');
+const lubeNote = (v) => { const lb = v.lubricant; if (!lb) return null;
+  return L(`Oil: ISO VG ${lb.iso_vg}${lb.name ? ' (' + lb.name + ')' : ''} — chosen by Idris so every bearing reaches ${fi(BEARING_TARGET_H)} h modified life (ISO 281) at 90 °C oil.${lb.basis ? ' ' + lb.basis : ''}`,
+    `Oli: ISO VG ${lb.iso_vg}${lb.name ? ' (' + lb.name + ')' : ''} — dipilih Idris supaya semua bearing mencapai umur termodifikasi ${fi(BEARING_TARGET_H)} jam (ISO 281) pada oli 90 °C.${lb.basis ? ' ' + lb.basis : ''}`); };
+/** /cfd power_loss (v0.13): where the heat comes from. Shown in both loss modes. */
+function powerLossCard(x, rec) {
+  const p = x.power_loss; if (!p || typeof p !== 'object') return null;
+  const sum = (a) => (Array.isArray(a) ? a.reduce((t, y) => t + (Number(y && (y.loss_w ?? y.power_w ?? y.w)) || 0), 0) : Number(a && (a.total_w ?? a.loss_w)) || 0);
+  const mesh = p.mesh || p.stages || p.gears, br = p.bearings, se = p.seals;
+  const rows = [];
+  if (mesh) rows.push([L('Tooth friction', 'Gesek gigi'), fi(Math.round(sum(mesh))) + ' W']);
+  if (br) rows.push([L('Bearings', 'Bearing'), fi(Math.round(sum(br))) + ' W']);
+  if (se) rows.push([L('Seals', 'Seal'), fi(Math.round(sum(se))) + ' W']);
+  if (p.total_load_dependent_w != null) rows.push([L('Load-dependent total', 'Total tergantung beban'), fi(Math.round(p.total_load_dependent_w)) + ' W']);
+  if (p.efficiency_load_dependent != null) rows.push([L('Efficiency (load losses only)', 'Efisiensi (rugi beban saja)'), f(p.efficiency_load_dependent * 100, 1) + ' %']);
+  if (Array.isArray(mesh)) mesh.forEach((m, i) => { if (m && m.mu_mz != null) rows.push([L(`Stage ${i + 1} μ_mz · H_V`, `Tahap ${i + 1} μ_mz · H_V`), `${f(m.mu_mz, 3)} · ${m.H_V != null ? f(m.H_V, 3) : '—'}${m.v_t_ms != null ? ` @ ${f(m.v_t_ms, 1)} m/s` : ''}`]); });
+  const used = p.used_as_heat_source !== false, mode = (rec.opts && rec.opts.loss_model) || 'constant';
+  const body = [kvs(rows)];
+  if (!used && p.assumed_loss_w != null) body.push(h('div', { class: 'note' }, L(`Not used as the heat source in this run: the assumed efficiency gives ${fi(Math.round(p.assumed_loss_w))} W (conservative default).`, `Tidak dipakai sebagai sumber panas di run ini: efisiensi asumsi memberi ${fi(Math.round(p.assumed_loss_w))} W (default konservatif).`)));
+  body.push(h('div', { class: 'hint2' }, L('Lower bound: oil churning and other no-load losses are not computed yet. ', 'Batas bawah: churning oli dan rugi tanpa beban lain belum dihitung. ') + (p.basis ? String(p.basis) : 'ISO/TR 14179-2 (Ohlendorf H_V, Schlenk μ_mz), ASTM D341 viscosity.')));
+  return card(L('Where the heat comes from', 'Asal panas'), body, h('span', { class: 'st ' + (used && mode === 'iso14179_load' ? 'marg' : 'pass') }, used && mode === 'iso14179_load' ? L('LOWER BOUND', 'BATAS BAWAH') : L('INFO', 'INFO')));
+}
+/** /fea summary.margin_of_safety (v0.14, NASA-style): MS = Sy/(σ·FoS) − 1, red below zero */
+function msLine(x) {
+  const sm = x.summary || {}, ms = Number(sm.margin_of_safety), fos = Number(sm.factor_of_safety ?? sm.design_factor);
+  if (!isFinite(ms)) return null;
+  return h('div', { class: 'kv ms ' + (ms < 0 ? 'bad' : '') }, h('span', { class: 'k' }, L(`Margin of safety${isFinite(fos) ? ` (FoS ${f(fos, 1)})` : ''}`, `Margin of safety${isFinite(fos) ? ` (FoS ${f(fos, 1)})` : ''}`)),
+    h('span', { class: 'v', title: 'MS = Sy / (σ · FoS) − 1' }, (ms >= 0 ? '+' : '') + f(ms, ms >= 10 || ms <= -10 ? 0 : 2)));
+}
+const msStatus = (x) => { const ms = Number(x.summary && x.summary.margin_of_safety); return isFinite(ms) && ms < 0 ? h('span', { class: 'st fail' }, 'MS < 0') : null; };
+
+/* ---------------------------------------------------------------- v36: design method (solver v0.18, GET /design-methods)
+ * Normal (parametric) is the only available method today. Topology optimisation and computational engineering are
+ * shown greyed out with "soon" — never a fake organic shape. Older engines without the endpoint keep the defaults. */
+const METHOD_DEFAULT = {
+  parametric: { label: 'Normal (parametric)', status: 'available', what: 'Parameters are swept and every candidate is checked by the solver.', shapes: 'Regular, machinable shapes', manufacturing: 'CNC, casting' },
+  topology: { label: 'Topology optimisation (organic)', status: 'planned', what: 'FEA removes material that carries no load until the part is light but strong.', shapes: 'Organic, bone-like', manufacturing: 'Usually 3D printing', stage: 'Stage 4–5' },
+  computational: { label: 'Computational engineering', status: 'planned', what: 'Engineering rules written as code build the geometry directly (LEAP 71 style).', shapes: 'Functional organic shapes, lattices, internal channels', manufacturing: 'Usually 3D printing', stage: 'Stage 5' },
+};
+const METHOD_SHORT = { parametric: ['Normal', 'Normal'], topology: ['Topology', 'Topologi'], computational: ['Computational', 'Computational'] };
+const methodsAll = () => (state.methods && state.methods.methods) || METHOD_DEFAULT;
+const methodName = (k) => (methodsAll()[k] && methodsAll()[k].label) || k;
+async function loadMethods() {
+  try { const r = await fetch(API + '/design-methods'); if (!r.ok) return;
+    const j = await r.json(); let m = j.methods;
+    if (Array.isArray(m)) m = Object.fromEntries(m.map((x) => [x.key || x.id || x.name, x]));
+    if (m && typeof m === 'object') state.methods = { default: j.default || 'parametric', methods: m };
+  } catch (e) { /* older engine: defaults */ }
+  renderTree();
+}
+const curMethod = () => state.userSet.design_method || (state.data && state.data.design_method) || (state.methods && state.methods.default) || 'parametric';
+function methodSwitch() {
+  const all = methodsAll(), cur = curMethod();
+  return h('div', { class: 'prop refrow' }, h('span', { class: 'k' }, L('Design shape', 'Bentuk desain')),
+    h('span', { class: 'v' }, h('span', { class: 'seg refseg methseg' }, Object.keys(all).map((k) => { const m = all[k], ok = m.status === 'available';
+      return h('button', { class: (k === cur ? 'on' : '') + (ok ? '' : ' soon'), 'data-method': k, 'aria-disabled': ok ? 'false' : 'true',
+        title: [m.label, m.what, m.shapes ? L('Shapes: ', 'Bentuk: ') + m.shapes : null, m.manufacturing ? L('Made by: ', 'Dibuat dengan: ') + m.manufacturing : null, ok ? null : L('Coming: ', 'Segera: ') + (m.stage || '')].filter(Boolean).join('\n'),
+        onclick: () => setMethod(k) }, (METHOD_SHORT[k] ? L(...METHOD_SHORT[k]) : m.label), ok ? null : h('sup', null, L(' soon', ' segera'))); }))));
+}
+function setMethod(k) {
+  const m = methodsAll()[k]; if (!m || state.busy) return;
+  if (m.status !== 'available') { openChatIfNarrow(); methodNote('', k); return; }
+  if (k === curMethod()) return;
+  addUser(L(`Use ${m.label}`, `Pakai ${m.label}`));
+  if (!state.data) { state.userSet.design_method = k; renderTree(); return; }
+  applyPatch({ design_method: k }, L(`Switching the design method to ${m.label} and re-running the design search.`, `Mengganti bentuk desain ke ${m.label} dan menjalankan ulang pencarian.`));
+}
+const METHOD_RE = /(organi[ck]|topolog|generative design|desain generatif|leap\s*71|computational engineering|bentuk alien|alien shape|bionic|bionik|lattice|kisi)/i;
+/** engineer asks for organic / LEAP-71-style shapes: say honestly what exists, offer parametric now */
+function methodNote(text, key) {
+  if (!key && !METHOD_RE.test(text || '')) return false;
+  const all = methodsAll(), k = key || (/leap|computational/i.test(text) ? 'computational' : 'topology'), m = all[k] || METHOD_DEFAULT[k];
+  if (m && m.status === 'available') return false;
+  say(h('div', { class: 'warnbox' }, h('b', null, L(`${m.label} is not available yet`, `${m.label} belum tersedia`)),
+    h('div', null, L(`${m.what} Shapes: ${m.shapes}; usually made by ${String(m.manufacturing || '').toLowerCase()}. Planned for ${m.stage || 'a later stage'} of the solver plan. Idris only offers a shape once the solver can compute and check it, so there is no preview of an organic shape today.`,
+      `${m.what} Bentuk: ${m.shapes}; biasanya dibuat dengan ${String(m.manufacturing || '').toLowerCase()}. Direncanakan di ${m.stage || 'tahap berikutnya'} rencana solver. Idris hanya menawarkan bentuk yang bisa dihitung dan dicek solver, jadi belum ada pratinjau bentuk organik hari ini.`)),
+    h('div', { class: 'hint2' }, L('Available now: Normal (parametric) — regular shapes for CNC or casting, every variant checked by the solver.', 'Tersedia sekarang: Normal (parametrik) — bentuk biasa untuk CNC atau cor, setiap varian dicek solver.'))),
+    chips([{ label: L('Continue with parametric design', 'Lanjut dengan desain parametrik'), fn: () => { if (state.data) say(para(L('Parametric is already the method for these variants.', 'Varian ini memang sudah memakai metode parametrik.'))); else say(para(L('Tell me the power, speed, ratio and the space it has to fit in.', 'Sebutkan daya, putaran, rasio, dan ruang yang harus dimuat.'))); } }]));
+  return true;
+}
+
 /* ---- shared solver runner: 404 = solver not deployed; long solves come back as a job to poll */
 class SolverUnavailable extends Error {}
 async function callSolver(endpoint, body, rec) {
@@ -3251,7 +3358,7 @@ function changeText(c) {
 }
 function analysisBody(kind, v, o) {
   const r = state.data.requirements;
-  const base = { design: v.design, kinematics: v.kinematics, loads: v.loads, shaft: v.shaft, housing_params: v.housing_params, materials: v.materials, housing_material: r.housing_material };
+  const base = { design: v.design, kinematics: v.kinematics, loads: v.loads, shaft: v.shaft, housing_params: v.housing_params, materials: v.materials, lubricant: v.lubricant, housing_material: r.housing_material };
   const env = r.envelope_mm ? { envelope_mm: { width: r.envelope_mm.width, height: r.envelope_mm.height, depth: r.envelope_mm.depth }, envelope_basis: state.envBasis || state.userSet.envelope_basis || 'housing' } : {};
   return kind === 'static' ? { analysis: 'static', ...base, ...env, ...o }
     : kind === 'modal' ? { analysis: 'modal', ...base, ...env, ...o }
@@ -3265,7 +3372,7 @@ async function runAnalysis(kind, override) {
   const o = override ? { ...override } : {
     static: () => ({ fixture: opt('aFix', 'base'), mesh: opt('aMesh', 'coarse') }),
     modal: () => ({ fixture: opt('aFix', 'base'), mesh: opt('aMesh', 'coarse'), modes: Number(opt('aModes', 6)) }),
-    thermal: () => ({ ambient_c: Number(opt('aAmb', 25)), cooling: opt('aCool', 'natural'), air_speed_ms: opt('aCool', 'natural') === 'forced' ? Number(opt('aAir', 5)) : 0, oil: opt('aOil', 'ISO VG 100') }),
+    thermal: () => ({ ambient_c: Number(opt('aAmb', 25)), cooling: opt('aCool', 'natural'), air_speed_ms: opt('aCool', 'natural') === 'forced' ? Number(opt('aAir', 5)) : 0, oil: opt('aOil', varOil(v)), loss_model: opt('aLoss', 'constant') }),
     review: () => ({ checks: [...document.querySelectorAll('.rv-check:checked')].map((c) => c.value) }),
   }[kind]();
   const body = analysisBody(kind, v, o);
@@ -3436,6 +3543,13 @@ function advise(kind, rec) {
     const fail = vi ? vi.cls === 'fail' : oil != null && oil > lim, warm = !fail && (vi ? vi.cls === 'marg' : oil != null && oil > lim - 10);
     setAdvice({ topic: 'thermal', status: fail ? 'FAIL' : warm ? 'WARNING' : 'PASS', oil_temp_c: oil, limit_c: OIL_HOT_C, heat_w: Math.round(loss), cooling: o.cooling, air_speed_ms: o.air_speed_ms, ambient_c: o.ambient_c,
       reasons: vi ? vi.reasons : [], solver_suggestions: vi ? vi.fixes : [], options_offered: ['forced air', 'cooling fins', 'oil cooler', 'larger housing'] });
+    if (!fail && !warm && o.loss_model === 'iso14179_load') {
+      say(h('div', { class: 'warnbox' }, h('b', null, L(`Lower bound only: oil ${f(oil, 0)} °C for ${v.name}`, `Hanya batas bawah: oli ${f(oil, 0)} °C untuk ${v.name}`)),
+        h('div', null, L(`This run used computed load losses (ISO/TR 14179-2) without oil churning, so the real oil temperature is higher. It is not a pass yet — run the same case with the assumed efficiency (conservative) to bracket it.`,
+          `Run ini memakai rugi beban terhitung (ISO/TR 14179-2) tanpa churning oli, jadi suhu oli sebenarnya lebih tinggi. Ini belum lulus — jalankan kasus yang sama dengan efisiensi asumsi (konservatif) untuk mengapitnya.`))),
+        chips([{ label: L('Run with the assumed efficiency', 'Jalankan dengan efisiensi asumsi'), fn: () => runAnalysis('thermal', { ...o, loss_model: 'constant' }) }]));
+      return;
+    }
     if (!fail && !warm) {
       const ch = changeText(o), close = oil != null && lim - oil < 10;
       say(para(L(`Thermal check passed for ${v.name}: oil ${f(oil, 0)} °C with ${ch || COOL_TXT(o)} (limit ${f(lim, 0)} °C).` + (close ? ` The margin is only ${f(lim - oil, 0)} °C — a hotter day or a dirtier fan eats that quickly.` : ''),
@@ -3575,7 +3689,7 @@ function advise(kind, rec) {
 /** What-if on the real thermal solver: same case at several fan speeds, shown as a table in the chat. */
 async function coolingSweep() {
   const v = curV(); if (!v || state.busy) return;
-  const base = (anRec('thermal') && anRec('thermal').opts) || { ambient_c: 25, cooling: 'natural', air_speed_ms: 0, oil: 'ISO VG 100' };
+  const base = (anRec('thermal') && anRec('thermal').opts) || { ambient_c: 25, cooling: 'natural', air_speed_ms: 0, oil: varOil(v) };
   const cases = [{ ...base, cooling: 'natural', air_speed_ms: 0 }, ...[2, 5, 10].map((a) => ({ ...base, cooling: 'forced', air_speed_ms: a }))];
   const box = aiMsg(); box.append(para(L(`Running the thermal solver ${cases.length} times for ${v.name} (ambient ${base.ambient_c} °C)…`, `Menjalankan solver termal ${cases.length} kali untuk ${v.name} (lingkungan ${base.ambient_c} °C)…`)));
   const tb = h('tbody'), table = h('div', { class: 'shwrap' }, h('table', { class: 'shtbl' }, h('thead', null, h('tr', null, [L('Cooling', 'Pendinginan'), L('Oil', 'Oli'), 'Status'].map((t) => h('th', null, t)))), tb));
@@ -3853,7 +3967,10 @@ function renderAnalysis() {
       h('div', { class: 'fea-row' }, h('label', null, 'Ambient', sel('aAmb', [[20, '20 °C'], [25, '25 °C'], [35, '35 °C'], [45, '45 °C']], o.ambient_c || 25, running)),
         h('label', null, 'Cooling', sel('aCool', [['natural', 'Natural convection'], ['forced', 'Forced air']], o.cooling || 'natural', running))),
       h('div', { class: 'fea-row' }, h('label', null, 'Air speed', sel('aAir', [[2, '2 m/s'], [5, '5 m/s'], [10, '10 m/s']], o.air_speed_ms || 5, running || (o.cooling || 'natural') !== 'forced')),
-        h('label', null, 'Oil', sel('aOil', [['ISO VG 68', 'ISO VG 68'], ['ISO VG 100', 'ISO VG 100'], ['ISO VG 150', 'ISO VG 150'], ['ISO VG 220', 'ISO VG 220']], o.oil || 'ISO VG 100', running))),
+        h('label', null, 'Oil', sel('aOil', [68, 100, 150, 220, 320].map((g) => ['ISO VG ' + g, 'ISO VG ' + g + ('ISO VG ' + g === varOil(v) && v.lubricant ? L(' · Idris pick', ' · pilihan Idris') : '')]), o.oil || varOil(v), running))),
+      h('div', { class: 'fea-row' }, h('label', { style: 'flex:1' }, L('Heat source', 'Sumber panas'), sel('aLoss', [['constant', L('Assumed efficiency (default, conservative)', 'Efisiensi asumsi (default, konservatif)')], ['iso14179_load', L('Computed losses · ISO/TR 14179-2 (lower bound)', 'Rugi dihitung · ISO/TR 14179-2 (batas bawah)')]], o.loss_model || 'constant', running))),
+      (o.loss_model || 'constant') === 'iso14179_load' ? h('div', { class: 'hint2' }, L('Lower bound: load-dependent losses only — oil churning is not computed yet, so the real temperature is somewhere between the two modes.', 'Batas bawah: hanya rugi tergantung beban — churning oli belum dihitung, jadi suhu sebenarnya di antara dua mode ini.')) : null,
+      v.lubricant ? h('div', { class: 'hint2' }, lubeNote(v)) : null,
       ...(DESIGN_KEYS.some((k) => o[k] != null) ? [h('div', { class: 'fixes' }, h('b', null, L('Design changes in this case', 'Perubahan desain di kasus ini')), h('div', null, changeText(o)),
         h('button', { class: 'chip', disabled: running, onclick: () => { const b0 = { ...o }; DESIGN_KEYS.forEach((k) => delete b0[k]); runAnalysis('thermal', b0); } }, L('Back to the base design', 'Kembali ke desain dasar')))] : []),
       runBtn('Run thermal'), onEngine]));
@@ -3923,7 +4040,8 @@ function solverCards(x) {
   }
   const lim = Array.isArray(x.limitations) ? x.limitations : x.limitations ? [x.limitations] : [];
   const meth = [x.method, x.model, x.solver].filter((t) => t && typeof t === 'string');
-  if (meth.length || lim.length) out.push(card('Method & limits', [
+  const ev = evidenceBadge(x);
+  if (meth.length || lim.length || ev) out.push(card('Method & limits', [ev,
     meth.length ? h('div', { class: 'meth' }, [['Method', meth[0]], ['Model', meth[1]], ['Solver', meth[2]]].filter(([, t]) => t).map(([k2, t]) => h('p', null, h('b', null, k2 + ': '), t))) : null,
     lim.length ? h('ul', { class: 'vlist2' }, lim.map((t) => h('li', null, typeof t === 'object' ? (t.message || JSON.stringify(t)) : String(t)))) : null]));
   return out;
@@ -3935,7 +4053,8 @@ function resultCards(kind, rec) {
     const st = sfMin == null ? null : sfMin < 1 ? h('span', { class: 'st fail' }, 'YIELDS') : sfMin < 1.5 ? h('span', { class: 'st marg' }, 'LOW MARGIN') : h('span', { class: 'st pass' }, 'OK');
     out.push(card('Result', [kvs([['Max von Mises', f(rec.vals.vm[rec.iMax], 1) + ' MPa'], ['Yield (' + r.housing_material + ')', x.yield_mpa ? f(x.yield_mpa, 0) + ' MPa' : '–'],
       ['Min safety factor', sfMin != null ? f(sfMin, 2) : '–'], ['Max displacement', f(rec.vals.disp[rec.iD], 4) + ' mm'], ...meshKv(x, rec)]),
-      h('div', { class: 'hint2' }, 'Status uses a rule of thumb of SF ≥ 1.5 for a static aluminium housing.')], st));
+      msLine(x),
+      h('div', { class: 'hint2' }, 'Status uses a rule of thumb of SF ≥ 1.5 for a static aluminium housing.')], msStatus(x) || st));
     out.push(card('View', [h('div', { class: 'seg' }, Object.entries(FIELDS).filter(([k]) => ['vm', 'disp'].includes(k) || (k === 'sf' && x.yield_mpa)).map(([k, F]) =>
         h('button', { class: rec.field === k ? 'on' : '', onclick: () => { rec.field = k; renderAnalysis(); applyField(); } }, F.label.replace(' (yield)', '')))),
       showTog(rec),
@@ -3960,7 +4079,9 @@ function resultCards(kind, rec) {
   } else if (kind === 'thermal') {
     const tMax = rec.vals.temp[rec.iMax], tMin = rec.vals.temp[rec.iMin];
     const tChk = x.oil_temp_c != null ? Number(x.oil_temp_c) : tMax, vi0 = verdictInfo(x);
-    const st = (vi0 && vi0.cls === 'fail') || tChk > OIL_HOT_C ? h('span', { class: 'st fail' }, 'HOT') : (vi0 && vi0.cls === 'marg') || tChk > OIL_HOT_C - 10 ? h('span', { class: 'st marg' }, 'WARM') : h('span', { class: 'st pass' }, 'OK');
+    const lowerB = rec.opts && rec.opts.loss_model === 'iso14179_load';
+    const st = lowerB && !((vi0 && vi0.cls === 'fail') || tChk > OIL_HOT_C) ? h('span', { class: 'st marg', title: L('Computed losses are a lower bound (no churning) — a pass here is not conclusive.', 'Rugi dihitung adalah batas bawah (tanpa churning) — lulus di sini belum pasti.') }, L('LOWER BOUND', 'BATAS BAWAH'))
+      : (vi0 && vi0.cls === 'fail') || tChk > OIL_HOT_C ? h('span', { class: 'st fail' }, 'HOT') : (vi0 && vi0.cls === 'marg') || tChk > OIL_HOT_C - 10 ? h('span', { class: 'st marg' }, 'WARM') : h('span', { class: 'st pass' }, 'OK');
     out.push(card('Result', [kvs([['Max housing temperature', f(tMax, 1) + ' °C'], ['Min housing temperature', f(tMin, 1) + ' °C'],
       ['Oil temperature', x.oil_temp_c != null ? f(x.oil_temp_c, 1) + ' °C' : '–'], ['Heat dissipated', x.heat_dissipated_w != null ? fi(x.heat_dissipated_w) + ' W' : '–'],
       ...(x.heat_to_housing_w != null && x.heat_to_housing_w !== x.heat_dissipated_w ? [['Heat through the housing', fi(x.heat_to_housing_w) + ' W']] : []),
@@ -3971,6 +4092,7 @@ function resultCards(kind, rec) {
       ...(Array.isArray(x.outer_size_mm) || (x.outer_size_mm && typeof x.outer_size_mm === 'object') ? [['Outer size', (Array.isArray(x.outer_size_mm) ? x.outer_size_mm : [x.outer_size_mm.width, x.outer_size_mm.height, x.outer_size_mm.depth]).map((q) => fi(q)).join(' × ') + ' mm' + (x.fits_envelope === false ? ' · exceeds envelope' : x.fits_envelope === true ? ' · fits' : '')]] : []),
       ...meshKv(x, rec)]),
       h('div', { class: 'hint2' }, `Status uses the oil temperature against a rule of thumb of ${OIL_HOT_C} °C for mineral gear oil.`)], st));
+    const pl = powerLossCard(x, rec); if (pl) out.push(pl);
     const fc = fixesCard(x, rec); if (fc) out.push(fc);
     out.push(card('View', [showTog(rec), h('div', { class: 'hint2' }, 'Tap the coloured model to probe a point.')]));
   } else {
@@ -4041,7 +4163,7 @@ function buildReport() {
     h('h2', null, 'Requirements'),
     t2([['Power', f(r.power_kw, 1) + ' kW'], ['Input speed', r.input_rpm + ' rpm'], ['Gear ratio', r.gear_ratio + ' : 1'], ['Envelope', `${r.envelope_mm.width} × ${r.envelope_mm.height} × ${r.envelope_mm.depth} mm`],
       ['Gear / housing material', `${r.gear_material} / ${r.housing_material}`], ['Min. safety factor (bending / contact)', `${f(r.min_sf_bending, 2)} / ${f(r.min_sf_contact, 2)}`],
-      ['Assumed (not given)', (d.assumed_defaults || []).map((x) => NAMES[x]).join(', ') || 'none']]),
+      ['Assumed (not given)', (d.assumed_defaults || []).map((x) => NAMES[x]).join(', ') || 'none'], ...(d.design_method ? [['Design method', methodName(d.design_method)]] : [])]),
     h('h2', null, `Variants (${fi(d.diagnostics.candidates_evaluated)} checked, ${fi(d.diagnostics.feasible)} feasible)`),
     h('table', null, h('thead', null, h('tr', null, ['Variant', 'Tag', 'Physics', 'Design', 'SF bend', 'SF cont', 'Mass', 'Envelope'].map((x) => h('th', null, x)))),
       h('tbody', null, vs.map((x) => h('tr', { class: x === v ? 'sel' : '' }, h('td', null, x.name), h('td', null, x.tag), h('td', null, x.scores.physics_pct + '%'), h('td', null, x.scores.design_pct + '%'),
