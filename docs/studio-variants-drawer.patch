@@ -1,0 +1,36 @@
+diff --git a/index.html b/index.html
+index 33828a2..4af81e1 100644
+--- a/index.html
++++ b/index.html
+@@ -2885,8 +2885,29 @@ function renderSim() {
+   closePop();
+   const b = $('#simBody'), sub = $('#dockSub'); b.innerHTML = '';
+   const v = state.sel != null ? state.variants[state.sel] : null;
+-  if (!v) { sub.textContent = state.variants.length ? 'select a variant to see its results' : 'no study yet';
+-    b.append(h('div', { class: 'empty' }, state.variants.length ? 'Pick a variant in the design tree, the Design study tab, or IDRIS AI.' : 'Safety factors, stresses, loads and mass appear here for the selected variant.')); return; }
++  if (!v) {
++    /* The results drawer is never a dead end: every variant already solved in this study appears here as a
++     * card, so the engineer can open one straight from the dock instead of hunting in the tree, table or chat. */
++    if (!state.variants.length) {
++      sub.textContent = 'no study yet';
++      b.append(h('div', { class: 'empty' }, 'Safety factors, stresses, loads and mass appear here for the selected variant.'));
++      return;
++    }
++    const rq = state.data.requirements, bal = balanced(state.variants), chosen = (studyById(state.studyId) || {}).chosen;
++    sub.textContent = `${state.variants.length} ${L('variants', 'varian')} · ${L('tap a card to open one', 'ketuk kartu untuk membuka')}`;
++    b.append(h('div', { class: 'sim-grid' }, state.variants.map((vv, i) => {
++      const w = Math.min(vv.stress.sf_bending / rq.min_sf_bending, vv.stress.sf_contact / rq.min_sf_contact);
++      return h('div', { class: 'rcard' },
++        h('h4', null, L('Variant', 'Varian'), h('span', { class: 'st ' + (w >= 1 ? 'pass' : 'fail') }, w >= 1 ? 'PASS' : 'FAIL')),
++        vcard(vv, i),
++        h('div', { class: 'hint2' }, `SF ${f(vv.stress.sf_bending, 2)} ${L('bending', 'bending')} / ${f(vv.stress.sf_contact, 2)} ${L('contact', 'kontak')}`
++          + (i === bal ? ' · ' + L('best balance', 'paling seimbang') : '')
++          + (vv.name === chosen ? ' · ' + L('chosen design', 'desain terpilih') : '')));
++    })));
++    b.append(h('div', { class: 'disc scr-note' }, L('Every variant above was already solved by the engine — opening a card loads its geometry and shows its checks. Nothing is recalculated here.',
++      'Setiap varian di atas sudah dihitung engine — membuka kartu memuat geometrinya dan menampilkan hasil ceknya. Tidak ada yang dihitung ulang di sini.')));
++    return;
++  }
+   sub.textContent = `${v.name} · ${v.tag} · tap a number for its formula`; const r = state.data.requirements, st = v.stress, k = v.kinematics, l = v.loads, m = v.mass_kg;
+   const worst = Math.min(st.sf_bending / r.min_sf_bending, st.sf_contact / r.min_sf_contact);
+   const bd = v.scores.breakdown, names = { safety_margin: 'Safety margin', lightness: 'Lightness', compactness: 'Compactness', smoothness: 'Smoothness', manufacturability: 'Manufacturability' };
