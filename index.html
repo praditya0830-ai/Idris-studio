@@ -1193,7 +1193,7 @@ class Viewer {
   /** Colour one face: the clicked planar patch only, leaving the rest of the part as it was. i/tri null clears it. */
   setFaceSel(i, tri) {
     const gl = this.gl;
-    if (this.selFace) { for (const k of ['pos', 'nor', 'wire', 'wireA']) if (this.selFace[k]) gl.deleteBuffer(this.selFace[k]); this.selFace = null; }
+    if (this.selFace) { for (const k of ['pos', 'nor', 'wire', 'wireA', 'fillA']) if (this.selFace[k]) gl.deleteBuffer(this.selFace[k]); this.selFace = null; }
     this.selTri = (i == null || tri == null) ? null : { i, tri };
     const p = this.selTri && this.parts && this.parts[i];
     if (p && p.tris) {
@@ -1211,6 +1211,7 @@ class Viewer {
         const wire = [];
         for (const { n, a, b } of cnt.values()) if (n === 1) wire.push(T[a], T[a + 1], T[a + 2], T[b], T[b + 1], T[b + 2]);
         this.selFace = { i, pos: this._buf(pos), nor: this._buf(nor), n: list.length,
+          fillA: this._buf(new Float32Array(list.length * 3).fill(1)),
           wire: this._buf(new Float32Array(wire)), wireN: wire.length / 3, wireA: this._buf(new Float32Array(wire.length / 3).fill(1)) };
       }
     }
@@ -1489,14 +1490,6 @@ class Viewer {
       this._mesh(p, col(p, i), 1, a, b, M);
       gl.useProgram(this.pLine); this._lines(this.pLine, a, p.feat, p.featA, p.featN, edge, true, M);
     });
-    // selected face: tint only that planar patch and outline its boundary, so a face click never colours the part
-    if (this.selFace && this.selFace.n) {
-      const S = this.selFace, [sa, sb, sM] = PM(S.i);
-      gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1.5, -1.5);
-      this._mesh(S, [0.19, 0.45, 1.0], 0.55, sa, sb, sM);
-      gl.disable(gl.POLYGON_OFFSET_FILL);
-      gl.useProgram(this.pLine); this._lines(this.pLine, sa, S.wire, S.wireA, S.wireN, [0.10, 0.32, 0.92, 1], true, sM);
-    }
     drawEnv();
     if (this.playing && this.markers) { gl.useProgram(this.pLine); gl.lineWidth(2);
       for (const mk of this.markers) { const pp = this.parts.at(mk.i); if (!pp || !shown(pp)) continue; const [a, , M] = PM(mk.i);
@@ -1521,6 +1514,26 @@ class Viewer {
         gl.useProgram(this.pLine); this._lines(this.pLine, mvp, g.feat, g.featA, g.featN, [0.95, 0.45, 0.05, 0.95 * ga], true, I);
       }
       gl.depthMask(true);
+    }
+    /* selected face: drawn last and unlit through the flat program, so no later pass hides it and the tint stays blue.
+       The lit mesh program renders this overlay black (its per-vertex normals are not bound to the shader), so the
+       flat program is used for the fill as well as the boundary. */
+    if (this.selFace && this.selFace.n) {
+      const S = this.selFace, [sa, , sM] = PM(S.i), P = this.pLine;
+      const u4 = (r, g2, b, a) => gl.uniform4f(gl.getUniformLocation(P, 'uColor'), r, g2, b, a);
+      const aP = gl.getAttribLocation(P, 'aPos'), aA = gl.getAttribLocation(P, 'aA');
+      gl.useProgram(P);
+      gl.uniformMatrix4fv(gl.getUniformLocation(P, 'uMVP'), false, sa);
+      gl.uniformMatrix4fv(gl.getUniformLocation(P, 'uModel'), false, sM);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.disable(gl.DEPTH_TEST);
+      u4(0.10, 0.38, 0.95, 0.42);
+      gl.bindBuffer(gl.ARRAY_BUFFER, S.pos); gl.enableVertexAttribArray(aP); gl.vertexAttribPointer(aP, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, S.fillA); gl.enableVertexAttribArray(aA); gl.vertexAttribPointer(aA, 1, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, S.n * 3);
+      gl.disableVertexAttribArray(aA);
+      gl.enable(gl.DEPTH_TEST);
+      this._lines(P, sa, S.wire, S.wireA, S.wireN, [0.04, 0.26, 0.95, 1], true, sM);
     }
   }
 
