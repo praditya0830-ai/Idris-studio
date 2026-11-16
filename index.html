@@ -1131,6 +1131,91 @@ class Viewer {
     const glass = multi && this.housingMode === 'glass' && !this.section;
     return best >= 0 && this.parts[best].kind === 'housing' && glass && inner >= 0 ? inner : best;
   }
+  /** Nearest triangle under a CSS-pixel point: {i, tri} (part and triangle index), or null.
+   *  Same glass rule as pickPart, so you can still click through a glass housing. */
+  pickTriangle(px, py) {
+    if (!this._mvp || !this.parts) return null;
+    const W = this.host.clientWidth, H = this.host.clientHeight, multi = this.parts.length > 1;
+    let best = null, bd = Infinity, inner = null, id = Infinity;
+    this.parts.forEach((p, i) => {
+      if (!p.visible || !p.tris || (multi && p.kind === 'housing' && this.housingMode === 'hidden')) return;
+      const M = this._mot && this._mot.get(i), m = M ? Viewer.mul(this._mvp, M) : this._mvp, t = p.tris;
+      const sx = new Float32Array(3), sy = new Float32Array(3), sw = new Float32Array(3);
+      for (let o = 0; o < t.length; o += 9) {
+        let ok = true;
+        for (let k = 0; k < 3; k++) { const x = t[o + k * 3], y = t[o + k * 3 + 1], z = t[o + k * 3 + 2];
+          const w = m[3] * x + m[7] * y + m[11] * z + m[15]; if (w <= 0) { ok = false; break; }
+          sx[k] = ((m[0] * x + m[4] * y + m[8] * z + m[12]) / w * 0.5 + 0.5) * W; sy[k] = (1 - ((m[1] * x + m[5] * y + m[9] * z + m[13]) / w * 0.5 + 0.5)) * H; sw[k] = w; }
+        if (!ok) continue;
+        const d = (sy[1] - sy[2]) * (sx[0] - sx[2]) + (sx[2] - sx[1]) * (sy[0] - sy[2]); if (Math.abs(d) < 1e-9) continue;
+        const a = ((sy[1] - sy[2]) * (px - sx[2]) + (sx[2] - sx[1]) * (py - sy[2])) / d, b = ((sy[2] - sy[0]) * (px - sx[2]) + (sx[0] - sx[2]) * (py - sy[2])) / d, c = 1 - a - b;
+        if (a < 0 || b < 0 || c < 0) continue;
+        const z = a * sw[0] + b * sw[1] + c * sw[2];
+        if (z < bd) { bd = z; best = { i, tri: o / 9 }; }
+        if (p.kind !== 'housing' && z < id) { id = z; inner = { i, tri: o / 9 }; }
+      }
+    });
+    const glass = multi && this.housingMode === 'glass' && !this.section;
+    return best && this.parts[best.i].kind === 'housing' && glass && inner ? inner : best;
+  }
+  /** Triangle indices of the planar face around `seed`: connected through shared edges AND coplanar, so a click on one
+   *  face never drags in the rest of the part. */
+  _faceTris(i, seed) {
+    const p = this.parts[i], T = p.tris, n = p.n, fn = p.fn;
+    if (!fn) return [seed];
+    const q = (x, y, z) => Math.round(x * 100) + ',' + Math.round(y * 100) + ',' + Math.round(z * 100);
+    if (!p._e2t) { const map = new Map();
+      for (let t = 0; t < n; t++) { const o = t * 9;
+        for (let e = 0; e < 3; e++) { const a = o + e * 3, b = o + ((e + 1) % 3) * 3;
+          const ka = q(T[a], T[a + 1], T[a + 2]), kb = q(T[b], T[b + 1], T[b + 2]);
+          const key = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+          const arr = map.get(key); if (arr) arr.push(t); else map.set(key, [t]); } }
+      p._e2t = map; }
+    const nx = fn[seed * 3], ny = fn[seed * 3 + 1], nz = fn[seed * 3 + 2];
+    const d0 = nx * T[seed * 9] + ny * T[seed * 9 + 1] + nz * T[seed * 9 + 2];
+    const tol = Math.max(0.02, Math.max(p.bb.max[0] - p.bb.min[0], p.bb.max[1] - p.bb.min[1], p.bb.max[2] - p.bb.min[2]) * 1e-4);
+    const out = [seed], seen = new Set([seed]), queue = [seed];
+    while (queue.length) {
+      const t = queue.pop(), o = t * 9;
+      for (let e = 0; e < 3; e++) { const a = o + e * 3, b = o + ((e + 1) % 3) * 3;
+        const ka = q(T[a], T[a + 1], T[a + 2]), kb = q(T[b], T[b + 1], T[b + 2]);
+        const key = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+        for (const nb of p._e2t.get(key) || []) {
+          if (seen.has(nb)) continue;
+          if (fn[nb * 3] * nx + fn[nb * 3 + 1] * ny + fn[nb * 3 + 2] * nz < 0.9995) continue;
+          const d = nx * T[nb * 9] + ny * T[nb * 9 + 1] + nz * T[nb * 9 + 2];
+          if (Math.abs(d - d0) > tol) continue;
+          seen.add(nb); out.push(nb); queue.push(nb);
+        } }
+    }
+    return out;
+  }
+  /** Colour one face: the clicked planar patch only, leaving the rest of the part as it was. i/tri null clears it. */
+  setFaceSel(i, tri) {
+    const gl = this.gl;
+    if (this.selFace) { for (const k of ['pos', 'nor', 'wire', 'wireA']) if (this.selFace[k]) gl.deleteBuffer(this.selFace[k]); this.selFace = null; }
+    this.selTri = (i == null || tri == null) ? null : { i, tri };
+    const p = this.selTri && this.parts && this.parts[i];
+    if (p && p.tris) {
+      const list = this._faceTris(i, tri), T = p.tris, N = p.nor;
+      if (list.length) {
+        const pos = new Float32Array(list.length * 9), nor = new Float32Array(list.length * 9);
+        list.forEach((t, k) => { const o = t * 9, d = k * 9; for (let j = 0; j < 9; j++) { pos[d + j] = T[o + j]; nor[d + j] = N[o + j]; } });
+        const q = (x, y, z) => Math.round(x * 100) + ',' + Math.round(y * 100) + ',' + Math.round(z * 100);
+        const cnt = new Map();
+        for (const t of list) { const o = t * 9;
+          for (let e = 0; e < 3; e++) { const a = o + e * 3, b = o + ((e + 1) % 3) * 3;
+            const ka = q(T[a], T[a + 1], T[a + 2]), kb = q(T[b], T[b + 1], T[b + 2]);
+            const key = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+            const rec = cnt.get(key); if (rec) rec.n++; else cnt.set(key, { n: 1, a, b }); } }
+        const wire = [];
+        for (const { n, a, b } of cnt.values()) if (n === 1) wire.push(T[a], T[a + 1], T[a + 2], T[b], T[b + 1], T[b + 2]);
+        this.selFace = { i, pos: this._buf(pos), nor: this._buf(nor), n: list.length,
+          wire: this._buf(new Float32Array(wire)), wireN: wire.length / 3, wireA: this._buf(new Float32Array(wire.length / 3).fill(1)) };
+      }
+    }
+    this.dirty = true;
+  }
   /** Before/after overlay (Onshape-style preview slider): another variant's parts, drawn translucent in orange in the
    *  same frame as the open model. alpha 0 hides it. */
   setGhost(parts, alpha = 0) {
@@ -1140,7 +1225,7 @@ class Viewer {
     this.ghostA = alpha; this.dirty = true;
   }
   setVisible(i, on) { if (this.parts && this.parts.at(i)) { this.parts.at(i).visible = on; this.dirty = true; } }
-  setHighlight(i) { this.highlight = i; this.dirty = true; }
+  setHighlight(i) { this.highlight = i; if (i >= 0 && this.selTri) this.setFaceSel(null, null); else this.dirty = true; }
   setHousingMode(m) { this.housingMode = m; this.dirty = true; }
   /** FEA result surface (same mm frame as the assembly): positions xyz, triangle indices, per-node displacement xyz. */
   setField(f) {
@@ -1290,12 +1375,14 @@ class Viewer {
     }
     const bmn = [Infinity, Infinity, Infinity], bmx = [-Infinity, -Infinity, -Infinity];
     for (let i = 0; i < tris.length; i += 3) for (let k = 0; k < 3; k++) { const x = tris[i + k]; if (x < bmn[k]) bmn[k] = x; if (x > bmx[k]) bmx[k] = x; }
-    return { kind: p.kind || 'part', name: p.name, meta: p.meta, bb: { min: bmn, max: bmx }, cpu: p.kind === 'housing' ? tris : null, tris, visible: true, n, pos: this._buf(tris), nor: this._buf(nor),
+    return { kind: p.kind || 'part', name: p.name, meta: p.meta, bb: { min: bmn, max: bmx }, cpu: p.kind === 'housing' ? tris : null, tris, fn, visible: true, n, pos: this._buf(tris), nor: this._buf(nor),
       feat: this._buf(new Float32Array(feat)), featN: feat.length / 3, featA: this._buf(new Float32Array(feat.length / 3).fill(1)),
       wire: this._buf(new Float32Array(wire)), wireN: wire.length / 3, wireA: this._buf(new Float32Array(wire.length / 3).fill(1)) };
   }
   _free() {
     const gl = this.gl; this.setGhost(null);
+    if (this.selFace) { for (const k of ['pos', 'nor', 'wire', 'wireA']) if (this.selFace[k]) gl.deleteBuffer(this.selFace[k]); }
+    this.selFace = null; this.selTri = null;
     for (const p of this.parts || []) for (const k of ['pos', 'nor', 'feat', 'featA', 'wire', 'wireA']) gl.deleteBuffer(p[k]);
     if (this.model) { gl.deleteBuffer(this.model.grid); gl.deleteBuffer(this.model.gridA); }
     this.parts = [];
@@ -1402,6 +1489,14 @@ class Viewer {
       this._mesh(p, col(p, i), 1, a, b, M);
       gl.useProgram(this.pLine); this._lines(this.pLine, a, p.feat, p.featA, p.featN, edge, true, M);
     });
+    // selected face: tint only that planar patch and outline its boundary, so a face click never colours the part
+    if (this.selFace && this.selFace.n) {
+      const S = this.selFace, [sa, sb, sM] = PM(S.i);
+      gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1.5, -1.5);
+      this._mesh(S, [0.19, 0.45, 1.0], 0.55, sa, sb, sM);
+      gl.disable(gl.POLYGON_OFFSET_FILL);
+      gl.useProgram(this.pLine); this._lines(this.pLine, sa, S.wire, S.wireA, S.wireN, [0.10, 0.32, 0.92, 1], true, sM);
+    }
     drawEnv();
     if (this.playing && this.markers) { gl.useProgram(this.pLine); gl.lineWidth(2);
       for (const mk of this.markers) { const pp = this.parts.at(mk.i); if (!pp || !shown(pp)) continue; const [a, , M] = PM(mk.i);
@@ -5075,8 +5170,12 @@ document.addEventListener('pointerdown', (e) => { const b = $('#cpal'); if (b &&
 /* select first: click a part in the CAD layout to pick it (click again or on empty space to clear) */
 $('#cv').addEventListener('pointerup', (e) => {
   if (!isCad() || viewer.fieldOn || state.editOn || !state._pd || Math.hypot(e.clientX - state._pd[0], e.clientY - state._pd[1]) > 5) return;
-  const r = viewer.canvas.getBoundingClientRect(), i = viewer.pickPart(e.clientX - r.left, e.clientY - r.top);
-  state.hiPart = i >= 0 && i !== state.hiPart ? i : -1; viewer.setHighlight(state.hiPart); renderTree();
+  const r = viewer.canvas.getBoundingClientRect(), hit = viewer.pickTriangle(e.clientX - r.left, e.clientY - r.top);
+  /* pick the face, not the part: only the clicked planar face is coloured */
+  const same = !!(hit && viewer.selTri && viewer.selTri.i === hit.i && viewer.selTri.tri === hit.tri);
+  viewer.setHighlight(-1);
+  viewer.setFaceSel(same ? null : (hit ? hit.i : null), same ? null : (hit ? hit.tri : null));
+  state.hiPart = hit && !same ? hit.i : -1; renderTree();
 });
 document.addEventListener('keydown', (e) => { if (isCad() && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); palSel = 0; openPalette($('#cadCmd').value); }
   if (e.key === 'Escape' && $('#cadExp')) { $('#cadExp').remove(); } });
