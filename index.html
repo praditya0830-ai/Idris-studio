@@ -4977,6 +4977,9 @@ const TOOL_GROUPS = [
   ['hole', 'Hole', 'simple, counterbore, tapped ISO M (tap drill; thread not modelled) · through or to a depth'],
   ['edge', 'Edge', 'round (fillet) or bevel (chamfer): vertical, top, bottom or all edges'],
   ['repeat', 'Repeat', 'line pattern, circle pattern or mirror of the step before'],
+  ['revolve', 'Revolve', 'turn the last sketch around X, Y or Z, up to 360 degrees'],
+  ['draft', 'Draft', 'taper the X or Y faces about a neutral plane'],
+  ['dim', 'Smart Dimension', 'drive one size of a sketch; the part rebuilds from it'],
   ['wall', 'Wall', 'shell with an open top or bottom · draft and ribs later'],
   ['bodies', 'Bodies', 'mirror the body and join, or move it · split later'],
   ['measure', 'Measure', 'volume, surface area, size and mass of the part']];
@@ -5865,8 +5868,28 @@ const FEAT = {
       S('plane', 'Mirror plane', 'Bidang cermin', [['YZ', ['YZ', 'YZ']], ['XZ', ['XZ', 'XZ']], ['XY', ['XY', 'XY']]], 'YZ', { show: (p) => p.kind === 'mirror' }),
       N('dx', 'Move X', 'Geser X', 'mm', 0, { show: (p) => p.kind === 'move' }), N('dy', 'Move Y', 'Geser Y', 'mm', 0, { show: (p) => p.kind === 'move' }), N('dz', 'Move Z', 'Geser Z', 'mm', 0, { show: (p) => p.kind === 'move' })],
     label: (p) => p.kind === 'mirror' ? `${L('Mirror body', 'Cermin body')} ${p.plane}` : `${L('Move', 'Geser')} ${p.dx}, ${p.dy}, ${p.dz}` },
+  revolve: { en: 'Revolved Boss/Base', id: 'Revolved Boss/Base', fields: [
+      S('axis', 'Axis of revolution', 'Sumbu putar', [['Z', ['Z (vertical)', 'Z (tegak)']], ['X', ['X', 'X']], ['Y', ['Y', 'Y']]], 'Z'),
+      N('angle', 'Angle', 'Sudut', '\u00b0', 360, { min: 1, step: 1 }),
+      S('op', 'Result', 'Hasil', OPS, 'add')],
+    label: (p) => `${L('Revolve', 'Putar')} ${p.angle}\u00b0 \u00b7 ${p.axis}${p.op === 'cut' ? ' \u00b7 ' + L('cut', 'potong') : ''}` },
+  draft: { en: 'Draft', id: 'Draft', fields: [
+      S('sides', 'Faces to taper', 'Muka yang dimiringkan', [['X', ['\u00b1X (front / back)', '\u00b1X (depan / belakang)']], ['Y', ['\u00b1Y (left / right)', '\u00b1Y (kiri / kanan)']], ['XY', ['All four sides', 'Keempat sisi']]], 'XY'),
+      N('angle', 'Draft angle', 'Sudut draft', '\u00b0', 3, { min: 0.1 }),
+      S('neutral', 'Neutral plane', 'Bidang netral', [['bottom', ['Bottom of the part', 'Dasar part']], ['top', ['Top of the part', 'Atas part']]], 'bottom')],
+    label: (p) => `${L('Draft', 'Draft')} ${p.angle}\u00b0 \u00b7 ${p.sides} \u00b7 ${p.neutral === 'top' ? L('top', 'atas') : L('bottom', 'bawah')}` },
+  dim: { get en() { return 'Smart Dimension'; }, get id() { return 'Smart Dimension'; },
+    /* the sketch steps are read when the form is drawn, so a new sketch shows up immediately */
+    get fields() {
+      const sk = (state.part ? state.part.features : []).map((f, i) => ({ f, i })).filter((x) => x.f && x.f.type === 'sketch');
+      const opts = sk.length ? sk.map((x) => [x.f.id, [`${x.i + 1}. ${FEAT.sketch.label(x.f.p)}`, `${x.i + 1}. ${FEAT.sketch.label(x.f.p)}`]]) : [['', [L('No sketch yet', 'Belum ada sketch'), L('No sketch yet', 'Belum ada sketch')]]];
+      return [S('step', 'Drives which sketch', 'Mengatur sketch mana', opts, sk.length ? sk[0].f.id : ''),
+        S('param', 'Dimension', 'Dimensi', [['W', ['Width', 'Lebar']], ['Hh', ['Height', 'Tinggi']], ['D', ['Diameter', 'Diameter']], ['n', ['Sides', 'Jumlah sisi']], ['u', ['Centre (1st axis)', 'Pusat (sumbu 1)']], ['v', ['Centre (2nd axis)', 'Pusat (sumbu 2)']]], 'W'),
+        N('value', 'Value', 'Nilai', 'mm', 40, { min: 0.1 })];
+    },
+    label: (p) => `${p.param} = ${p.value}${p.param === 'n' ? '' : ' mm'}` },
 };
-const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'measure'];
+const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'draft', 'dim', 'measure'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
 const defaults = (type) => Object.fromEntries(FEAT[type].fields.map((x) => [x.k, x.def]));
 
@@ -5880,6 +5903,20 @@ async function buildPart(pArg) {
   const profile = (s) => { const d = s.prof === 'rect' ? R.drawRectangle(+s.W, +s.Hh) : s.prof === 'circle' ? R.drawCircle(+s.D / 2) : s.prof === 'slot' ? R.drawRoundedRectangle(+s.W, +s.Hh, Math.min(+s.W, +s.Hh) / 2 - 1e-6) : R.drawPolysides(+s.D / 2, Math.max(3, Math.round(+s.n)));
     return d.translate(+s.u || 0, +s.v || 0); };
   const sketchAt = (s) => s.plane === 'XY' && s.at !== 'value' ? (body ? bb()[1][2] : 0) : (+s.off || 0);
+  /* Smart Dimension: a dimension step drives one size of the sketch it points at, so the sketch is built with that value.
+     Errors are kept in dimErr and raised in the dim step, because the loop below clears ft.err on every pass. */
+  const dims = {}, dimErr = {};
+  for (const d of p.features) {
+    if (d.type !== 'dim' || d.off) continue;
+    const tgt = p.features.find((x) => x.id === d.p.step);
+    const v = +d.p.value;
+    if (!tgt || tgt.type !== 'sketch') { dimErr[d.id] = L('Pick the sketch this dimension drives: it must be a Sketch step above.', 'Pilih sketch yang diatur dimensi ini: harus langkah Sketch yang sudah ada.'); continue; }
+    if (!(v > 0)) { dimErr[d.id] = L('A dimension must be greater than 0.', 'Dimensi harus lebih besar dari 0.'); continue; }
+    if (d.p.param === 'n' && (!(v >= 3) || Math.round(v) !== v)) { dimErr[d.id] = L('Sides must be a whole number, 3 or more.', 'Jumlah sisi harus bilangan bulat, 3 atau lebih.'); continue; }
+    const needs = { W: ['rect', 'slot'], Hh: ['rect', 'slot'], D: ['circle', 'poly'], n: ['poly'] }[d.p.param];
+    if (needs && !needs.includes(tgt.p.prof)) { dimErr[d.id] = L(`That sketch is a ${tgt.p.prof === 'poly' ? 'polygon' : tgt.p.prof === 'slot' ? 'slot' : tgt.p.prof === 'circle' ? 'circle' : 'rectangle'}, which has no ${d.p.param === 'n' ? 'side count' : d.p.param === 'D' ? 'diameter' : d.p.param === 'W' ? 'width' : 'height'} to drive.`, `Sketch itu ${tgt.p.prof === 'poly' ? 'poligon' : tgt.p.prof === 'slot' ? 'slot' : tgt.p.prof === 'circle' ? 'lingkaran' : 'persegi'}, tidak punya dimensi itu untuk diatur.`); continue; }
+    (dims[tgt.id] = dims[tgt.id] || {})[d.p.param] = v;
+  }
   for (const ft of p.features) {
     ft.err = null; ft.note = null; if (ft.off) continue; const q = ft.p;
     try {
@@ -5893,7 +5930,8 @@ async function buildPart(pArg) {
         else t = R.makeSphere(pos(q.D) / 2).translate([+q.x, +q.y, +q.z + +q.D / 2]);
         apply(t, body ? (q.op || 'add') : 'add');
       } else if (ft.type === 'sketch') {
-        sketch = { s: q, at: sketchAt(q) }; sketches.push(sketch);
+        const driven = { ...q, ...(dims[ft.id] || {}) };
+        sketch = { s: driven, at: sketchAt(driven) }; sketches.push(sketch);
       } else if (ft.type === 'push') {
         if (!sketch) throw new Error(L('Push/Pull needs a Sketch before it.', 'Push/Pull butuh Sketch sebelumnya.'));
         const dist = +q.dist; if (!dist) throw new Error(L('Distance cannot be 0.', 'Jarak tidak boleh 0.'));
@@ -5924,6 +5962,36 @@ async function buildPart(pArg) {
         else { const n = Math.round(+q.count); if (!(n >= 2 && n <= 200)) throw new Error(L('Count must be 2 to 200.', 'Jumlah harus 2 sampai 200.'));
           for (let i = 1; i < n; i++) apply(q.kind === 'line' ? base.clone().translate([i * +q.dx, i * +q.dy, 0]) : base.clone().rotate(360 * i / n, [+q.cx, +q.cy, 0], [0, 0, 1]), op); }
         lastTool = base;
+      } else if (ft.type === 'revolve') {
+        if (!sketch) throw new Error(L('Revolve needs a Sketch before it.', 'Revolve butuh Sketch sebelumnya.'));
+        const ang = +q.angle; if (!(ang > 0 && ang <= 360)) throw new Error(L('The angle must be above 0\u00b0 and at most 360\u00b0.', 'Sudut harus di atas 0\u00b0 dan paling besar 360\u00b0.'));
+        const pl = sketch.s.plane, at = sketch.at, org = pl === 'XY' ? [0, 0, at] : pl === 'XZ' ? [0, at, 0] : [at, 0, 0];
+        const dir = q.axis === 'X' ? [1, 0, 0] : q.axis === 'Y' ? [0, 1, 0] : [0, 0, 1];
+        let t;
+        try { t = profile(sketch.s).sketchOnPlane(pl, at).revolve(dir, { origin: org, angle: ang }); }
+        catch (e) { throw new Error(L(`The kernel could not revolve this profile around ${q.axis}. Keep the profile clear of the axis and every size above 0 mm.`, `Kernel tidak bisa memutar profil ini mengelilingi ${q.axis}. Jaga profil supaya tidak menyentuh sumbu dan semua ukuran di atas 0 mm.`)); }
+        if (Array.isArray(t)) { if (!t.length) throw new Error(L('The profile produced no solid when revolved.', 'Profil tidak menghasilkan solid saat diputar.')); t = t.length === 1 ? t[0] : t.reduce((a, b) => a.fuse(b)); }
+        apply(t, q.op || 'add'); sketch.used = true; sketch = null;
+      } else if (ft.type === 'draft') {
+        if (!body) throw new Error(L('Draft needs a body.', 'Draft butuh body.'));
+        const ang = +q.angle; if (!(ang > 0 && ang <= 45)) throw new Error(L('The draft angle must be above 0\u00b0 and at most 45\u00b0.', 'Sudut draft harus di atas 0\u00b0 dan paling besar 45\u00b0.'));
+        const [mn, mx] = bb(), shift = q.neutral === 'top' ? -mx[2] : -mn[2], pull = q.neutral === 'top' ? -1 : 1;
+        let sh = body.translate([0, 0, shift]), done = 0;
+        const targets = q.sides === 'X' ? [['YZ', mx[0]], ['YZ', mn[0]]] : q.sides === 'Y' ? [['XZ', mx[1]], ['XZ', mn[1]]]
+          : [['YZ', mx[0]], ['YZ', mn[0]], ['XZ', mx[1]], ['XZ', mn[1]]];
+        for (const [pl, c] of targets) {
+          const was = R.measureVolume(sh);
+          try { sh = sh.draft(pull * ang, (ff) => ff.inPlane(pl, c), 'XY'); }
+          catch (e) { throw new Error(L(`The kernel could not draft the ${pl === 'YZ' ? 'X' : 'Y'} face at ${f(c, 2)} mm by ${ang}\u00b0. Use a smaller angle, or a part whose side is flat there.`, `Kernel tidak bisa men-draft muka ${pl === 'YZ' ? 'X' : 'Y'} di ${f(c, 2)} mm sebesar ${ang}\u00b0. Pakai sudut lebih kecil, atau pastikan sisinya datar di situ.`)); }
+          if (Math.abs(R.measureVolume(sh) - was) < 1e-6) throw new Error(L(`There is no flat ${pl === 'YZ' ? 'X' : 'Y'} face at ${f(c, 2)} mm, so nothing was drafted. Draft works on the flat side faces of a prismatic body.`, `Tidak ada muka datar ${pl === 'YZ' ? 'X' : 'Y'} di ${f(c, 2)} mm, jadi tidak ada yang di-draft. Draft bekerja pada sisi datar body prismatis.`));
+          done++;
+        }
+        if (!done) throw new Error(L('There was no face to draft on this body.', 'Tidak ada muka yang bisa di-draft pada body ini.'));
+        body = sh.translate([0, 0, -shift]);
+      } else if (ft.type === 'dim') {
+        if (dimErr[ft.id]) throw new Error(dimErr[ft.id]);
+        const tgt = p.features.find((x) => x.id === q.step);
+        if (tgt && !ft.err) ft.note = L(`${q.param} = ${q.value}${q.param === 'n' ? '' : ' mm'} drives step ${p.features.indexOf(tgt) + 1}`, `${q.param} = ${q.value}${q.param === 'n' ? '' : ' mm'} mengatur langkah ${p.features.indexOf(tgt) + 1}`);
       } else if (ft.type === 'wall') {
         if (!body) throw new Error(L('Wall needs a body.', 'Wall butuh body.'));
         const [mn, mx] = bb(), z = q.open === 'top' ? mx[2] : mn[2];
@@ -5987,8 +6055,11 @@ function partTool(k, preset, label) {
   }
   if (k === 'measure') { partArm = null; partSel = 'measure'; cadTab = 'design'; renderCad(); return; }
   const first = !state.part.features.some((f) => f.type === 'shape' || f.type === 'push');
-  if (first && !['shape', 'sketch'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
+  /* Push/Pull, Revolve and Smart Dimension all work on a sketch before there is a body */
+  if (first && !['shape', 'sketch', 'push', 'revolve', 'dim'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
   if (k === 'push' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Extrude needs a sketch: draw one first.', 'Extrude butuh sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
+  if (k === 'revolve' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Revolve needs a sketch: draw the profile first.', 'Revolve butuh sketch: buat profilnya dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
+  if (k === 'dim' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Smart Dimension drives a sketch size: draw a sketch first.', 'Smart Dimension mengatur ukuran sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   partArm = { type: k, p: { ...defaults(k), ...(preset || {}) }, n: label || null, d: label && typeof RIB_ALL !== 'undefined' ? (RIB_ALL.find((t) => t.n === label) || {}) : null }; partSel = null; cadTab = 'design';
   if (narrow()) setChat(true);
   renderCad();
@@ -6264,12 +6335,12 @@ const RIBBON = [
       T('Extend', 'extend', 'mk1', 'Lengthen a line to the next one.', 'Perpanjang garis ke garis berikutnya.', ''),
       T('Mirror Entities', 'smir', 'mk1', 'Mirror sketch lines about a centerline.', 'Cerminkan garis sketch terhadap centerline.', 'Sketch Mirror'),
       T('Sketch Pattern', 'spat', 'mk1', 'Linear or circular pattern inside the sketch.', 'Pola linear atau melingkar di dalam sketch.', 'Linear / Circular Sketch Pattern')]],
-    ['Constrain', [T('Smart Dimension', 'dim', 'mk1', 'Dimension that drives the sketch.', 'Dimensi yang mengendalikan sketch.', 'Sketch Dimension', null, ALT_SIZE),
+    ['Constrain', [T('Smart Dimension', 'dim', 'on', 'Drive one size of a sketch. The dimension becomes a step in the tree: change it and the whole part rebuilds.', 'Mengatur satu ukuran sketch. Dimensi menjadi langkah di pohon: ubah nilainya dan seluruh part dibangun ulang.', 'Sketch Dimension', P('dim')),
       T('Add Relation', 'rel', 'mk1', 'Coincident, horizontal, vertical, parallel, perpendicular, tangent, equal, fix.', 'Coincident, horizontal, vertikal, sejajar, tegak lurus, tangen, sama, fix.', 'Constraints, Geometric Constraints')]],
     ['IDRIS', [T('Sketch Correction', 'fix', 'mk1', 'IDRIS finds lines that do not meet, overlap, hang loose or are almost horizontal/vertical, shows each fix and applies it after you confirm. Built together with the free-line sketcher.', 'IDRIS menemukan garis yang tidak menyambung, bertumpuk, menggantung, atau hampir horizontal/vertikal, menunjukkan perbaikannya, dan menerapkannya setelah kamu setujui. Dibangun bersama sketcher garis bebas.', 'Repair Sketch, Check Sketch for Feature', null, ALT_SK, true)]]]],
   ['feat', 'Features', 'Fitur', [
     ['Boss / Base', [T('Extruded Boss/Base', 'ext', 'on', 'Extrude the last sketch and add it to the body, one side or both.', 'Tarik sketch terakhir dan tambahkan ke body, satu sisi atau dua sisi.', 'Extrude, Pad', P('push', { op: 'add' })),
-      T('Revolved Boss/Base', 'rev', 'mk1', 'Turn a sketch around an axis.', 'Putar sketch mengelilingi sumbu.', 'Revolve, Shaft', null, ALT_REV),
+      T('Revolved Boss/Base', 'rev', 'on', 'Turn the last sketch around X, Y or Z, up to 360\u00b0.', 'Putar sketch terakhir mengelilingi X, Y, atau Z, sampai 360\u00b0.', 'Revolve, Shaft', P('revolve')),
       T('Swept Boss/Base', 'sweep', 'mk1', 'Move a profile along a path.', 'Gerakkan profil sepanjang lintasan.', 'Sweep, Rib (CATIA)'),
       T('Lofted Boss/Base', 'loft', 'mk1', 'Blend between two or more profiles.', 'Gabungan halus antar dua profil atau lebih.', 'Loft, Multi-section Solid'),
       T('Boundary Boss/Base', 'bound', 'no', 'Solid from boundary curves in two directions.', 'Solid dari kurva batas dua arah.', '')]],
@@ -6286,7 +6357,7 @@ const RIBBON = [
       T('Chamfer', 'chamfer', 'on', 'Bevel vertical, top, bottom or all edges.', 'Miringkan tepi tegak, atas, bawah, atau semua.', 'Bevel', P('edge', { mode: 'chamfer' })),
       T('Variable Fillet', 'fillet', 'no', 'Fillet whose radius changes along the edge.', 'Fillet dengan radius berubah sepanjang tepi.', 'Face Fillet, Full Round'),
       T('Shell', 'shell', 'on', 'Hollow the body with an open top or bottom.', 'Kosongkan body dengan sisi atas atau bawah terbuka.', 'Shell', P('wall')),
-      T('Draft', 'draft', 'mk1', 'Taper faces so the part leaves the mould.', 'Miringkan muka supaya part bisa lepas dari cetakan.', 'Draft Angle'),
+      T('Draft', 'draft', 'on', 'Taper the \u00b1X or \u00b1Y faces about a neutral plane, so the part leaves the mould.', 'Miringkan muka \u00b1X atau \u00b1Y terhadap bidang netral, supaya part bisa lepas dari cetakan.', 'Draft Angle', P('draft')),
       T('Rib', 'rib', 'mk1', 'Thin stiffening wall from a sketch line.', 'Dinding tipis penguat dari garis sketch.', 'Stiffener, Web'),
       T('Thread', 'thread', 'no', 'Modelled or cosmetic thread. Today the hole gets the ISO tap drill size.', 'Ulir dimodelkan atau kosmetik. Saat ini lubang memakai ukuran bor tap ISO.', 'Cosmetic Thread', null, ['Use Hole Wizard → Tapped ISO M', 'Pakai Hole Wizard → Ulir ISO M', P('hole', { type: 'tap' })]),
       T('Dome', 'dome', 'no', 'Curved cap on a face.', 'Tudung melengkung di sebuah muka.', ''),
