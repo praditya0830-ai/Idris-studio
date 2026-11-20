@@ -1,0 +1,379 @@
+diff --git a/index.html b/index.html
+index feb8526..2465501 100644
+--- a/index.html
++++ b/index.html
+@@ -8428,7 +8428,373 @@ const conceptSave = (n) => { try { if (n) localStorage.setItem('idris-concepts',
+     if (m && CONC_OPTS.includes(+m[1])) { addUser(text); conceptSave(+m[1]); return say(para(L(`OK: every new design gets ${m[1]} concepts. Type “ask me each time” to be asked again.`, `Oke: setiap desain baru dibuat ${m[1]} konsep. Ketik “ask me each time” supaya ditanya lagi.`))); }
+     if (/^(ask me (each|every) time|tanya (aku )?(tiap|setiap) (kali|desain))$/.test(t)) { addUser(text); conceptSave(null); return say(para(L('OK: IDRIS will ask how many concepts for each new design.', 'Oke: IDRIS akan bertanya jumlah konsep untuk setiap desain baru.'))); }
+     return ht.apply(this, arguments); }; }
+-window.__idris = { state, parseText, viewer, frameFit };
++/* ---- v0.36 (vision task V4, branch ui/vision-to-cad): Sketch / Photo -> CAD ------------------------------
++ * The engineer gives a picture, IDRIS gives the shape. Millimetres come only from (a) a size written on the
++ * sketch and confirmed in this panel, or (b) one reference length the engineer states. When the solver answers
++ * "Scale not set -- proportions from image", that label stays on screen and a design only starts after the
++ * engineer accepts a provisional scale; the answer then carries fea_allowed: false.
++ * Routes: POST /vision/read, POST /vision/job (then GET /design/job/<id>), POST /vision/similarity. */
++const VIS = { mode: 'sketch', src: 'upload', photo: null, photoURL: '', read: null, job: null, timer: 0,
++              strokes: [], labels: [], undo: [], region: null, tool: 'pen', opacity: 0.45, overlay: null,
++              inkThresh: 200, busy: false, pad: null };
++(function visCss() {
++  const s = document.createElement('style');
++  s.textContent = '.vismodal{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;background:rgba(8,12,20,.55)}'
++    + '.viscard{background:var(--card,#fff);color:inherit;border-radius:14px;width:min(780px,94vw);max-height:92vh;overflow:auto;padding:14px 16px;box-shadow:0 18px 60px rgba(0,0,0,.35);font-size:13px}'
++    + '.viscard h3{margin:0 0 6px;font-size:15px}.viscard h4{margin:12px 0 4px;font-size:13px}'
++    + '.visrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}'
++    + '.vistab{padding:4px 10px;border:1px solid var(--line,#dde3ea);border-radius:999px;background:transparent;color:inherit;cursor:pointer;font-size:12px}'
++    + '.vistab.on{background:#2d6cdf;color:#fff;border-color:#2d6cdf}'
++    + '.visin{padding:4px 7px;border:1px solid var(--line,#dde3ea);border-radius:6px;background:transparent;color:inherit;font-size:12px}'
++    + '#visPad,#visPrev{width:100%;height:auto;border:1px solid var(--line,#dde3ea);border-radius:10px;background:#fff;touch-action:none}'
++    + '#visPad{cursor:crosshair}.vishint{font-size:11.5px;opacity:.75;margin:4px 0}'
++    + '.visdim{display:grid;grid-template-columns:1fr 96px;gap:6px;align-items:center;font-size:12px;margin:4px 0}'
++    + '.visscale{font-size:12px;padding:6px 8px;border-radius:8px;background:rgba(255,193,7,.16);border:1px solid rgba(255,193,7,.55);margin:6px 0}'
++    + '.visscale.set{background:rgba(46,160,67,.12);border-color:rgba(46,160,67,.45)}'
++    + '.visq{font-size:12px;margin:2px 0}.visfeat{font-size:12px;margin:2px 0 2px 10px}'
++    + '#visOverlay{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;opacity:.45;mix-blend-mode:multiply}'
++    + '.visov{display:flex;gap:6px;align-items:center;font-size:11.5px;margin:6px 0}';
++  document.head.append(s);
++})();
++
++function visSay(...blocks) { try { say(...blocks); } catch (e) { /* chat closed */ } }
++function visBase(url) { return String(url || '').split(',')[1] || ''; }
++function visCanvasOf(img, maxSide) {
++  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
++  const k = Math.min(1, (maxSide || 1600) / Math.max(w || 1, h || 1));
++  const c = document.createElement('canvas');
++  c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
++  const g = c.getContext('2d');
++  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);      // transparency becomes paper, not black
++  g.drawImage(img, 0, 0, c.width, c.height);
++  return c;
++}
++function visDrawGrid(g, w, h) {
++  g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);
++  g.strokeStyle = '#e6edf6'; g.lineWidth = 1;
++  for (let x = 0; x <= w; x += w / 18) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
++  for (let y = 0; y <= h; y += h / 12) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
++}
++function visPadRedraw() {
++  const c = VIS.pad; if (!c) return;
++  const g = c.getContext('2d'), w = c.width, h = c.height;
++  visDrawGrid(g, w, h);
++  g.lineCap = 'round'; g.lineJoin = 'round';
++  VIS.strokes.forEach((s) => {
++    if (s.pts.length < 2) return;
++    g.strokeStyle = s.color; g.lineWidth = s.w;
++    g.beginPath(); s.pts.forEach((p, i) => { const x = p[0] * w, y = p[1] * h; i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
++  });
++  g.fillStyle = '#12213a'; g.font = 'bold 18px system-ui';
++  VIS.labels.forEach((l) => g.fillText(l.text, l.x * w, l.y * h));
++}
++function visPadExport() {
++  const c = document.createElement('canvas');
++  const w = VIS.pad ? VIS.pad.width : 900, h = VIS.pad ? VIS.pad.height : 620;
++  c.width = w; c.height = h;
++  const g = c.getContext('2d');
++  g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);
++  g.lineCap = 'round'; g.lineJoin = 'round';
++  VIS.strokes.forEach((s) => {
++    if (s.pts.length < 2) return;
++    g.strokeStyle = s.color; g.lineWidth = s.w;
++    g.beginPath(); s.pts.forEach((p, i) => { const x = p[0] * w, y = p[1] * h; i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
++  });
++  g.fillStyle = '#12213a'; g.font = 'bold 18px system-ui';
++  VIS.labels.forEach((l) => g.fillText(l.text, l.x * w, l.y * h));
++  return c.toDataURL('image/png');
++}
++function visSource() {
++  if (VIS.src === 'draw') {
++    if (!VIS.strokes.length) return null;
++    return { data: visBase(visPadExport()), mime: 'image/png' };
++  }
++  if (!VIS.photo) return null;
++  const c = visCanvasOf(VIS.photo, 1600);
++  return { data: visBase(c.toDataURL('image/png')), mime: 'image/png' };
++}
++function visShowOverlay(url) {
++  try {
++    const host = viewer && (viewer.host || (viewer.canvas && viewer.canvas.parentElement));
++    if (!host) return;
++    if (VIS.overlay) VIS.overlay.remove();
++    const img = h('img', { id: 'visOverlay', src: url, alt: '' });
++    img.style.opacity = String(VIS.opacity);
++    host.append(img); VIS.overlay = img;
++  } catch (e) { /* no viewer yet */ }
++}
++function visModal() {
++  const prev = document.getElementById('visModal'); if (prev) prev.remove();
++  const card = h('div', { class: 'viscard' });
++  const body = h('div');
++  const modeChips = chips([
++    { label: L('Sketch to CAD', 'Sketsa ke CAD'), primary: VIS.mode === 'sketch', fn: () => { VIS.mode = 'sketch'; visModal(); } },
++    { label: L('Recreate from photo', 'Buat ulang dari foto'), primary: VIS.mode === 'photo', fn: () => { VIS.mode = 'photo'; visModal(); } },
++    { label: L('Design the missing part', 'Desain part yang hilang'), primary: VIS.mode === 'missing_part', fn: () => { VIS.mode = 'missing_part'; visModal(); } }]);
++  const srcChips = chips([
++    { label: L('Upload', 'Unggah'), primary: VIS.src === 'upload', fn: () => { VIS.src = 'upload'; visModal(); } },
++    { label: L('Camera', 'Kamera'), primary: VIS.src === 'camera', fn: () => { VIS.src = 'camera'; visModal(); } },
++    { label: L('Draw on tablet', 'Gambar di tablet'), primary: VIS.src === 'draw', fn: () => { VIS.src = 'draw'; visModal(); } }]);
++  card.append(h('h3', null, L('Sketch / Photo', 'Sketsa / Foto')),
++    h('p', { class: 'vishint' }, L('The picture gives shape and proportion, not a measured size. Sizes come from what is written on the sketch (confirmed below) or from one reference length.',
++      'Gambar memberi bentuk dan proporsi, bukan ukuran terukur. Ukuran berasal dari yang tertulis di sketsa (dikonfirmasi di bawah) atau satu ukuran acuan.')),
++    modeChips, srcChips, body);
++  if (VIS.src === 'draw') {
++    const c = h('canvas', { id: 'visPad', width: 900, height: 620 });
++    VIS.pad = c;
++    let cur = null;
++    const pos = (e) => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
++    c.addEventListener('pointerdown', (e) => { c.setPointerCapture(e.pointerId); cur = { pts: [pos(e)], w: VIS.tool === 'eraser' ? 26 : 3, color: VIS.tool === 'eraser' ? '#ffffff' : '#12213a' }; VIS.strokes.push(cur); visPadRedraw(); });
++    c.addEventListener('pointermove', (e) => { if (!cur) return; cur.pts.push(pos(e)); visPadRedraw(); });
++    c.addEventListener('pointerup', () => { if (cur) { VIS.undo.push(VIS.strokes.length); cur = null; } });
++    setTimeout(visPadRedraw, 0);
++    body.append(c,
++      h('div', { class: 'visrow' },
++        chips([{ label: L('Pen', 'Pena'), primary: VIS.tool === 'pen', fn: () => { VIS.tool = 'pen'; } },
++          { label: L('Eraser', 'Penghapus'), primary: VIS.tool === 'eraser', fn: () => { VIS.tool = 'eraser'; } },
++          { label: L('Undo', 'Batal'), fn: () => { VIS.strokes.pop(); visPadRedraw(); } },
++          { label: L('Clear', 'Bersihkan'), fn: () => { VIS.strokes = []; VIS.labels = []; visPadRedraw(); } },
++          { label: L('Write a size', 'Tulis ukuran'), fn: () => {
++            const t = window.prompt(L('Size as written on the sketch (for example 120 or M8):', 'Ukuran seperti tertulis di sketsa (misal 120 atau M8):'), '120');
++            if (!t) return;
++            VIS.labels.push({ x: 0.1, y: 0.12 + 0.06 * VIS.labels.length, text: String(t).slice(0, 12) });
++            visPadRedraw(); } }])),
++      h('p', { class: 'vishint' }, L('The numbers you write are part of the picture, so the AI can read them back as written sizes (they still need your confirmation).',
++        'Angka yang kamu tulis ikut di gambar, jadi AI bisa membacanya sebagai ukuran tertulis (tetap perlu kamu konfirmasi).')));
++  } else {
++    const prev = h('canvas', { id: 'visPrev', width: 900, height: 620 });
++    const input = h('input', { class: 'visin', type: 'file', accept: 'image/*', capture: VIS.src === 'camera' ? 'environment' : null,
++      onchange: (e) => { const f = e.target.files && e.target.files[0]; if (f) visLoadFile(f, prev); } });
++    body.append(h('div', { class: 'visrow' }, input),
++      prev,
++      h('p', { class: 'vishint' }, VIS.mode === 'missing_part'
++        ? L('Drag a rectangle around the place where the part is missing; the solver looks there first.', 'Seret kotak di area part yang hilang; solver melihat ke sana dulu.')
++        : L('A photo taken straight on, on a plain background, gives the best proportions.', 'Foto lurus dari depan dengan latar polos memberi proporsi terbaik.')));
++    if (VIS.mode === 'missing_part') {
++      let start = null;
++      prev.addEventListener('pointerdown', (e) => { const r = prev.getBoundingClientRect(); start = [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; });
++      prev.addEventListener('pointermove', (e) => {
++        if (!start) return; const r = prev.getBoundingClientRect();
++        const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
++        VIS.region = { x: Math.max(0, Math.min(start[0], x)), y: Math.max(0, Math.min(start[1], y)), w: Math.abs(x - start[0]), h: Math.abs(y - start[1]), unit: 'fraction' };
++        visPreview(prev);
++      });
++      prev.addEventListener('pointerup', () => { start = null; visPreview(prev); });
++    }
++    if (VIS.photo) setTimeout(() => visPreview(prev), 0);
++    const note = h('input', { class: 'visin', placeholder: L('what it is / what you need', 'benda apa / yang kamu perlu'), value: VIS.note || '', oninput: (e) => { VIS.note = e.target.value; } });
++    const what = h('input', { class: 'visin', placeholder: L('reference: overall width', 'acuan: lebar total'), value: (VIS.ref && VIS.ref.what) || '', oninput: (e) => { VIS.ref = { ...(VIS.ref || {}), what: e.target.value }; } });
++    const mm = h('input', { class: 'visin', type: 'number', min: '0', placeholder: 'mm', value: (VIS.ref && VIS.ref.mm) || '', oninput: (e) => { VIS.ref = { ...(VIS.ref || {}), mm: +e.target.value || null }; } });
++    body.append(h('div', { class: 'visrow' }, note, what, mm),
++      h('p', { class: 'vishint' }, L('One reference length is the only way a photo becomes millimetres. Leave it empty and the design stays proportional.',
++        'Satu ukuran acuan adalah satu-satunya jalan foto menjadi milimeter. Kosongkan dan desain tetap proporsional.')));
++  }
++  card.append(h('div', { class: 'visrow' },
++    h('button', { class: 'vistab on', onclick: () => visRead(card) }, L('Read with IDRIS', 'Baca dengan IDRIS')),
++    h('button', { class: 'vistab', onclick: () => { const m = document.getElementById('visModal'); if (m) m.remove(); } }, L('Close', 'Tutup'))));
++  const modal = h('div', { class: 'vismodal', id: 'visModal', onclick: (e) => { if (e.target === e.currentTarget) e.currentTarget.remove(); } }, card);
++  document.body.append(modal);
++  return card;
++}
++function visPreview(c) {
++  if (!c) return;
++  const g = c.getContext('2d');
++  visDrawGrid(g, c.width, c.height);
++  if (VIS.photo) {
++    const k = Math.min(c.width / VIS.photo.width, c.height / VIS.photo.height);
++    const w = VIS.photo.width * k, hh = VIS.photo.height * k;
++    g.drawImage(VIS.photo, (c.width - w) / 2, (c.height - hh) / 2, w, hh);
++  }
++  if (VIS.region) {
++    g.strokeStyle = '#e5484d'; g.lineWidth = 2;
++    g.strokeRect(VIS.region.x * c.width, VIS.region.y * c.height, VIS.region.w * c.width, VIS.region.h * c.height);
++  }
++}
++function visLoadFile(file, prev) {
++  const img = new Image();
++  img.onload = () => { VIS.photo = img; visPreview(prev); visShowOverlay(img.src); };
++  img.onerror = () => visSay(para(L('That file is not an image IDRIS can read.', 'Berkas itu bukan gambar yang bisa dibaca IDRIS.')));
++  img.src = URL.createObjectURL(file);
++}
++async function visRead(card) {
++  if (VIS.busy) return;
++  const src = visSource();
++  if (!src) return visSay(para(L('Take a photo, upload one, or draw the sketch first.', 'Ambil foto, unggah, atau gambar sketsanya dulu.')));
++  VIS.busy = true;
++  const out = h('div'); card.append(out);
++  out.append(para(L('Reading the picture…', 'Membaca gambar…'), 'm'));
++  try {
++    const res = await fetch(API + '/vision/read', { method: 'POST', headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ image_base64: src.data, mime: src.mime, mode: VIS.mode, note: VIS.note || '',
++        reference: VIS.ref && VIS.ref.mm ? { what: VIS.ref.what || 'overall width', mm: +VIS.ref.mm } : null,
++        region: VIS.mode === 'missing_part' ? VIS.region : null }) });
++    const d = await res.json().catch(() => null);
++    out.innerHTML = '';
++    if (!res.ok || !d || !d.success) { out.append(para((d && d.error) || ('HTTP ' + res.status), 'm')); return; }
++    VIS.read = d;
++    visResult(out, d);
++  } catch (e) {
++    out.innerHTML = ''; out.append(para(L('The solver could not read it: ', 'Solver tidak bisa membacanya: ') + (e && e.message), 'm'));
++  } finally { VIS.busy = false; }
++}
++function visResult(out, d) {
++  const it = d.interpretation || {};
++  out.append(h('h4', null, L('What IDRIS sees', 'Yang dilihat IDRIS')),
++    h('p', null, `${it.object || '?'} · ${(it.views || []).join(', ')} · ${L('symmetry', 'simetri')}: ${it.symmetry || 'none'}`));
++  (it.features || []).forEach((f) => out.append(h('div', { class: 'visfeat' }, `• ${f.count}x ${f.name} (${f.kind})` + (f.relation ? ' — ' + f.relation : ''))));
++  const scale = d.scale || {};
++  out.append(h('div', { class: 'visscale' + (scale.set ? ' set' : '') }, scale.label || L('Scale not set', 'Skala belum diatur'),
++    h('div', { class: 'vishint' }, scale.note || '')));
++  const inputs = [];
++  if ((it.dims_written || []).length) {
++    out.append(h('h4', null, L('Sizes written on the drawing — confirm each one', 'Ukuran tertulis di gambar — konfirmasi satu per satu')));
++    it.dims_written.forEach((x) => {
++      const inp = h('input', { class: 'visin', type: 'number', value: x.value_mm });
++      inputs.push({ key: x.applies_to || x.text_seen, inp });
++      out.append(h('div', { class: 'visdim' }, h('span', null, `${x.applies_to || '?'} — “${x.text_seen}”`), inp));
++    });
++  }
++  const readInputs = [];
++  if ((d.readings || []).length) {
++    out.append(h('h4', null, L('Where the sketch is unclear, choose a reading (or none)', 'Di bagian yang tidak jelas, pilih tafsiran (atau tidak sama sekali)')));
++    d.readings.forEach((r) => {
++      const sel = h('select', { class: 'visin' },
++        h('option', { value: '' }, L('do not decide', 'jangan putuskan')),
++        h('option', { value: r.reading_a }, r.reading_a),
++        h('option', { value: r.reading_b }, r.reading_b));
++      readInputs.push(sel);
++      out.append(h('div', { class: 'visq' }, r.unclear), sel);
++    });
++  }
++  const mp = d.missing_part;
++  const ifInputs = [];
++  if (mp) {
++    out.append(h('h4', null, L('The missing part', 'Part yang hilang')),
++      h('p', null, `${mp.location || ''} — ${mp.function || ''}`),
++      h('p', { class: 'vishint' }, L('loads (words only, never numbers): ', 'beban (kata saja, tanpa angka): ') + (mp.loads_guess || '—')));
++    (mp.interfaces_needed || []).forEach((i) => {
++      const inp = h('input', { class: 'visin', type: 'number', placeholder: 'mm' });
++      ifInputs.push({ key: i.what_to_measure, inp });
++      out.append(h('div', { class: 'visdim' }, h('span', null, `${i.what_to_measure} (${i.between})`), inp));
++    });
++    out.append(h('p', { class: 'vishint' }, L('These joint sizes must be measured by you; a photo cannot give them.',
++      'Ukuran sambungan ini harus kamu ukur; foto tidak bisa memberikannya.')));
++  }
++  if ((d.questions || []).length) {
++    out.append(h('h4', null, L('IDRIS asks', 'IDRIS bertanya')));
++    d.questions.forEach((q) => out.append(h('div', { class: 'visq' }, '• ' + q)));
++  }
++  out.append(h('div', { class: 'visrow' }, h('label', { class: 'visov' },
++    h('input', { type: 'checkbox', id: 'visProv' }), L(' continue with a provisional scale (no strength check)', ' lanjut dengan skala sementara (tanpa cek kekuatan)'))));
++  const ov = h('input', { type: 'range', min: '0', max: '100', value: String(Math.round(VIS.opacity * 100)),
++    oninput: (e) => { VIS.opacity = (+e.target.value) / 100; if (VIS.overlay) VIS.overlay.style.opacity = String(VIS.opacity); } });
++  out.append(h('div', { class: 'visov' }, L('sketch overlay', 'overlay sketsa'), ov,
++    h('button', { class: 'vistab', onclick: () => { if (VIS.overlay) { VIS.overlay.remove(); VIS.overlay = null; } } }, L('hide', 'sembunyikan'))));
++  out.append(h('div', { class: 'visrow' },
++    h('button', { class: 'vistab on', onclick: () => visDesign(d, inputs, readInputs, ifInputs) }, L('Design it', 'Desainkan')),
++    h('button', { class: 'vistab', onclick: () => visShapeMatch(d) }, L('Shape match with the view', 'Kemiripan dengan tampilan'))));
++}
++function visDesign(d, dims, reads, ifaces) {
++  const confirmed = {};
++  dims.forEach((x) => { const v = +x.inp.value; if (v > 0 && x.key) confirmed[String(x.key).slice(0, 40)] = v; });
++  ifaces.forEach((x) => { const v = +x.inp.value; if (v > 0 && x.key) confirmed[String(x.key).slice(0, 40)] = v; });
++  const reading = reads.map((s) => s.value).filter(Boolean).join('; ');
++  const prov = document.getElementById('visProv');
++  const src = visSource();
++  if (!src) return visSay(para(L('The picture is gone; read it again.', 'Gambarnya hilang; baca ulang.')));
++  visSay(para(L('Starting the design job…', 'Memulai job desain…'), 'm'));
++  fetch(API + '/vision/job', { method: 'POST', headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify({ image_base64: src.data, mime: src.mime, mode: VIS.mode, note: VIS.note || '',
++      reference: VIS.ref && VIS.ref.mm ? { what: VIS.ref.what || 'overall width', mm: +VIS.ref.mm } : null,
++      region: VIS.mode === 'missing_part' ? VIS.region : null, confirmed_dims: confirmed,
++      reading: reading || null, accept_provisional: !!(prov && prov.checked) }) })
++    .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
++    .then(({ ok, j }) => {
++      if (!ok || !j || !j.success) {
++        const why = (j && j.error) || L('the job did not start', 'job tidak dimulai');
++        visSay(para(why, 'm'));
++        if (j && j.blocked === 'interfaces') (j.missing_interfaces || []).forEach((i) => visSay(para('• ' + i.what_to_measure + ' (' + i.between + ')')));
++        if (j && j.blocked === 'scale') visSay(para(L('Give one reference length above, or tick “provisional scale”.', 'Isi satu ukuran acuan di atas, atau centang “skala sementara”.')));
++        return;
++      }
++      visSay(para(L('Job started. ', 'Job dimulai. ') + (j.scale_label || ''), 'm'));
++      if (j.fea_allowed === false) visSay(para(L('No strength check: the scale is provisional, so a safety factor would be a made-up number.',
++        'Tanpa cek kekuatan: skalanya sementara, jadi safety factor akan jadi angka karangan.'), 'm'));
++      visPoll(j.job_id);
++    })
++    .catch((e) => visSay(para(L('The solver did not answer: ', 'Solver tidak menjawab: ') + (e && e.message), 'm')));
++}
++function visPoll(id) {
++  clearInterval(VIS.timer);
++  const stage = para(L('Waiting for the design job…', 'Menunggu job desain…'), 'm');
++  visSay(stage);
++  VIS.timer = setInterval(async () => {
++    try {
++      const r = await fetch(API + '/design/job/' + encodeURIComponent(id));
++      const j = await r.json();
++      stage.textContent = `${j.status || '?'} · ${j.stage || ''} · ${j.elapsed_s != null ? j.elapsed_s + ' s' : ''}` +
++        (j.waiting_for ? ` · ${L('waiting for', 'menunggu')} ${j.waiting_for}` : '');
++      if (j.status === 'done' || j.status === 'failed') {
++        clearInterval(VIS.timer);
++        const res = j.result || {};
++        if (res.cad && typeof genFromAI === 'function') genFromAI(res.cad);
++        if (res.answer) visSay(para(res.answer));
++        else if (j.error) visSay(para(String(j.error), 'm'));
++        if (res.cad && (res.cad.steps || []).length) visSay(para(L('Build order: ', 'Urutan bangun: ') + res.cad.steps.map((s) => s.name).join(', '), 'm'));
++        if (res.label) visSay(para(L('Label: ', 'Label: ') + res.label, 'm'));
++      }
++    } catch (e) { /* keep waiting: the solver may be restarting */ }
++  }, 2000);
++}
++function visMasks(size) {
++  const n = size || 128, rows = [], ink = [], src = visSource();
++  try {
++    const c = viewer && viewer.canvas;
++    if (c) {
++      const o = document.createElement('canvas'); o.width = n; o.height = n;
++      const g = o.getContext('2d'); g.clearRect(0, 0, n, n); g.drawImage(c, 0, 0, n, n);
++      const d = g.getImageData(0, 0, n, n).data;
++      for (let y = 0; y < n; y++) { const row = []; for (let x = 0; x < n; x++) row.push(d[(y * n + x) * 4 + 3] > 16 ? 1 : 0); rows.push(row); }
++    }
++  } catch (e) { /* no model silhouette */ }
++  return { model: rows, src };
++}
++async function visShapeMatch() {
++  const { model, src } = visMasks(128);
++  if (!model.length) return visSay(para(L('Build the part first: the model silhouette comes from the viewport.', 'Bangun part dulu: siluet model diambil dari viewport.'), 'm'));
++  if (!src) return visSay(para(L('The picture is gone; read it again.', 'Gambarnya hilang; baca ulang.'), 'm'));
++  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'data:' + src.mime + ';base64,' + src.data; });
++  const n = 128, o = document.createElement('canvas'); o.width = n; o.height = n;
++  const g = o.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, n, n); g.drawImage(img, 0, 0, n, n);
++  const d = g.getImageData(0, 0, n, n).data, ink = [];
++  for (let y = 0; y < n; y++) {
++    const row = [];
++    for (let x = 0; x < n; x++) {
++      const i = (y * n + x) * 4;
++      const lum = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
++      row.push(lum < VIS.inkThresh ? 1 : 0);
++    }
++    ink.push(row);
++  }
++  const r = await fetch(API + '/vision/similarity', { method: 'POST', headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify({ model_silhouette: model, image_silhouette: ink, size: n }) });
++  const j = await r.json().catch(() => null);
++  if (!r.ok || !j || !j.success) return visSay(para((j && j.error) || ('HTTP ' + r.status), 'm'));
++  visSay(para(`Shape match: ${j.iou_percent}% (silhouette, ${n}px) · ${L('biggest difference', 'perbedaan terbesar')}: ${j.biggest_region ? `${j.biggest_region.w_percent}% x ${j.biggest_region.h_percent}%` : '—'}`),
++    para(L('This is a 2D silhouette comparison, not a 3D shape claim.', 'Ini perbandingan siluet 2D, bukan klaim bentuk 3D.'), 'm'));
++}
++(function visButton() {
++  try {
++    const head = document.querySelector('.phead');
++    if (!head || document.getElementById('visOpen')) return;
++    const b = h('button', { class: 'vistab', id: 'visOpen', title: L('Sketch / Photo to CAD', 'Sketsa / Foto ke CAD'),
++      onclick: () => visModal() }, L('Sketch / Photo', 'Sketsa / Foto'));
++    b.style.marginLeft = 'auto';
++    head.insertBefore(b, head.querySelector('.x'));
++  } catch (e) { /* the panel is not there yet */ }
++})();
++
++window.__idris = { state, parseText, viewer, frameFit, vis: { VIS, visModal, visShapeMatch } };
+ })();
+ </script>
+ </body>
