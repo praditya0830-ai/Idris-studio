@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>IDRIS Design Studio</title>
 <meta name="description" content="AI-native engineering design studio: describe a requirement, get physics-checked design variants.">
@@ -938,6 +939,13 @@ body.focus:not(.focus-tree) .edge-l,body.focus:not(.focus-chat) .edge-r{display:
 .conc-ask{margin-top:8px;display:flex;flex-direction:column;gap:6px} .conc-rem{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px} .conc-ask .hint{margin:0;font-size:11.5px;color:var(--dim)}
 
 /* v64: design job panel, trust badges, references */
+.waitbox{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;z-index:6}
+.waitbox .wb-in{display:flex;flex-direction:column;align-items:center;gap:10px}
+.waitbox .wb-frame{width:190px;height:124px;border:1.5px dashed var(--line2);border-radius:6px;background:rgba(127,127,127,.05);animation:wbpulse 1.6s ease-in-out infinite}
+.waitbox p{margin:0;font-size:12.5px;color:var(--dim);background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:4px 12px}
+@keyframes wbpulse{0%,100%{opacity:.55}50%{opacity:1}}
+.newnote{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);border-left:3px solid var(--accent);padding:4px 10px;margin:6px 0;background:rgba(127,127,127,.06);border-radius:0 6px 6px 0}
+.trace .steps li.skip{opacity:.55}
 .job-panel{position:absolute;z-index:7;right:12px;top:110px;width:380px;max-height:calc(100% - 190px);overflow:auto;display:flex;flex-direction:column;gap:8px;padding:10px 12px;background:var(--glass);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 28px var(--shadow);font-size:12.5px}
 @media (min-width:1181px){ body.cad .job-panel{right:var(--ovR)} }
 .job-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap} .job-h span{color:var(--muted);font-size:11.5px;flex:1}
@@ -2220,6 +2228,41 @@ function thinking(steps) {
       title.textContent = `Thought for ${((performance.now() - t0) / 1000).toFixed(1)} s${summary ? ' · ' + summary : ''}`; setTimeout(() => box.classList.add('closed'), 1200); },
     fail(t) { if (cur >= 0) lis[cur].className = 'bad'; const sp = box.querySelector('.spin'); if (sp) sp.remove(); title.textContent = t || 'Stopped'; },
   };
+}
+
+/* ---- the design process, always visible (Arya, bagian G) -----------------------------------------------
+ * A free design shows the steps that really happen — plan, one code per concept, build in the kernel, measure,
+ * and the stress check when the solver sent loads — and the workspace is never empty while it waits: a size frame
+ * with the sentence says what is being written. Nothing here invents a step: each tick comes from the code that
+ * did the work (conceptPipeline, conceptRank, rebuildGen). */
+let designTrace = null;
+function traceOpen(labels, note) {
+  const body = [...document.querySelectorAll('#chat .msg.ai .ai-body')].pop() || aiMsg();
+  const ui = thinking(labels.slice());
+  ui.el.classList.add('trace');
+  body.append(ui.el);
+  designTrace = { ui, labels, note };
+  if (note) ui.note(note);
+  ui.set(0);
+  scrollDown();
+  return designTrace;
+}
+function traceSet(i, note) {
+  if (!designTrace) return;
+  designTrace.ui.set(Math.max(0, Math.min(i, designTrace.labels.length - 1)));
+  if (note) designTrace.ui.note(note);
+}
+function traceDone(summary) { if (!designTrace) return; designTrace.ui.done(summary); designTrace = null; }
+function traceFail(why) { if (!designTrace) return; designTrace.ui.fail(why); designTrace = null; }
+function waitBoxShow(text) {
+  if (!isCad || !isCad()) return null;
+  const vp = $('#viewport'); if (!vp) return null;
+  const hasModel = typeof partShape !== 'undefined' && partShape;
+  if (hasModel) return null;                      /* the workspace is not empty: no frame needed */
+  const msg = h('p', null, text);
+  const box = h('div', { class: 'waitbox', id: 'waitBox', role: 'status', 'aria-live': 'polite' }, h('div', { class: 'wb-in' }, h('div', { class: 'wb-frame', 'aria-hidden': 'true' }), msg));
+  vp.append(box);
+  return { set(t) { msg.textContent = t; }, stop() { box.remove(); } };
 }
 
 /* ---------------------------------------------------------------- API */
@@ -9414,11 +9457,15 @@ async function conceptPipeline(p) {
           if (v.fixes >= CONC_FIX_MAX || state.chatOff) { v.status = 'failed'; v.err = msg.slice(0, 300); break; }
           v.fixes++; v.status = 'fixing'; renderCad();
           try { await conceptFix(p, v, msg, v.kernel); } catch (e2) { v.status = 'failed'; v.err = `${msg.slice(0, 200)} · ${L('fix', 'perbaikan')}: ${String(e2.message || e2).slice(0, 160)}`; break; } } }
-      savePart(); renderCad(); }
+      savePart(); renderCad();
+      if (typeof designTrace !== 'undefined' && designTrace) { const built = g.variants.filter((x) => x.status === 'built').length, tot = g.variants.length;
+        traceSet(2, L(`${built} of ${tot} concepts built: ${v.name}`, `${built} dari ${tot} konsep terbangun: ${v.name}`)); } }
     if (!alive()) return;
     /* the worker keeps the last shape it ran (STEP export uses it): run the shown concept again */
     await wait(); if (alive() && genRes) { try { await genCall({ t: 'run', code: g.code, params: genParamVals(g) }, 40000); } catch (e) { /* the view keeps its own mesh */ } }
+    if (typeof designTrace !== 'undefined' && designTrace) traceSet(3, L('Measuring every built concept in the kernel.', 'Mengukur setiap konsep yang terbangun di kernel.'));
     await conceptRank(p, run);
+    if (typeof designTrace !== 'undefined' && designTrace) traceDone(L(`${g.variants.filter((x) => x.status === 'built').length} of ${g.variants.length} built`, `${g.variants.filter((x) => x.status === 'built').length} dari ${g.variants.length} terbangun`));
   } finally { if (conceptRun === run) { run.done = true; } renderCad(); }
 }
 const conceptHasLoads = (v, p) => { const rq = v.requirements || (p && p.gen.requirements); return !!(rq && (rq.loads || []).some((x) => x && x.where && Array.isArray(x.force_N)) && (rq.supports || []).some((x) => x && x.where)); };
@@ -9886,16 +9933,47 @@ let lastChatMeta = null;
 { const f3 = window.fetch; window.fetch = async function (url, opt) {
     const r = await f3(url, opt);
     if (typeof url === 'string' && url === API + '/chat' && !(opt && opt.headers && opt.headers['X-Idris-Concept'])) {
-      try { const j = await r.clone().json(); lastChatMeta = j ? { ...jobMeta(j), references: j.references || null, job: j.job_id ? { id: j.job_id, estimate: j.estimate || null } : j.design_job || null, status: r.status, budget: budgetHit(r.status, j) } : null; } catch (e) { lastChatMeta = null; } }
+      try { const j = await r.clone().json(); lastChatMeta = j ? { ...jobMeta(j), references: j.references || null, job: j.job_id ? { id: j.job_id, estimate: j.estimate || null } : j.design_job || null, status: r.status, budget: budgetHit(r.status, j), context_reset: j.context_reset || null, concepts: Array.isArray(j.concepts) ? j.concepts.length : 0, had_cad: !!j.cad, loads: !!(j.cad && j.cad.requirements && ((j.cad.requirements.loads || []).length)) } : null; } catch (e) { lastChatMeta = null; } }
     return r; }; }
 { const ga = genFromAI; genFromAI = function (cad) { const before = state.part, meta = lastChatMeta; const r = ga.apply(this, arguments); const p = state.part;
     if (p && p !== before && p.gen && meta && !(designJob && designJob.status === 'running')) { Object.assign(p.gen, jobMeta(meta)); if (meta.references) p.gen.references = meta.references; savePart(); }
     return r; }; }
-{ const ca = chatAI; chatAI = async function (text) { const r = await ca.apply(this, arguments); const m = lastChatMeta; lastChatMeta = null;
+let chatResetNote = null;
+{ const ca = chatAI; chatAI = async function (text) { const wb = waitBoxShow(L('IDRIS is writing the design…', 'IDRIS sedang menulis desain…')); const r = await ca.apply(this, arguments); if (wb) wb.stop(); const m = lastChatMeta; lastChatMeta = null;
     const last = [...document.querySelectorAll('#chat .msg.ai .ai-body')].pop();
     if (m && m.job && m.job.id && !(designJob && designJob.status === 'running')) { designJob = { status: 'running', message: text, events: [], round: 0, id: m.job.id, estimate: m.job.estimate, t0: Date.now() }; renderJob(); pollJob(designJob); }
-    if (m && last) { if (m.references) last.append(refsBox(m.references)); if (m.fidelity || m.target_check || (m.not_checked && m.not_checked.length) || m.validated === false) last.append(metaBox(m)); }
+    /* the solver says the sentence is a new product: drop the old brief and the pending sizes, and say so */
+    if (m && m.context_reset) { clearDesignContext(m.context_reset); }
+    /* a badge only when a model exists: "Full design" on a question would be a claim about nothing */
+    const hasModel = !!(typeof partShape !== 'undefined' && partShape);
+    if (m && last) {
+      if (m.references) last.append(refsBox(m.references));
+      if (hasModel && (m.fidelity || m.target_check || (m.not_checked && m.not_checked.length) || m.validated === false)) last.append(metaBox(m));
+      else if (!hasModel && m.fidelity) last.append(h('div', { class: 'newnote' }, L('No model yet: this answer only asks for sizes, so it carries no design badge.', 'Belum ada model: jawaban ini hanya menanyakan ukuran, jadi tidak ada badge desain.')));
+    }
+    /* a free design shows the steps that really happen */
+    if (m && (m.had_cad || m.concepts > 1)) {
+      const n = Math.max(1, m.concepts || 1);
+      const steps = [L('Plan the design', 'Rencanakan desain'), n > 1 ? L(`Write ${n} concepts`, `Tulis ${n} konsep`) : L('Write the code', 'Tulis kode'),
+        L('Build in the kernel', 'Bangun di kernel'), L('Measure the model', 'Ukur model')];
+      if (m.loads) steps.push(L('Stress check', 'Cek tegangan'));
+      traceOpen(steps, n > 1 ? L(`The solver wrote ${n} concepts for “${String(text).slice(0, 60)}”. Each one is built in the kernel now.`, `Solver menulis ${n} konsep untuk “${String(text).slice(0, 60)}”. Masing-masing dibangun di kernel sekarang.`)
+        : L(`The solver wrote the code for “${String(text).slice(0, 60)}”. It is built in the kernel now.`, `Solver menulis kode untuk “${String(text).slice(0, 60)}”. Sekarang dibangun di kernel.`));
+      if (hasModel) traceSet(2);
+    }
     return r; }; }
+/** a new product: the brief card and the pending sizes belong to the old design */
+function clearDesignContext(reset) {
+  try { chatBrief = null; saveBrief(null); } catch (e) { /* storage */ }
+  try { briefHide(); } catch (e) { /* card not shown */ }
+  try { if (typeof genPending !== 'undefined') { genPending = null; if (typeof genLastMissing !== 'undefined') genLastMissing = null; } } catch (e) { /* not in a gen design */ }
+  const why = reset && reset.to ? L(`New design started: ${reset.to}. The previous brief and sizes were cleared.`, `Desain baru dimulai: ${reset.to}. Brief dan ukuran sebelumnya dihapus.`)
+    : L('New design started: the previous brief and sizes were cleared.', 'Desain baru dimulai: brief dan ukuran sebelumnya dihapus.');
+  const note = h('div', { class: 'newnote', id: 'newDesignNote' }, why + (reset && reset.reason ? ' (' + reset.reason + ')' : ''));
+  (([...document.querySelectorAll('#chat .msg.ai .ai-body')].pop()) || aiMsg()).append(note);
+  chatResetNote = why;
+  return why;
+}
 { const cf = chatFallback; chatFallback = function (text, detail, d, noAI) { const r = cf.apply(this, arguments);
     const last = [...document.querySelectorAll('#chat .msg.ai .ai-body')].pop();
     if (last && !(noAI || state.chatOff) && !(lastChatMeta && lastChatMeta.budget) && !/daily ai budget/i.test(detail || '')) last.append(chips([{ label: L('Design it as a background job (no time limit)', 'Desain sebagai job latar (tanpa batas waktu)'), fn: () => startDesignJob(text) }]));
