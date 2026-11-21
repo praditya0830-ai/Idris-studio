@@ -235,6 +235,7 @@ check('Mark 1 tools say what works today, active tools carry no such line', () =
   ok(/Mark 1/.test(S10.plannedToolTip('mk1')) && /Circle/.test(S10.plannedToolTip('mk1')), 'mk1 tip');
   ok(S10.plannedToolTip('no').length > 0, 'not-yet tip');
   ok(S10.plannedToolTip('on') === '' && S10.plannedToolTip('gb') === '', 'no tip for working tools');
+});
 
 /* --------------------------------------------------------------------- S9 --- */
 /* the DFM and AP242 answers, lifted from index.html and checked as data */
