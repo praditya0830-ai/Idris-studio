@@ -69,7 +69,7 @@ const revCut = await run([F('shape', { kind: 'box', L: 40, W: 40, H: 20, x: 0, y
 const cutVol = vol(revCut.body);
 check('revolved cut removes material', () => ok(revCut.body && cutVol < 32000, `cut ran, ${cutVol.toFixed(1)} mm³ of 32000 left`));
 check('revolved cut leaves no error on any step', () => ok(!errs(revCut.features).length, 'errors: ' + JSON.stringify(revCut.features.map((x) => x.err || null))));
-check('revolved cut removes the amount the geometry gives (13534 mm³)',
+check('revolved cut removes 13000–14000 mm³ (about 13534 mm³)',
   () => ok(32000 - cutVol > 13000 && cutVol > 18000 && cutVol < 19000, `removed ${(32000 - cutVol).toFixed(1)} mm³, ${cutVol.toFixed(1)} left`));
 
 const revBadAngle = await run([SK(), F('revolve', { axis: 'Z', angle: 0, op: 'add' })]);
@@ -195,6 +195,83 @@ const suppressedShape = await run([F('shape', { kind: 'box', L: 10, W: 10, H: 10
 check('a suppressed step is skipped and the rest still builds', () => eq(vol(suppressedShape.body), 8000, 0.01, 'volume'));
 
 /* ------------------------------------------------------------------------ */
+/* ------------------------------------------------------------- brief (v0.40) --- */
+const bStart = html.indexOf('/* ---- v0.40 design brief'), bEnd = html.indexOf('/* ---- end brief helpers */');
+if (bStart < 0 || bEnd < 0) throw new Error('brief helpers not found in index.html');
+const B = new Function('L', `${html.slice(bStart, bEnd)}\nreturn { briefEmpty, briefRows, briefChipOptions, briefAssumed, briefOpen, briefStart };`)(L);
+
+console.log('\nDesign brief card');
+check('the card shows the brief fields in the order the solver asks for them', () => {
+  const rows = B.briefRows({ object: 'drone', purpose: 'camera', key_sizes: '450 mm', ready: false });
+  eq(rows.length, 7, 0, 'rows');
+  eq(rows[0].k, 'object', 0, 'first'); eq(rows[0].value, 'drone', 0, 'value');
+  eq(rows[1].k, 'purpose', 0, 'second'); eq(rows[2].k, 'key_sizes', 0, 'third');
+  eq(rows[3].value, '', 0, 'a missing field is empty, not invented');
+  ok(B.briefEmpty(null) && B.briefEmpty({}), 'nothing is empty');
+  ok(!B.briefEmpty({ object: 'drone' }), 'one field is not empty');
+});
+
+check('only the options the solver sent become chips', () => {
+  const o = B.briefChipOptions({ options: [{ label: 'FPV 5-inch', note: 'fast' }, { note: 'no label' }, { label: '' }] });
+  eq(o.length, 1, 0, 'chips'); eq(o[0].label, 'FPV 5-inch', 0, 'label'); eq(o[0].note, 'fast', 0, 'note');
+  eq(B.briefChipOptions({}).length, 0, 0, 'no options');
+});
+
+check('assumptions are only the ones marked assumed, and open items survive both shapes', () => {
+  const a = B.briefAssumed({ assumptions: [{ what: 'sizes', value: 'chosen by IDRIS', assumed: true }, { what: 'x', value: 'y' }] });
+  eq(a.length, 1, 0, 'assumed'); eq(a[0].what, 'sizes', 0, 'what');
+  eq(B.briefOpen({ open: ['battery?', { text: 'payload?' }, {}] }).length, 2, 0, 'open');
+  eq(B.briefAssumed({}).length, 0, 0, 'nothing');
+});
+
+check('Start design sends the kind and the concept count, an assembly plans', () => {
+  const p = B.briefStart({ kind: 'part' }, 5), a = B.briefStart({ kind: 'assembly' }, 7);
+  eq(p.kind, 'part', 0, 'kind'); eq(p.concepts, 5, 0, 'count'); eq(p.text, 'Start design', 0, 'text');
+  eq(a.kind, 'assembly', 0, 'kind'); eq(a.concepts, null, 0, 'no concepts for an assembly');
+  eq(B.briefStart({ kind: 'part' }, 0).concepts, 3, 0, 'default');
+});
+
+/* --------------------------------------------------------------------- S10 --- */
+/* the sketch gesture, snapping and tool labels, lifted from index.html */
+const s10Start = html.indexOf('/* ---- S10 helpers'), s10End = html.indexOf('/* ---- end S10 helpers */');
+if (s10Start < 0 || s10End < 0) throw new Error('S10 helpers not found in index.html');
+const S10 = new Function('L', 'f', `${html.slice(s10Start, s10End)}\nreturn { snapMM, sketchFromDrag, sketchNextText, plannedToolTip };`)(L, f);
+
+console.log('\nS10 · sketch drawn in the viewport');
+const dragC = S10.sketchFromDrag('circle', [10, 5], [22, 5], { prof: 'circle', D: 20, u: 0, v: 0, plane: 'XY', at: 'value', off: 0, n: 6 });
+check('a circle dragged from (10, 5) to (22, 5) is Ø 24 at (10, 5)', () => {
+  eq(dragC.p.D, 24, 1e-9, 'D'); eq(dragC.p.u, 10, 1e-9, 'u'); eq(dragC.p.v, 5, 1e-9, 'v');
+  ok(/24/.test(dragC.label), 'label: ' + dragC.label);
+});
+
+const dragR = S10.sketchFromDrag('rect', [0, 0], [30, 20], { prof: 'rect', W: 30, Hh: 20, u: 15, v: 10, plane: 'XY', at: 'value', off: 0 });
+check('a rectangle dragged corner to corner is W × H at its centre', () => {
+  eq(dragR.p.W, 30, 1e-9, 'W'); eq(dragR.p.Hh, 20, 1e-9, 'Hh'); eq(dragR.p.u, 15, 1e-9, 'u'); eq(dragR.p.v, 10, 1e-9, 'v');
+  ok(/30/.test(dragR.label) && /20/.test(dragR.label), 'label: ' + dragR.label);
+});
+
+check('a drag snaps to 1 mm, and to 0.1 mm with Shift', () => {
+  eq(S10.snapMM(12.4, false), 12, 1e-9, '1 mm');
+  eq(S10.snapMM(12.43, true), 12.4, 1e-9, '0.1 mm');
+  eq(S10.snapMM(-3.6, false), -4, 1e-9, 'negative');
+});
+
+const drawn = await run([F('sketch', { ...dragC.p, plane: 'XY', at: 'value', off: 0 }), F('push', { dist: 10, op: 'add', both: 'one' })]);
+check('the dragged Ø 24 sketch extruded 10 is 4523.9 mm³ (π·12²·10)', () => {
+  eq(vol(drawn.body), Math.PI * 144 * 10, Math.PI * 144 * 10 * 0.001, 'volume');
+});
+check('the dragged sketch has no error and the extrude uses it', () => ok(!errs(drawn.features).length, 'errors: ' + JSON.stringify(drawn.features.map((x) => x.err || null))));
+
+check('the next-step line names Extrude and Revolve', () => {
+  const t = S10.sketchNextText();
+  ok(/Extrude/.test(t) && /Revolve/.test(t), t);
+});
+
+check('Mark 1 tools say what works today, active tools carry no such line', () => {
+  ok(/Mark 1/.test(S10.plannedToolTip('mk1')) && /Circle/.test(S10.plannedToolTip('mk1')), 'mk1 tip');
+  ok(S10.plannedToolTip('no').length > 0, 'not-yet tip');
+  ok(S10.plannedToolTip('on') === '' && S10.plannedToolTip('gb') === '', 'no tip for working tools');
+});
 
 /* --------------------------------------------------------------------- S9 --- */
 /* the DFM and AP242 answers, lifted from index.html and checked as data */
@@ -291,6 +368,55 @@ check('solids per part: one is quiet, more than one is flagged, silence is not a
   eq(many.warnings.length, 1, 0, 'warnings are carried');
   const none = S9.ap242Solids({});
   ok(!none.reported && none.over.length === 0, 'an unreported count is not a claim');
+});
+
+/* --------------------------------------------------------------------- S11 --- */
+/* A: the status chips and coloured dots are gone, and every tool that cannot run says why. */
+const whyAt = html.indexOf('function ribWhy(t)'), whyEnd = html.indexOf('\n', whyAt);
+if (whyAt < 0 || whyEnd < 0) throw new Error('ribWhy not found in index.html');
+const ribWhy = new Function('L', html.slice(whyAt, whyEnd) + '\nreturn ribWhy;')(L);
+
+console.log('\nS11 · toolbar labels and the tools that were behind a label');
+check('no Active / Gearbox / Mark 1 / Not yet chips are drawn', () => {
+  ok(!/xr-legend/.test(html), 'legend markup left');
+  ok(!/xr-dot/.test(html), 'coloured dot left');
+});
+check('a grey tool says why in its tooltip', () => {
+  ok(/gearbox/i.test(ribWhy({ st: 'gb' })), 'gb: ' + ribWhy({ st: 'gb' }));
+  ok(/Mark 1/.test(ribWhy({ st: 'mk1' })), 'mk1: ' + ribWhy({ st: 'mk1' }));
+  ok(/IDRIS/.test(ribWhy({ st: 'no' })), 'no: ' + ribWhy({ st: 'no' }));
+  ok(ribWhy({ st: 'on' }) === '', 'on tools need no excuse');
+});
+
+const ribA = html.indexOf('const T = (n, ic, st, en, id, aka, act, alt, ai)'), ribB = html.indexOf('const RIB_ALL = ');
+if (ribA < 0 || ribB < 0) throw new Error('RIBBON not found in index.html');
+const RIBBON = new Function('L', html.slice(ribA, ribB) + '\nreturn RIBBON;')(L);
+const RIB_ALL = RIBBON.flatMap(([tab, en, id, groups]) => groups.flatMap(([g, tools]) => tools.map((t) => ({ ...t, tab, grp: g }))));
+const tool = (n) => RIB_ALL.find((t) => t.n === n);
+
+check('Exit Sketch leaves the sketch instead of opening Extrude', () => ok(tool('Exit Sketch').act === 'sketchExit', String(tool('Exit Sketch').act)));
+check('B7 Revolved Cut is open and runs revolve with op cut', () => {
+  const t = tool('Revolved Cut');
+  ok(t.st === 'on', 'status ' + t.st);
+  ok(t.act && t.act.part === 'revolve' && t.act.p.op === 'cut', JSON.stringify(t.act));
+});
+check('B8 / B11 one Drawing tool: Working Drawings (A3) opens the part drawing', () => {
+  ok(!RIB_ALL.some((t) => t.n === 'Part Drawing'), 'the duplicate Part Drawing tool is gone');
+  ok(tool('Working Drawings (A3)').st === 'on' && tool('Working Drawings (A3)').act === 'drawingAny', tool('Working Drawings (A3)').act);
+});
+check('B3 Measure and Mass Properties are two different actions', () => {
+  ok(tool('Measure').act === 'measureAny', String(tool('Measure').act));
+  ok(tool('Mass Properties').act === 'mass', String(tool('Mass Properties').act));
+  ok(!/typical density/i.test(tool('Mass Properties').en), 'the old "typical density" text is gone');
+});
+check('B9 / B10 / B11 route to the part or the gearbox by what is open', () => {
+  ok(tool('Report').act === 'reportAny', String(tool('Report').act));
+  ok(tool('Section View').act === 'sectionAny', String(tool('Section View').act));
+  ok(tool('Static Stress (FEA)').act === 'stressAny', String(tool('Static Stress (FEA)').act));
+  ok(tool('Modal / Frequency').act === 'modalAny', String(tool('Modal / Frequency').act));
+  ok(tool('Working Drawings (A3)').act === 'drawingAny', String(tool('Working Drawings (A3)').act));
+  ok(tool('Bill of Materials').act === 'asmBom' && tool('Exploded View').act === 'asmExplode', 'assembly tools');
+  ok(tool('Draft Analysis').act === 'dfmDraft', String(tool('Draft Analysis').act));
 });
 
 console.log(`\n${pass} passed, ${fails.length} failed`);

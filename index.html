@@ -581,7 +581,6 @@ body.cad .xrib{display:block;background:var(--white);border-bottom:1px solid var
 .xr-tabs::-webkit-scrollbar{display:none}
 .xr-tabs button{border:0;background:none;padding:7px 11px 6px;font-size:12.5px;font-weight:500;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;flex:none}
 .xr-tabs button:hover{color:var(--text)} .xr-tabs button.on{color:var(--text);border-bottom-color:var(--accent);font-weight:600}
-.xr-legend{margin-left:auto;display:flex;gap:5px;padding-left:12px;flex:none}
 .rbst{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;padding:1px 7px 1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap;background:var(--white)}
 .rbst::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent)}
 .rbst.gb::before{background:#d97706} .rbst.mk1::before{background:#7c3aed} .rbst.no::before{background:transparent;border:1.5px solid var(--dim);width:4px;height:4px}
@@ -598,8 +597,8 @@ body.cad .xrib{display:block;background:var(--white);border-bottom:1px solid var
 .xr-t.run .xr-i svg{stroke:var(--icon)}
 .xr-t:not(.run){color:var(--muted)} .xr-t:not(.run) .xr-i svg{opacity:.5}
 .xr-t.ai{color:var(--text)} .xr-t.ai .xr-i svg{opacity:.85;stroke:var(--accent)}
-.xr-dot{position:absolute;right:-5px;top:-3px;width:7px;height:7px;border-radius:50%;border:1.5px solid var(--white);box-sizing:content-box}
-.xr-dot.gb{background:#d97706} .xr-dot.mk1{background:#7c3aed} .xr-dot.no{background:var(--white);border-color:var(--dim);width:5px;height:5px}
+/* S11-A: no status chips and no coloured dots. A tool that cannot run now is grey, and its tooltip and popover say why. */
+.xr-t.na{opacity:.45} .xr-t.na .xr-i svg{filter:grayscale(1)}
 .xr-n{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-align:center;max-width:64px}
 .ribpop{position:absolute;z-index:95;width:340px;background:var(--panel);border:1px solid var(--line2);border-radius:12px;box-shadow:0 14px 36px var(--shadow);padding:12px 14px 12px;font-size:13px}
 .ribpop.sheet{position:fixed;left:8px;right:8px;bottom:8px;width:auto}
@@ -609,7 +608,8 @@ body.cad .xrib{display:block;background:var(--white);border-bottom:1px solid var
 .ribpop .rp-act{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .gen-src{padding:8px 12px;font-size:12.5px} .gen-src p{margin:6px 0 0;line-height:1.45}
 .gen-code{margin:6px 12px;font-size:12px} .gen-code summary{cursor:pointer;color:var(--accent)} .gen-code pre{max-height:240px;overflow:auto;background:var(--white);border:1px solid var(--line);border-radius:8px;padding:8px;font:11px/1.45 var(--mono);white-space:pre}
-.gen-h{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px}
+.gen-h{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px}
+.gen-h .psrc-note{flex-basis:100%;margin-left:0;text-align:left;text-transform:none;letter-spacing:0;font-size:10.5px}
 .gen-checks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px} .gen-checks li{display:flex;gap:8px;align-items:flex-start;font-size:12.5px} .gen-checks li .cdot{margin-top:4px;flex:none} .gen-checks b{display:block} .gen-checks span{color:var(--muted)}
 .gen-var{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0;font-size:12px;color:var(--muted)}
 .gen-bed{display:flex;align-items:center;gap:6px;margin:10px 0;font-size:12px;color:var(--muted)} .gen-bed input{width:64px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--white);color:var(--text)}
@@ -617,10 +617,14 @@ body.cad .xrib{display:block;background:var(--white);border-bottom:1px solid var
 .lib-in{background:var(--panel);color:var(--text);border-radius:14px;width:100%;max-width:780px;max-height:88vh;overflow:auto;padding:16px 20px 20px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
 .lib-h{display:flex;align-items:center;justify-content:space-between} .lib-h b{font-size:17px} .lib-h .x{border:0;background:none;font-size:16px;color:var(--muted)}
 .lib-in h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 8px}
+.bear-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;margin:10px 0}
+.bear-form .pform-l{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+.bear-form input,.bear-form select{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line2);border-radius:6px;background:var(--white);color:var(--text);min-width:0}
+.bear-out{margin-top:8px} .bear-out .kvs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 14px;margin:8px 0}
 .lib-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
 .lib-c{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;border:1px solid var(--line);background:var(--white);border-radius:10px;padding:10px 12px;color:var(--text);cursor:pointer}
 .lib-c:hover{border-color:var(--accent-line);background:var(--hover)} .lib-c b{font-size:13.5px} .lib-c span{font-size:12px;color:var(--muted)} .lib-c em{font-style:normal;font-size:10.5px;color:var(--tag-ink)}
-@media (max-width:700px){.xr-legend{display:none} .xr-t{width:58px;min-height:50px} .xr-n{max-width:56px} .xr-gl{font-size:9px}}
+@media (max-width:700px){.xr-t{width:58px;min-height:50px} .xr-n{max-width:56px} .xr-gl{font-size:9px}}
 .cselbar{position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:4;display:flex;align-items:center;gap:2px;padding:4px;background:#18202b;color:#e2e8f0;border-radius:10px;box-shadow:0 8px 24px rgba(16,24,40,.22);font-size:12px;max-width:calc(100% - 24px);overflow-x:auto}
 .cselbar .nm{padding:6px 10px;color:#b8c2d0;white-space:nowrap} .cselbar button{border:0;background:transparent;color:#e2e8f0;padding:6px 11px;border-radius:7px;font-size:12px;white-space:nowrap}
 .cselbar button:hover{background:rgba(255,255,255,.1)} .cselbar button.ai{background:var(--accent);color:var(--on-accent);font-weight:600} .cselbar button.x{color:#b8c2d0}
@@ -744,8 +748,34 @@ body.at-home .learn{display:none}
 .pform label{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,150px);align-items:center;gap:8px;font-size:12.5px}
 .pform input,.pform select{width:100%;min-width:0;font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line2);border-radius:6px;background:var(--white);color:var(--text)}
 .pform .pnum{display:flex;align-items:center;gap:4px} .pform .pnum em{font-style:normal;color:var(--muted);font-size:11.5px;min-width:22px}
-.pform .pact{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+/* S10: the form's actions stay visible at the bottom of the scrolling properties panel, never under the Checks bar */
+.pform .pact{display:flex;gap:6px;flex-wrap:wrap;margin:0;position:sticky;bottom:0;z-index:3;background:var(--white);border-top:1px solid var(--line);padding:8px 0 6px}
+.sklabel{position:absolute;z-index:9;pointer-events:none;background:var(--accent);color:var(--on-accent);font:600 11.5px/1 var(--sans);padding:4px 7px;border-radius:6px;transform:translate(14px,-28px);white-space:nowrap}
+.sknext{position:absolute;z-index:6;left:50%;transform:translateX(-50%);bottom:calc(var(--ckH,40px) + 14px);display:flex;align-items:center;gap:8px;max-width:calc(100% - 32px);background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:8px 10px;box-shadow:0 8px 24px var(--shadow);font-size:12.5px;color:var(--text)}
+.sknext span{min-width:0}
+.skp{font-size:11.5px;color:var(--muted);align-self:center;margin-right:auto}
+.viewport.sketching #cv{cursor:crosshair}
+@media (min-width:1181px){ body.cad .sknext{left:calc(50% + (var(--ovL) - var(--ovR)) / 2)} }
+.xr-t.na .xr-i{opacity:.55}
 .pdoc{font-size:12px;color:var(--muted);padding:4px 2px}
+/* v0.40 design brief: the card in the chat panel, editable field by field */
+.briefcard{flex:0 0 auto;max-height:50%;overflow:auto;border-bottom:1px solid var(--line);background:var(--white);padding:8px 12px;display:flex;flex-direction:column;gap:6px}
+.bc-h{display:flex;align-items:center;gap:8px;font-size:12.5px} .bc-h b{font-size:13px}
+.bc-st{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border:1px solid var(--line2);border-radius:999px;padding:1px 7px}
+.bc-h .linkbtn{margin-left:auto}
+.bc-b{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px}
+.bc-r{display:grid;grid-template-columns:62px minmax(0,1fr);gap:5px;align-items:baseline;font-size:11.5px;min-width:0}
+.bc-k{color:var(--muted)} .bc-v{text-align:left;background:none;border:0;padding:1px 2px;font:inherit;color:var(--text);border-bottom:1px dashed transparent;cursor:text;min-width:0;overflow-wrap:anywhere}
+.bc-v:hover{border-bottom-color:var(--line2)} .bc-v.empty{color:var(--dim)}
+.bc-in{width:100%;font:inherit;font-size:12px;padding:2px 4px;border:1px solid var(--accent);border-radius:4px;background:var(--white);color:var(--text)}
+.bc-a,.bc-o{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:11.5px;color:var(--muted);margin-top:2px;grid-column:1/-1}
+.bc-tag{background:var(--accent-bg);color:var(--sel-ink);border-radius:5px;padding:1px 6px}
+.bc-go{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px}
+.bc-go .chip{flex:0 0 auto;min-height:24px;white-space:nowrap}
+.bc-go .chip.primary{flex:1 1 auto;justify-content:center}
+.bchips{display:grid;gap:6px;margin-top:8px}
+.bq b{font-size:12.5px} .bq-o{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.bsg{display:flex;gap:4px;align-items:center;font-size:12px;flex-wrap:wrap}
 .cmat select{width:100%;margin:4px 0;font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--line2);border-radius:6px;background:var(--white);color:var(--text)}
 .tact{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 body.comfy .pform input,body.comfy .pform select{min-height:40px}
@@ -821,6 +851,21 @@ body.focus:not(.focus-tree) .edge-l,body.focus:not(.focus-chat) .edge-r{display:
 .conc-r.ok{color:var(--ok);background:var(--ok-bg)} .conc-r.bad{color:var(--bad);background:var(--bad-bg)}
 .conc-i{font-size:11.5px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .conc-m{font-size:11.5px;color:var(--text)} .conc-m .ok{color:var(--ok)} .conc-m .bad{color:var(--bad)}
+.conc-nofea{color:var(--muted);font-size:11px} .conc-t b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conc-slot{flex:0 0 228px;display:flex;flex-direction:column;gap:4px} .conc-row>.conc-slot>.conc-c{flex:0 0 auto;width:100%}
+.conc-fix{display:flex} .conc-fix .chip{width:100%;justify-content:center;font-size:11.5px}
+.gen-params label{grid-template-columns:minmax(0,1fr);align-items:stretch;gap:3px}
+.gen-params .plab{display:flex;align-items:baseline;gap:6px;font-size:12.5px}
+.gen-params .psrc{font-style:normal;margin-left:auto;font-size:10.5px;line-height:1.5;color:var(--muted);background:var(--lt-bg);border-radius:999px;padding:1px 7px;white-space:nowrap}
+.gen-params .psrc.you{color:var(--accent);background:var(--accent-bg)}
+.psrc-note{font-weight:400;font-size:10.5px;color:var(--muted);margin-left:auto;text-align:right}
+/* S11-ACE-3: when a part is open, the left pane has one scroll area (the tree is never a second one). */
+/* S11-ACE-3: with a generated part open, the tree is its steps (left panel), not "Part · 0 features" + saved parts. */
+.pane-tree:has(#cadLeft .gen-src)>#tree{display:none}
+/* one scroll for the whole left column (steps + parameters), never one scrollbar per panel */
+.pane-tree:has(#cadLeft .gen-src){overflow-y:auto}
+.pane-tree:has(#cadLeft .gen-src)>#cadLeft{flex:none;min-height:0;overflow:visible}
+.pane-tree:has(#cadLeft .gen-src)>.cprops{flex:none;max-height:none;overflow:visible}
 .via .route{color:var(--dim)} .err-d{font-size:11.5px;color:var(--muted);font-family:var(--mono);margin-top:4px;white-space:pre-wrap}
 
 .conc-strip{position:absolute;z-index:7;left:12px;right:12px;bottom:calc(var(--ckH,40px) + 14px);display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--glass);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 28px var(--shadow);max-height:46%;overflow:auto}
@@ -1145,9 +1190,10 @@ class Viewer {
   _bindInput() {
     const c = this.canvas;
     const touch = () => { this.anim = null; this.dirty = true; };
-    c.addEventListener('pointerdown', (e) => { c.setPointerCapture(e.pointerId);
+    c.addEventListener('pointerdown', (e) => { if (this.drawMode) return; c.setPointerCapture(e.pointerId);
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY }); this.pinch = 0; touch(); });
     c.addEventListener('pointermove', (e) => {
+      if (this.drawMode) return;
       const p = this.pointers.get(e.pointerId); if (!p) return;
       if (this.pointers.size === 1) {
         this.yaw -= (e.clientX - p.x) * 0.008;
@@ -1350,6 +1396,15 @@ class Viewer {
     if (parts && !this.ghost && this.center) { this.ghost = parts.map((p) => this._build(this._parseSTL(p.buf.slice(0)), this.center, p)); this._ghostSrc = parts; }
     this.ghostA = alpha; this.dirty = true;
   }
+  /** S10: the sketch being typed, drawn blue and translucent in the same frame as the part. No camera reset, and
+   *  nothing is saved: this is a preview of the same build path, not a feature. */
+  setPreview(parts) {
+    const gl = this.gl;
+    if (this.preview) for (const p of this.preview) for (const k of ['pos', 'nor', 'feat', 'featA', 'wire', 'wireA']) if (p[k]) gl.deleteBuffer(p[k]);
+    this.preview = null;
+    if (parts && parts.length && this.ok) this.preview = parts.map((p) => this._build(this._parseSTL(p.buf.slice(0)), this.center || [0, 0, 0], p));
+    this.dirty = true;
+  }
   setVisible(i, on) { if (this.parts && this.parts.at(i)) { this.parts.at(i).visible = on; this.dirty = true; } }
   setHighlight(i) { this.highlight = i; if (i >= 0 && this.selTri) this.setFaceSel(null, null); else this.dirty = true; }
   setHousingMode(m) { this.housingMode = m; this.dirty = true; }
@@ -1506,7 +1561,7 @@ class Viewer {
       wire: this._buf(new Float32Array(wire)), wireN: wire.length / 3, wireA: this._buf(new Float32Array(wire.length / 3).fill(1)) };
   }
   _free() {
-    const gl = this.gl; this.setGhost(null);
+    const gl = this.gl; this.setGhost(null); this.setPreview(null);
     if (this.selFace) { for (const k of ['pos', 'nor', 'wire', 'wireA']) if (this.selFace[k]) gl.deleteBuffer(this.selFace[k]); }
     this.selFace = null; this.selTri = null;
     for (const p of this.parts || []) for (const k of ['pos', 'nor', 'feat', 'featA', 'wire', 'wireA']) gl.deleteBuffer(p[k]);
@@ -1560,7 +1615,12 @@ class Viewer {
     const view = Viewer.lookAt(eye, T, up);
     if (this.onView) this.onView(view);
     const m = this.model;
-    if (!m) { this._drawEmpty(Viewer.mul(Viewer.perspective(this.fov, W / H, d * 0.02, d * 20), view)); return; }
+    if (!m) { const em = Viewer.mul(Viewer.perspective(this.fov, W / H, d * 0.02, d * 20), view); this._mvp = em; this._drawEmpty(em);
+      if (this.preview) for (const g of this.preview) {
+        this._mesh(g, [0.25, 0.50, 0.95], 0.45, em, view, Viewer.I);
+        gl.useProgram(this.pLine); this._lines(this.pLine, em, g.feat, g.featA, g.featN, [0.12, 0.36, 0.95, 1], true, Viewer.I);
+      }
+      return; }
     const proj = Viewer.perspective(this.fov, W / H, d * 0.05, d * 12);
     const mvp = Viewer.mul(proj, view); this._mvp = mvp;
     const de = document.documentElement, dark = de.dataset.vpdark ? de.dataset.vpdark === '1' : de.dataset.theme === 'dark';
@@ -1616,6 +1676,11 @@ class Viewer {
       gl.useProgram(this.pLine); this._lines(this.pLine, a, p.feat, p.featA, p.featN, edge, true, M);
     });
     drawEnv();
+    /* S10: the sketch being typed */
+    if (this.preview) for (const g of this.preview) {
+      this._mesh(g, [0.25, 0.50, 0.95], 0.42, mvp, view, I);
+      gl.useProgram(this.pLine); this._lines(this.pLine, mvp, g.feat, g.featA, g.featN, [0.12, 0.36, 0.95, 0.95], true, I);
+    }
     if (this.playing && this.markers) { gl.useProgram(this.pLine); gl.lineWidth(2);
       for (const mk of this.markers) { const pp = this.parts.at(mk.i); if (!pp || !shown(pp)) continue; const [a, , M] = PM(mk.i);
         this._lines(this.pLine, a, mk.pos, mk.a, mk.n, [0.96, 0.62, 0.04, 1], true, M); }
@@ -6258,6 +6323,8 @@ function startPart(saved) {
 function leavePart() { if (!state.part) return; savePart(); state.part = null; partShape = null; partInfo = null; partSel = null; partArm = null; viewer.clear(); $('#vempty').classList.remove('hide'); renderCad(); renderTree(); }
 /** a rail / palette tool: start a part if needed, then open the tool's form in Properties */
 function partTool(k, preset, label) {
+  /* S11-B3: Measure on an empty workspace must not start a new part; it asks for a part first. */
+  if (k === 'measure' && !state.part) return say(para(L('Build or open a part first.', 'Bangun atau buka part dulu.'), 'm'));
   if (!state.part) {
     if (state.variants.length) { say(para(L('Part tools build a new part from scratch; the gearbox is changed with Edit or by asking IDRIS. Starting a new part in an empty design.', 'Alat part membuat part baru dari nol; gearbox diubah lewat Edit atau dengan bertanya ke IDRIS. Memulai part baru di desain kosong.'), 'm')); }
     startPart();
@@ -6270,22 +6337,150 @@ function partTool(k, preset, label) {
   if (k === 'revolve' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Revolve needs a sketch: draw the profile first.', 'Revolve butuh sketch: buat profilnya dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'dim' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Smart Dimension drives a sketch size: draw a sketch first.', 'Smart Dimension mengatur ukuran sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   partArm = { type: k, p: { ...defaults(k), ...(preset || {}) }, n: label || null, d: label && typeof RIB_ALL !== 'undefined' ? (RIB_ALL.find((t) => t.n === label) || {}) : null }; partSel = null; cadTab = 'design';
-  if (narrow()) setChat(true);
+  /* S10-A: opening a tool shows the panel that holds its form, scrolls the form into view and focuses its first field */
+  if (narrow() || document.body.classList.contains('hide-chat')) setChat(true);
   renderCad();
-  requestAnimationFrame(() => { const i = document.querySelector('#cadProps .pform input, #cadProps .pform select'); if (i) i.focus(); });
+  requestAnimationFrame(() => {
+    const pr = $('#cadProps'), form = document.querySelector('#cadProps .pform');
+    if (form && form.scrollIntoView) form.scrollIntoView({ block: 'nearest' }); else if (pr) pr.scrollTop = 0;
+    const i = document.querySelector('#cadProps .pform input') || document.querySelector('#cadProps .pform select'); if (i) { i.focus(); if (i.select) i.select(); }
+    if (k === 'sketch') updateSketchGhost(0); else viewer.setPreview(null);
+  });
 }
 /* ---- part UI inside the CAD layout */
 function pform(type, p, onOk, okLabel, onCancel) {
   const box = h('div', { class: 'pform' });
+  /* S10-B: every changed number redraws the ghost through the same build path (debounced in updateSketchGhost) */
+  const ghost = () => { if (typeof partArm !== 'undefined' && partArm && partArm.type === type && typeof updateSketchGhost === 'function') updateSketchGhost(); };
   const draw = () => { box.innerHTML = '';
     FEAT[type].fields.forEach((x) => { if (x.show && !x.show(p)) return; if (x.first === false && !state.part.features.some((f) => f.type === 'shape' || f.type === 'push') && !partSel) return;
       const lab = h('label', null, h('span', null, L(x.en, x.id)));
       if (x.t === 'num') lab.append(h('span', { class: 'pnum' }, h('input', { type: 'number', inputmode: 'decimal', value: p[x.k], step: x.step || 'any', min: x.min ?? 0, 'data-k': x.k,
-        oninput: (e) => { p[x.k] = e.target.value === '' ? '' : Number(e.target.value); } }), x.unit ? h('em', null, x.unit) : null));
-      else lab.append(h('select', { 'data-k': x.k, onchange: (e) => { p[x.k] = e.target.value; draw(); } }, x.opts.map(([v, t]) => h('option', { value: v, selected: v === p[x.k] }, L(...t)))));
+        oninput: (e) => { p[x.k] = e.target.value === '' ? '' : Number(e.target.value); ghost(); } }), x.unit ? h('em', null, x.unit) : null));
+      else lab.append(h('select', { 'data-k': x.k, onchange: (e) => { p[x.k] = e.target.value; draw(); ghost(); } }, x.opts.map(([v, t]) => h('option', { value: v, selected: v === p[x.k] }, L(...t)))));
       box.append(lab); });
-    box.append(h('div', { class: 'pact' }, h('button', { class: 'chip primary', disabled: partBusy, onclick: onOk }, okLabel), onCancel ? h('button', { class: 'chip', onclick: onCancel }, L('Cancel', 'Batal')) : null)); };
-  draw(); box.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); onOk(); } }); return box;
+    box.append(h('div', { class: 'pact' }, h('span', { class: 'skp', id: 'skPrev', hidden: true }),
+      h('button', { class: 'chip primary', disabled: partBusy, onclick: onOk }, okLabel), onCancel ? h('button', { class: 'chip', onclick: onCancel }, L('Cancel', 'Batal')) : null)); };
+  draw(); box.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); onOk(); } else if (e.key === 'Escape') { e.preventDefault(); if (onCancel) onCancel(); } }); return box;
+}
+
+/* ---- S10 helpers: the sketch gesture, its snapping and the tool labels (lifted by tests/features.test.mjs) */
+function snapMM(v, fine) { const step = fine ? 0.1 : 1; return Math.round((+v || 0) / step) * step; }
+/** prof + two points on the sketch plane -> the form values the same build path reads. circle/poly: centre + radius;
+ *  rect/slot: two opposite corners. The engineer's typed value always wins after this. */
+function sketchFromDrag(prof, a, b, base) {
+  const p = { ...(base || {}) }, ax = +a[0], ay = +a[1], bx = +b[0], by = +b[1], dx = bx - ax, dy = by - ay;
+  if (prof === 'circle' || prof === 'poly') { p.u = ax; p.v = ay; p.D = Math.round(2 * Math.hypot(dx, dy) * 10) / 10; return { p, label: 'Ø ' + f(p.D, 1) }; }
+  p.W = Math.round(Math.abs(dx) * 1e6) / 1e6; p.Hh = Math.round(Math.abs(dy) * 1e6) / 1e6;
+  p.u = (ax + bx) / 2; p.v = (ay + by) / 2;
+  return { p, label: f(p.W, 1) + ' × ' + f(p.Hh, 1) };
+}
+/** the one-line next step after a sketch, and where it goes */
+function sketchNextText() { return L('Next: Extrude this sketch (Features → Extruded Boss/Base) or Revolve', 'Berikutnya: Extrude sketch ini (Features → Extruded Boss/Base) atau Revolve'); }
+/** Mark 1 / Not yet tools are grey, and their tooltip says what works today */
+function plannedToolTip(st) { return (st === 'mk1' || st === 'no') ? L('Coming in Mark 1 — use Circle, Corner Rectangle, Slot or Polygon now', 'Akan datang di Mark 1 — pakai Circle, Corner Rectangle, Slot, atau Polygon sekarang') : ''; }
+/* ---- end S10 helpers */
+
+/* ---- S10-C: drawing in the viewport. The click point goes through the camera into the sketch plane, snaps to 1 mm
+ * (Shift 0.1 mm) and to the centre/corners of a sketch already on that plane, then writes the form fields. Nothing is
+ * saved: unconfirmed values are a ghost built by the same buildPart path. */
+let skDrag = null, skGhostT = null, skGhostSeq = 0;
+const sketchTool = () => (typeof partArm !== 'undefined' && partArm && partArm.type === 'sketch') ? partArm : null;
+const sketchDrawable = () => { const a = sketchTool(); return !!a && ['circle', 'rect', 'slot', 'poly'].includes(a.p.prof); };
+const partTopZ = () => (partShape ? partShape.boundingBox.bounds[1][2] : 0);
+const sketchPlaneAt = (p) => (p.plane === 'XY' && p.at !== 'value') ? partTopZ() : (+p.off || 0);
+function planeRay(clientX, clientY) {
+  const vp = $('#viewport'), r = vp.getBoundingClientRect();
+  const nx = (clientX - r.left) / Math.max(1, r.width) * 2 - 1, ny = 1 - (clientY - r.top) / Math.max(1, r.height) * 2 - 1;
+  const d = viewer.dist, cp = Math.cos(viewer.pitch), T = viewer.target || [0, 0, 0];
+  const eye = [T[0] + d * cp * Math.sin(viewer.yaw), T[1] + d * Math.sin(viewer.pitch), T[2] + d * cp * Math.cos(viewer.yaw)];
+  const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+  const f = nrm([T[0] - eye[0], T[1] - eye[1], T[2] - eye[2]]);
+  const upW = Math.abs(viewer.pitch) > 1.5 ? [-Math.sin(viewer.yaw), 0, -Math.cos(viewer.yaw)] : [0, 1, 0];
+  const right = nrm([f[1] * upW[2] - f[2] * upW[1], f[2] * upW[0] - f[0] * upW[2], f[0] * upW[1] - f[1] * upW[0]]);
+  const up = [right[1] * f[2] - right[2] * f[1], right[2] * f[0] - right[0] * f[2], right[0] * f[1] - right[1] * f[0]];
+  const asp = Math.max(1, r.width) / Math.max(1, r.height), hh = Math.tan(viewer.fov / 2), hw = hh * asp;
+  return { eye, dir: nrm([f[0] + right[0] * nx * hw + up[0] * ny * hh, f[1] + right[1] * nx * hw + up[1] * ny * hh, f[2] + right[2] * nx * hw + up[2] * ny * hh]) };
+}
+function planePoint(clientX, clientY, p) {
+  const { eye, dir } = planeRay(clientX, clientY), c = viewer.center || [0, 0, 0], at = sketchPlaneAt(p);
+  const axis = p.plane === 'XY' ? 1 : p.plane === 'XZ' ? 2 : 0;
+  const fixed = axis === 1 ? at - c[1] : axis === 2 ? -at - c[2] : at - c[0];
+  if (Math.abs(dir[axis]) < 1e-9) return null;
+  const t = (fixed - eye[axis]) / dir[axis]; if (!(t > 0)) return null;
+  const w = [eye[0] + dir[0] * t, eye[1] + dir[1] * t, eye[2] + dir[2] * t];
+  return axis === 1 ? [w[0] + c[0], -(w[2] + c[2])] : axis === 2 ? [w[0] + c[0], w[1] + c[1]] : [-(w[2] + c[2]), w[1] + c[1]];
+}
+function snapPoint(pt, fine, p) {
+  for (const ft of (state.part ? state.part.features : [])) {
+    if (ft.type !== 'sketch' || ft.off || ft.p.plane !== p.plane) continue;
+    const q = ft.p, u = +q.u || 0, v = +q.v || 0, pts = [[u, v]];
+    if (q.prof === 'rect' || q.prof === 'slot') pts.push([u - (+q.W || 0) / 2, v - (+q.Hh || 0) / 2], [u + (+q.W || 0) / 2, v + (+q.Hh || 0) / 2]);
+    for (const [tx, ty] of pts) if (Math.hypot(tx - pt[0], ty - pt[1]) < 4) return [tx, ty];
+  }
+  return [snapMM(pt[0], fine), snapMM(pt[1], fine)];
+}
+function showSkLabel(text, cx, cy) {
+  const vp = $('#viewport'); let el = $('#skLabel');
+  if (!el) { el = h('div', { id: 'skLabel', class: 'sklabel' }); vp.append(el); }
+  const r = vp.getBoundingClientRect();
+  el.textContent = text; el.style.left = Math.max(0, cx - r.left) + 'px'; el.style.top = Math.max(0, cy - r.top) + 'px';
+}
+function hideSkLabel() { const el = $('#skLabel'); if (el) el.remove(); }
+function sketchPreviewNote(arm, ok) {
+  const n = document.getElementById('skPrev'); if (!n) return;
+  if (!arm || !ok) { n.hidden = true; n.textContent = ''; return; }
+  const p = arm.p, size = (p.prof === 'circle' || p.prof === 'poly') ? 'Ø ' + f(+p.D || 0, 1) : f(+p.W || 0, 1) + ' × ' + f(+p.Hh || 0, 1);
+  n.hidden = false; n.textContent = L('Preview', 'Pratinjau') + ': ' + size + ' · ' + L('not saved yet', 'belum disimpan');
+}
+async function buildSketchGhost() {
+  const seq = ++skGhostSeq, arm = sketchTool();
+  if (!arm || !state.part) { sketchPreviewNote(null, false); return viewer.setPreview(null); }
+  let out = null;
+  try { out = await buildPart({ ...state.part, features: [...state.part.features, { id: 'ghost', type: 'sketch', p: { ...arm.p } }] }); } catch (e) { out = null; }
+  if (seq !== skGhostSeq) return;
+  const s = out && out.open && out.open[out.open.length - 1];
+  if (!s) { sketchPreviewNote(null, false); return viewer.setPreview(null); }
+  try { const g = out.profile(s.s).sketchOnPlane(s.s.plane, s.at).extrude(0.2);
+    viewer.setPreview([{ buf: meshToSTL(zUp(g.mesh({ tolerance: 0.1, angularTolerance: 0.3 }))), kind: 'sketch', name: 'preview' }]);
+    sketchPreviewNote(arm, true);
+  } catch (e) { sketchPreviewNote(arm, false); viewer.setPreview(null); }
+}
+function updateSketchGhost(delay = 200) { clearTimeout(skGhostT); skGhostT = setTimeout(buildSketchGhost, delay); }
+function applySketchDrag(e) {
+  const a = skDrag.a, b = skDrag.b || skDrag.a, r = sketchFromDrag(partArm.p.prof, a, b, partArm.p);
+  Object.assign(partArm.p, r.p);
+  document.querySelectorAll('#cadProps .pform input[data-k]').forEach((el) => { const k = el.dataset.k; if (k in r.p && !isNaN(+r.p[k])) el.value = Math.round(+r.p[k] * 1000) / 1000; });
+  showSkLabel(r.label, e.clientX, e.clientY);
+  updateSketchGhost(160);
+}
+{ const cv = $('#cv');
+  cv.addEventListener('pointerdown', (e) => {
+    if (!sketchDrawable() || partBusy || e.button > 0) return;
+    const pt = planePoint(e.clientX, e.clientY, partArm.p); if (!pt) return;
+    skDrag = { id: e.pointerId, a: snapPoint(pt, e.shiftKey, partArm.p), b: null };
+    viewer.drawMode = true; try { cv.setPointerCapture(e.pointerId); } catch (err) { /* capture unavailable */ }
+    e.preventDefault(); e.stopPropagation();
+  }, true);
+  cv.addEventListener('pointermove', (e) => {
+    if (!skDrag || e.pointerId !== skDrag.id) return;
+    const pt = planePoint(e.clientX, e.clientY, partArm.p); if (pt) { skDrag.b = snapPoint(pt, e.shiftKey, partArm.p); applySketchDrag(e); }
+    e.preventDefault(); e.stopPropagation();
+  }, true);
+  const end = () => { if (!skDrag) return; skDrag = null; viewer.drawMode = false; hideSkLabel(); updateSketchGhost(0); };
+  cv.addEventListener('pointerup', end, true); cv.addEventListener('pointercancel', end, true);
+}
+/* S10-D: after a sketch, one line says what comes next and opens it */
+function renderSketchNext() {
+  const vp = $('#viewport'); let el = $('#skNext');
+  const feats = state.part ? state.part.features.filter((f) => !f.off) : [];
+  const last = feats[feats.length - 1];
+  if (!state.part || !isCad() || !last || last.type !== 'sketch') { if (el) el.remove(); return; }
+  if (!el) { el = h('div', { id: 'skNext', class: 'sknext', role: 'status' }); vp.append(el); }
+  el.innerHTML = '';
+  el.append(h('span', null, sketchNextText()),
+    h('button', { class: 'chip primary', onclick: () => partTool('push') }, L('Extrude', 'Extrude')),
+    h('button', { class: 'chip', onclick: () => partTool('revolve') }, 'Revolve'));
 }
 function renderPartCad() {
   const p = state.part, cr = $('#cadCrumb'); cr.innerHTML = '';
@@ -6327,14 +6522,25 @@ function renderPartCad() {
   if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
       h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : TOOL_GROUPS.find((g) => g[0] === partArm.type)[2]),
-      pform(partArm.type, partArm.p, () => { p.features.push({ id: Date.now().toString(36), type: partArm.type, p: { ...partArm.p } }); partSel = p.features.length - 1; const fit = p.features.length === 1; partArm = null; if (narrow()) setChat(false); rebuildPart(fit); },
-        L('Add & build', 'Tambah & bangun'), () => { partArm = null; renderCad(); }));
+      pform(partArm.type, partArm.p, () => { p.features.push({ id: Date.now().toString(36), type: partArm.type, p: { ...partArm.p } }); partSel = p.features.length - 1; const fit = p.features.length === 1; partArm = null; viewer.setPreview(null); hideSkLabel(); if (narrow()) setChat(false); rebuildPart(fit); },
+        L('Add & build', 'Tambah & bangun'), () => { partArm = null; viewer.setPreview(null); hideSkLabel(); renderCad(); }));
   } else if (fsel) {
     const edit = { ...fsel.p };
     pr.append(h('h2', null, h('span', null, `${partSel + 1}. ${featName(fsel)}`), h('span', { class: 'phd' }, h('small', null, FEAT[fsel.type].label(fsel.p)))),
       ...[fsel.err ? h('div', { class: 'warnbox bad' }, h('b', null, L('This step failed', 'Langkah ini gagal')), h('div', null, fsel.err)) : null,
         fsel.note ? h('p', { class: 'hint' }, fsel.note) : null].filter(Boolean),
       pform(fsel.type, edit, () => { fsel.p = { ...edit }; if (narrow()) setChat(false); rebuildPart(); }, L('Update & rebuild', 'Perbarui & bangun ulang'), () => { partSel = null; renderCad(); }));
+  } else if (partSel === 'mass') {
+    /* S11-B3: Mass Properties has its own panel: kernel volume and area, mass = volume × density, and where the density comes from. */
+    const mat = PMAT[state.part.material] || PMAT.aluminium;
+    const src = (typeof PMAT_SRC !== 'undefined' && PMAT_SRC[state.part.material]) || L('IDRIS material table (typical value, not a certified lot)', 'Tabel material IDRIS (nilai tipikal, bukan sertifikat lot)');
+    pr.append(h('h2', null, h('span', null, L('Mass Properties', 'Properti Massa')), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))));
+    if (I) pr.append(kvs([[L('Volume', 'Volume'), `${f(I.vol / 1000, 2)} cm³`], [L('Surface area', 'Luas permukaan'), `${f(I.area / 100, 2)} cm²`],
+      [L('Size X × Y × Z', 'Ukuran X × Y × Z'), I.size.map((x) => f(x, 2)).join(' × ') + ' mm'], [L('Density', 'Densitas'), `${mat[1]} g/cm³ · ${mat[0]}`], [L('Mass', 'Massa'), `${f(I.vol / 1000 * mat[1], 1)} g`]]),
+      h('div', { class: 'pform' }, h('label', null, h('span', null, L('Material (drives the density)', 'Material (menentukan densitas)')),
+        h('select', { onchange: (e) => { state.part.material = e.target.value; rebuildPart(); }, 'aria-label': L('Material', 'Material') }, Object.entries(PMAT).map(([k, [n, rho]]) => h('option', { value: k, selected: k === state.part.material }, `${n} · ${rho} g/cm³`))))),
+      h('p', { class: 'hint' }, L('Volume and area come from the OpenCascade kernel in this browser. Mass = volume × density. Density source: ', 'Volume dan luas dari kernel OpenCascade di browser ini. Massa = volume × densitas. Sumber densitas: ') + src + '.'));
+    else pr.append(para(L('Build a body first.', 'Bangun body dulu.'), 'm'));
   } else if (partSel === 'measure' || cadTab === 'check') {
     pr.append(h('h2', null, h('span', null, L('Measure', 'Ukur')), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))));
     if (I) pr.append(kvs([[L('Volume', 'Volume'), `${f(I.vol / 1000, 2)} cm³`], [L('Surface area', 'Luas permukaan'), `${f(I.area / 100, 2)} cm²`],
@@ -6344,6 +6550,8 @@ function renderPartCad() {
   } else {
     pr.append(h('h2', null, p.name), h('p', { class: 'hint' }, L('Pick a tool in the toolbar above (Sketch, Features, Evaluate…), or click a step in the feature tree to change it. Every change rebuilds the whole part.', 'Pilih alat di toolbar atas (Sketch, Fitur, Evaluasi…), atau klik langkah di pohon fitur untuk mengubahnya. Setiap perubahan membangun ulang seluruh part.')));
   }
+  $('#viewport').classList.toggle('sketching', sketchDrawable());
+  renderSketchNext();
 }
 function renamePart() {
   const pr = $('#cadProps'); pr.innerHTML = ''; const inp = h('input', { type: 'text', value: state.part.name, maxlength: 60, 'aria-label': L('Part name', 'Nama part') });
@@ -6525,7 +6733,7 @@ const ALT_GB = ['Open a gearbox demo from the Library', 'Buka demo gearbox dari 
 const RIBBON = [
   ['sketch', 'Sketch', 'Sketch', [
     ['Sketch', [T('Sketch', 'rect', 'on', 'Start a 2D sketch on XY, XZ or YZ (or on top of the body), then extrude it.', 'Mulai sketch 2D di XY, XZ, atau YZ (atau di atas body), lalu tarik.', 'Create Sketch, 2D Sketch', P('sketch')),
-      T('Exit Sketch', 'check', 'on', 'Finish the sketch: extrude it with Extruded Boss or Extruded Cut.', 'Selesaikan sketch: tarik dengan Extruded Boss atau Extruded Cut.', 'Finish Sketch', P('push'))]],
+      T('Exit Sketch', 'check', 'on', 'Close the sketch form without saving anything, go back to the Features tab and extrude the sketch when you are ready.', 'Tutup formulir sketch tanpa menyimpan apa pun, kembali ke tab Fitur dan tarik sketch saat siap.', 'Finish Sketch', 'sketchExit')]],
     ['Draw', [T('Line', 'line', 'mk1', 'Free lines and polylines, snapped to points. Comes with Sketch Correction.', 'Garis bebas dan polyline, menempel ke titik. Datang bersama Sketch Correction.', 'Polyline', null, ALT_SK),
       T('Corner Rectangle', 'rect', 'on', 'Rectangle by width and height, centred where you place it.', 'Persegi panjang dengan lebar dan tinggi, berpusat di titik yang kamu tentukan.', 'Center Rectangle, 2-Point Rectangle', P('sketch', { prof: 'rect' })),
       T('Circle', 'circle', 'on', 'Circle by centre and diameter.', 'Lingkaran dengan pusat dan diameter.', 'Center Diameter Circle', P('sketch', { prof: 'circle' })),
@@ -6554,7 +6762,7 @@ const RIBBON = [
       T('Lofted Boss/Base', 'loft', 'mk1', 'Blend between two or more profiles.', 'Gabungan halus antar dua profil atau lebih.', 'Loft, Multi-section Solid'),
       T('Boundary Boss/Base', 'bound', 'no', 'Solid from boundary curves in two directions.', 'Solid dari kurva batas dua arah.', '')]],
     ['Cut', [T('Extruded Cut', 'cut', 'on', 'Extrude the last sketch and remove it from the body.', 'Tarik sketch terakhir dan buang dari body.', 'Pocket, Extrude Cut', P('push', { op: 'cut', dist: -5 })),
-      T('Revolved Cut', 'rev', 'mk1', 'Cut by turning a sketch around an axis.', 'Potong dengan memutar sketch mengelilingi sumbu.', 'Groove'),
+      T('Revolved Cut', 'rev', 'on', 'Cut by turning the last sketch around X, Y or Z, up to 360°. The kernel removes the volume it sweeps.', 'Potong dengan memutar sketch terakhir mengelilingi X, Y, atau Z, sampai 360°. Kernel membuang volume yang disapu.', 'Groove', P('revolve', { op: 'cut' })),
       T('Swept Cut', 'sweep', 'mk1', 'Cut along a path.', 'Potong sepanjang lintasan.', 'Slot (CATIA)'),
       T('Lofted Cut', 'loft', 'mk1', 'Cut between profiles.', 'Potong di antara profil.', 'Removed Multi-section'),
       T('Hole Wizard', 'hole', 'on', 'Simple, counterbore or tapped ISO M hole (tap drill, thread not modelled), through or to a depth.', 'Lubang biasa, counterbore, atau ulir ISO M (bor tap, ulir tidak dimodelkan), tembus atau sedalam nilai.', 'Hole, Threaded Hole', P('hole'))]],
@@ -6607,7 +6815,7 @@ const RIBBON = [
       T('Gusset', 'gusset', 'mk1', 'Triangular plate in a corner.', 'Pelat segitiga di sudut.', ''), T('Weld Bead', 'weld', 'no', 'Weld geometry and symbol.', 'Geometri dan simbol las.', 'Fillet Weld'),
       T('Cut List', 'list', 'mk1', 'Lengths and profiles for the shop.', 'Panjang dan profil untuk bengkel.', '')]]]],
   ['mold', 'Mold', 'Mold', [
-    ['Mold', [T('Draft Analysis', 'draft', 'no', 'Colour faces by draft angle.', 'Warnai muka berdasarkan sudut draft.', ''), T('Parting Line', 'split', 'no', 'Where the mould opens.', 'Garis tempat cetakan terbuka.', ''),
+    ['Mold', [T('Draft Analysis', 'draft', 'on', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.', '', 'dfmDraft'), T('Parting Line', 'split', 'no', 'Where the mould opens.', 'Garis tempat cetakan terbuka.', ''),
       T('Shut-off Surfaces', 'fill', 'no', 'Close through-holes for the mould.', 'Tutup lubang tembus untuk cetakan.', ''), T('Core / Cavity', 'comb', 'no', 'Split the mould block into core and cavity.', 'Bagi blok cetakan menjadi core dan cavity.', 'Tooling Split'),
       T('Shrinkage Scale', 'scale', 'no', 'Scale for plastic shrinkage.', 'Skala untuk susut plastik.', '')]]]],
   ['asm', 'Assembly', 'Assembly', [
@@ -6619,33 +6827,32 @@ const RIBBON = [
     ['Mates', [T('Mate', 'mate', 'mk1', 'Coincident, concentric, distance, angle, parallel.', 'Coincident, konsentris, jarak, sudut, sejajar.', 'Joint, Constrain, Assemble'),
       T('Auto Assembly', 'auto', 'mk1', 'IDRIS places the parts with mates (bolt in hole, shaft in bore), finds interference and size mismatches with the kernel, fixes what is clear and asks you when a size must change, e.g. “the hole is for M5 but the bolt is M6: make the hole Ø6.6 or use M5?”', 'IDRIS memasang part dengan mate (baut ke lubang, poros ke bore), menemukan interferensi dan ukuran yang tidak cocok dengan kernel, memperbaiki yang jelas, dan bertanya saat ukuran harus berubah, mis. “lubangnya untuk M5 tapi bautnya M6: lubang jadi Ø6,6 atau pakai M5?”', 'SmartMates, As-built Joint', null, null, true)]],
     ['Review', [T('Interference Detection', 'intf', 'gb', 'Find parts that overlap.', 'Temukan part yang saling tumpang tindih.', 'Interference, Clash', 'gbCheck', ALT_GB),
-      T('Exploded View', 'explode', 'gb', 'Pull the parts apart to show how they go together.', 'Urai part untuk menunjukkan cara merakitnya.', 'Explode', 'gbExplode', ALT_GB),
-      T('Bill of Materials', 'bom', 'gb', 'Parts list with standard items.', 'Daftar part dengan item standar.', 'BOM, Parts List', 'gbShop', ALT_GB),
+      T('Exploded View', 'explode', 'on', 'Slide the assembly components apart along Z with a distance slider; their real positions do not change.', 'Geser komponen assembly terpisah sepanjang Z dengan slider jarak; posisi aslinya tidak berubah.', 'Explode', 'asmExplode'),
+      T('Bill of Materials', 'bom', 'on', 'Parts list from the assembly: name, quantity, material and mass from the kernel.', 'Daftar part dari assembly: nama, jumlah, material, dan massa dari kernel.', 'BOM, Parts List', 'asmBom'),
       T('Motion Study', 'motion', 'no', 'Animate mechanisms and read forces.', 'Animasi mekanisme dan baca gayanya.', 'Motion Link, Kinematics'),
       T('Collision Detection', 'intf', 'no', 'Stop parts that hit while moving.', 'Hentikan part yang bertabrakan saat bergerak.', 'Contact Set')]]]],
   ['eval', 'Evaluate', 'Evaluasi', [
-    ['Measure', [T('Measure', 'measure', 'on', 'Size of the part from the kernel.', 'Ukuran part dari kernel.', 'Inspect, Measure', 'measure'),
-      T('Mass Properties', 'mass', 'on', 'Volume, area, mass (typical density).', 'Volume, luas, massa (densitas tipikal).', 'Physical Properties', 'measure'),
-      T('Section View', 'section', 'gb', 'Cut the model open on a plane.', 'Potong model pada sebuah bidang.', 'Section Analysis', 'gbSection', ALT_GB)]],
+    ['Measure', [T('Measure', 'measure', 'on', 'Size of the part from the kernel.', 'Ukuran part dari kernel.', 'Inspect, Measure', 'measureAny'),
+      T('Mass Properties', 'mass', 'on', 'Volume and area from the kernel, mass = volume × density, with the density and its source shown.', 'Volume dan luas dari kernel, massa = volume × densitas, dengan densitas dan sumbernya ditampilkan.', 'Physical Properties', 'mass'),
+      T('Section View', 'section', 'on', 'Cut the model open on XY, XZ or YZ at an offset. The section is the kernel’s own solid, not a picture.', 'Potong model pada XY, XZ, atau YZ di offset tertentu. Potongannya solid kernel sendiri, bukan gambar.', 'Section Analysis', 'sectionAny')]],
     ['Analysis', [T('Edit Sizes on the Model', 'edit', 'gb', 'Drag handles (wall, face width); the solver rebuilds and re-checks.', 'Tarik pegangan (dinding, lebar gigi); solver membangun ulang dan mengecek lagi.', 'Direct Edit, Press Pull', 'gbEdit', ALT_GB),
       T('Design for Manufacturing', 'dfm', 'gb', 'Tool access, wall thickness, standard parts.', 'Akses pahat, tebal dinding, part standar.', 'DFMXpress, Manufacturability', 'gbCheck', ALT_GB),
-      T('Draft Analysis', 'draft', 'no', 'Colour faces by draft angle.', 'Warnai muka berdasarkan sudut draft.', ''),
+      T('Draft Analysis', 'draft', 'on', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.', '', 'dfmDraft'),
       T('Thickness Analysis', 'thick', 'no', 'Find thin and thick regions.', 'Temukan bagian tipis dan tebal.', 'Wall Thickness'),
       T('Curvature / Zebra', 'curv', 'no', 'Surface quality.', 'Kualitas surface.', 'Zebra Stripes')]]]],
   ['sim', 'Simulation · FEA', 'Simulasi · FEA', [
     ['Gearbox (solver)', [T('Gear Rating ISO 6336', 'gear', 'gb', 'Bending and contact safety of the gears.', 'Keamanan bending dan kontak gear.', 'KISSsoft, Romax', 'gbCheck', ALT_GB),
-      T('Static Stress (FEA)', 'fea', 'gb', 'Stress and deflection of the housing. For single parts: Mark 1, after loads and supports are defined.', 'Tegangan dan defleksi housing. Untuk part tunggal: Mark 1, setelah beban dan tumpuan ditentukan.', 'Static, Linear Stress', 'gbCheck', ALT_GB),
-      T('Modal / Frequency', 'modal', 'gb', 'Natural frequencies against the gear mesh.', 'Frekuensi alami terhadap mesh gear.', 'Frequency', 'gbCheck', ALT_GB),
+      T('Static Stress (FEA)', 'fea', 'on', 'Static stress of the open part (Part Stress, solver), or the gearbox housing check. The solver used is named in the result.', 'Tegangan statik part yang terbuka (Part Stress, solver), atau cek housing gearbox. Solver yang dipakai ditulis di hasil.', 'Static, Linear Stress', 'stressAny'),
+      T('Modal / Frequency', 'modal', 'on', 'Natural frequencies of the open part (solver), or the gearbox frequency check against the gear mesh.', 'Frekuensi alami part yang terbuka (solver), atau cek frekuensi gearbox terhadap mesh gear.', 'Frequency', 'modalAny'),
       T('Thermal', 'therm', 'gb', 'Oil temperature, with or without a fan.', 'Suhu oli, dengan atau tanpa kipas.', 'Heat Transfer', 'gbCheck', ALT_GB),
-      T('Bearing Life & Fatigue', 'fatigue', 'gb', 'ISO 281 bearing life and shaft fatigue.', 'Umur bearing ISO 281 dan fatigue poros.', 'Fatigue', 'gbCheck', ALT_GB)]],
-    ['Part', [T('Part Stress (FEA)', 'fea', 'mk1', 'Loads and supports on a part, then stress and safety factor.', 'Beban dan tumpuan pada part, lalu tegangan dan faktor keamanan.', 'SimulationXpress, Stress Analysis')]],
+      T('Bearing Life & Fatigue', 'fatigue', 'on', 'ISO 281 modified rating life L_nm of a catalogue deep-groove bearing (calculator S4). Inside a gearbox it runs the solver’s shaft and bearing check instead; the solver used is named in the result.', 'Umur rating termodifikasi L_nm ISO 281 untuk bearing deep-groove dari katalog (kalkulator S4). Di dalam gearbox, yang jalan adalah cek poros dan bearing dari solver; solver yang dipakai ditulis di hasil.', 'Fatigue', 'bearingAny')]],
     ['Advanced', [T('Topology Optimisation', 'topo', 'no', 'Remove material that carries no load.', 'Buang material yang tidak menahan beban.', 'Generative Design, Shape Optimization'),
       T('CFD', 'cfd', 'no', 'Air and fluid flow.', 'Aliran udara dan fluida.', 'Flow Simulation'), T('Buckling', 'buck', 'no', 'Collapse load of thin parts.', 'Beban runtuh part tipis.', ''),
       T('Drop Test', 'drop', 'no', 'Impact on the floor.', 'Benturan ke lantai.', 'Explicit Dynamics')]]]],
   ['draw', 'Drawing', 'Gambar', [
-    ['Drawing', [T('Working Drawings (A3)', 'draw', 'gb', 'Standard views with dimensions, from the solver.', 'Tampilan standar dengan dimensi, dari solver.', 'Make Drawing, Standard 3 View', 'gbShop', ALT_GB),
-      T('BOM Table', 'bom', 'gb', 'Parts list on the drawing.', 'Daftar part di gambar.', 'Balloons', 'gbShop', ALT_GB),
-      T('Part Drawing', 'views', 'mk1', 'Three views of a single part, with its sizes.', 'Tiga tampilan part tunggal, dengan ukurannya.', 'Drawing from Part'),
+    ['Drawing', [T('Working Drawings (A3)', 'draw', 'on', 'A3 drawing: the open part from the kernel, or the gearbox shop files from the solver.', 'Gambar A3: part yang terbuka dari kernel, atau file bengkel gearbox dari solver.', 'Make Drawing, Standard 3 View', 'drawingAny'),
+      T('BOM Table', 'bom', 'on', 'Parts list of the open assembly, ready to print or save as CSV.', 'Daftar part assembly yang terbuka, siap dicetak atau disimpan sebagai CSV.', 'Balloons', 'asmBom'),
+
       T('Section / Detail View', 'detail', 'no', 'Cut and zoomed views on the sheet.', 'Tampilan potong dan perbesaran di lembar.', ''),
       T('Dimensions & Notes', 'note', 'no', 'Add dimensions and notes by hand.', 'Tambah dimensi dan catatan manual.', 'Annotations'),
       T('GD&T', 'gdt', 'no', 'Geometric tolerances and datums.', 'Toleransi geometris dan datum.', 'Feature Control Frame'),
@@ -6655,7 +6862,7 @@ const RIBBON = [
       T('Export STEP', 'step', 'on', 'Exact B-rep of the part, opens in any CAD.', 'B-rep eksak part, bisa dibuka di CAD apa pun.', 'Save As STEP', 'expStep'),
       T('Export STL', 'step', 'on', 'Mesh for 3D printing.', 'Mesh untuk cetak 3D.', 'Save As STL', 'expStl'),
       T('Import STEP', 'imp', 'mk1', 'Open a STEP file from another CAD.', 'Buka file STEP dari CAD lain.', 'Open, Insert Part'),
-      T('Report', 'rep', 'gb', 'Every number with its source.', 'Semua angka dengan sumbernya.', 'Print, Report', 'gbReport', ALT_GB)]],
+      T('Report', 'rep', 'on', 'Every number with its source: the open part (POST /report/part) or the gearbox report.', 'Semua angka dengan sumbernya: part yang terbuka (POST /report/part) atau laporan gearbox.', 'Print, Report', 'reportAny')]],
     ['Design', [T('Parameters', 'param', 'mk1', 'Named sizes that drive several features.', 'Ukuran bernama yang mengendalikan beberapa fitur.', 'Equations, User Parameters, Global Variables'),
       T('Configurations', 'config', 'no', 'Sizes of the same part in one file.', 'Beberapa ukuran part yang sama dalam satu file.', 'Design Table, iPart, Family Table'),
       T('Rename Part', 'edit', 'on', 'Change the name of the open part.', 'Ganti nama part yang terbuka.', '', 'rename')]]]],
@@ -6681,11 +6888,17 @@ function ribAct(a, name) {
   if (typeof a === 'object' && a.part) return partTool(a.part, a.p, name);
   if (a === 'library') return openLibrary();
   if (a === 'measure') return !state.part && state.variants.length ? cadTabGo('check') : partTool('measure');
+  /* S12 B11: a part routes to the S4 calculator, a gearbox to its own solver check. */
+  if (a === 'bearingAny') { if (state.part) return bearingPanel(); const g = gbRunner('gbCheck'); return g ? g() : bearingPanel(); }
   if (a === 'expStep' || a === 'expStl') { if (partShape) return exportPart(a === 'expStep' ? 'step' : 'stl'); return say(para(L('Build a part first, then export it.', 'Bangun part dulu, lalu ekspor.'), 'm')); }
   if (a === 'rename') { if (state.part) return renamePart(); return say(para(L('Open a part first.', 'Buka part dulu.'), 'm')); }
   const g = gbRunner(a); if (g) return g();
 }
 function ribRunnable(t) { return t.st === 'on' || (t.st === 'gb' && !!gbRunner(t.act)); }
+/* S11-A: no Active / Gearbox / Mark 1 / Not yet chips any more. A tool that cannot run now is grey and says why
+ * in its tooltip and popover; it is never hidden, so an engineer can still read what is missing. */
+function ribGrey(t) { return !ribRunnable(t); }
+function ribWhy(t) { return t.st === 'gb' ? L('for gearbox designs', 'untuk desain gearbox') : t.st === 'mk1' ? L('Coming in Mark 1', 'Akan datang di Mark 1') : t.st === 'no' ? L('Not in IDRIS yet', 'Belum ada di IDRIS') : ''; }
 function ribClick(t, btn) {
   closeRibPop();
   if (ribRunnable(t)) { palCount({ t: t.n }); return ribAct(t.act, t.n); }
@@ -6714,15 +6927,15 @@ function renderRibbon() {
   let rb = $('#xrib'); if (!rb) { rb = h('div', { class: 'xrib', id: 'xrib', role: 'toolbar', 'aria-label': L('CAD tools', 'Alat CAD') }); $('#cadbar').after(rb); }
   const sc = rb.querySelector('.xr-tools'), keep = sc ? sc.scrollLeft : 0; rb.innerHTML = '';
   const tabs = h('div', { class: 'xr-tabs', role: 'tablist' }, RIBBON.map(([k, en, id]) => h('button', { role: 'tab', class: k === ribTab ? 'on' : '', 'aria-selected': k === ribTab ? 'true' : 'false',
-    onclick: () => { ribTab = k; try { localStorage.setItem('idris-ribtab', k); } catch (e) { /* storage unavailable */ } closeRibPop(); renderRibbon(); } }, L(en, id))),
-    h('span', { class: 'xr-legend' }, ...['on', 'gb', 'mk1', 'no'].map((s) => h('span', { class: 'rbst ' + s }, L(RIB_ST[s][0], RIB_ST[s][1])))));
+    onclick: () => { ribTab = k; try { localStorage.setItem('idris-ribtab', k); } catch (e) { /* storage unavailable */ } closeRibPop(); renderRibbon(); } }, L(en, id))));
   const cur = RIBBON.find((r) => r[0] === ribTab), busy = typeof partBusy !== 'undefined' && partBusy;
   const tools = h('div', { class: 'xr-tools' }, cur[3].map(([g, list]) => h('div', { class: 'xr-g' + (g === 'IDRIS' ? ' idris' : '') },
-    h('div', { class: 'xr-row' }, list.map((t) => { const run = ribRunnable(t), armed = typeof partArm !== 'undefined' && partArm && t.act && t.act.part === partArm.type && Object.entries(t.act.p || {}).every(([k, v]) => partArm.p[k] === v);
-      return h('button', { class: 'xr-t s-' + t.st + (run ? ' run' : '') + (armed ? ' on' : '') + (t.ai ? ' ai' : ''), disabled: busy && t.st === 'on' && !!(t.act && t.act.part),
-        title: `${t.n} · ${L(RIB_ST[t.st][0], RIB_ST[t.st][1])}${t.st === 'gb' && !run ? L(' (open a gearbox design to use it)', ' (buka desain gearbox untuk memakainya)') : ''}\n${L(t.en, t.id)}`,
-        'aria-label': `${t.n}, ${L(RIB_ST[t.st][0], RIB_ST[t.st][1])}`, onclick: (e) => ribClick(t, e.currentTarget) },
-        h('span', { class: 'xr-i' }, ribIcon(t.ic), t.st !== 'on' ? h('i', { class: 'xr-dot ' + t.st, 'aria-hidden': 'true' }) : null), h('span', { class: 'xr-n' }, t.n)); })),
+    h('div', { class: 'xr-row' }, list.map((t) => { const run = ribRunnable(t), grey = ribGrey(t), why = grey ? ribWhy(t) : '', armed = typeof partArm !== 'undefined' && partArm && t.act && t.act.part === partArm.type && Object.entries(t.act.p || {}).every(([k, v]) => partArm.p[k] === v);
+      return h('button', { class: 'xr-t s-' + t.st + (run ? ' run' : '') + (grey ? ' na' : '') + (armed ? ' on' : '') + (t.ai ? ' ai' : ''), disabled: busy && t.st === 'on' && !!(t.act && t.act.part),
+        'aria-disabled': grey ? 'true' : undefined,
+        title: `${t.n}${why ? ' — ' + why : ''}${plannedToolTip(t.st) ? '\n' + plannedToolTip(t.st) : ''}\n${L(t.en, t.id)}`,
+        'aria-label': `${t.n}, ${L(RIB_ST[t.st][0], RIB_ST[t.st][1])}${why ? ', ' + why : ''}`, onclick: (e) => ribClick(t, e.currentTarget) },
+        h('span', { class: 'xr-i' }, ribIcon(t.ic)), h('span', { class: 'xr-n' }, t.n)); })),
     h('div', { class: 'xr-gl' }, g))));
   rb.append(tabs, tools); tools.scrollLeft = keep;
 }
@@ -7055,8 +7268,7 @@ function renderGenCad() {
       h('p', { class: 'hint' }, L(kd[2], kd[3]))),
     ...(g.err ? [h('div', { class: 'warnbox bad' }, h('b', null, L('The code did not build', 'Kodenya tidak terbangun')), h('div', null, g.err),
       g.read_by !== 'recipe' ? h('div', { class: 'hint' }, L(`AI fix attempts: ${g.fixAttempt || 0}/2`, `Percobaan perbaikan AI: ${g.fixAttempt || 0}/2`)) : null)] : []),
-    h('ol', { class: 'pft' }, g.params.map((q) => h('li', null, h('div', { class: 'pfn' }, h('span', { class: 'cdot ' + (q.src === 'user' ? 'ok' : 'warn'), 'aria-hidden': 'true', title: q.src === 'user' ? L('given by you', 'dari kamu') : L('IDRIS default — change it if needed', 'bawaan IDRIS — ubah kalau perlu') }),
-      h('b', null, L(q.en, q.id)), h('span', null, `${f(+q.v, Number.isInteger(+q.v) ? 0 : q.unit === '' ? 2 : 1)} ${q.unit}${q.src === 'user' ? '' : L(' · default', ' · bawaan')}`))))),
+    /* S11-ACE-3: sizes live in the Parameters panel on the right, not mixed into this tree. */
     h('details', { class: 'gen-code' }, h('summary', null, L('Show the CAD code', 'Lihat kode CAD')), h('pre', null, g.code)));
   if (g.kind !== 'styling') lf.append(h('div', { class: 'cmat' }, h('span', null, L('Material', 'Material')),
     h('select', { onchange: (e) => { p.material = e.target.value; savePart(); renderCad(); }, 'aria-label': L('Material', 'Material') }, Object.entries(PMAT).map(([k, [n, rho]]) => h('option', { value: k, selected: k === p.material }, `${n} · ${rho} g/cm³`))),
@@ -7068,12 +7280,14 @@ function renderGenCad() {
   const apply = () => { let bad = null; g.params.forEach((q) => { const v = Number(edit[q.k]); if (!isFinite(v) || (q.min != null && v < q.min) || (q.max != null && v > q.max)) bad = bad || q; });
     if (bad) { say(para(L(`${bad.en} must be between ${bad.min} and ${bad.max} ${bad.unit}.`, `${bad.id} harus antara ${bad.min} dan ${bad.max} ${bad.unit}.`), 'm')); return; }
     g.params.forEach((q) => { if (+edit[q.k] !== +q.v) { q.v = +edit[q.k]; q.src = 'user'; } }); if (narrow()) setChat(false); rebuildGen(false); };
-  const form = h('div', { class: 'pform' }, g.params.map((q) => h('label', null, h('span', null, L(q.en, q.id)),
+  const form = h('div', { class: 'pform gen-params' }, g.params.map((q) => h('label', null,
+      h('span', { class: 'plab' }, h('span', null, L(q.en, q.id)), h('em', { class: 'psrc' + (q.src === 'user' ? ' you' : ''), title: q.src === 'user' ? L('you changed this', 'kamu yang mengubah ini') : L('IDRIS default — not from you; change it if needed', 'bawaan IDRIS — bukan dari kamu; ubah kalau perlu') }, q.src === 'user' ? L('you', 'kamu') : L('default', 'bawaan'))),
       q.opts ? h('select', { onchange: (e) => { edit[q.k] = +e.target.value; } }, q.opts.map((o) => h('option', { value: o, selected: +o === +q.v }, `${o} ${q.unit}`)))
         : h('span', { class: 'pnum' }, h('input', { type: 'number', inputmode: 'decimal', value: q.v, step: q.step || 'any', min: q.min, max: q.max, oninput: (e) => { edit[q.k] = e.target.value; } }), q.unit ? h('em', null, q.unit) : null))),
     h('div', { class: 'pact' }, h('button', { class: 'chip primary', disabled: genBusy, onclick: apply }, L('Rebuild', 'Bangun ulang'))));
   form.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); apply(); } });
-  pr.append(h('h2', null, h('span', null, p.name), h('span', { class: 'phd' }, h('small', null, L(kd[0], kd[1])))), form);
+  pr.append(h('h2', null, h('span', null, p.name), h('span', { class: 'phd' }, h('small', null, L(kd[0], kd[1])))),
+    h('h3', { class: 'gen-h' }, L('Parameters', 'Parameter'), h('small', { class: 'psrc-note' }, L('default values are IDRIS\u2019s, not yours', 'nilai bawaan dari IDRIS, bukan dari kamu'))), form);
   const rec = GEN_RECIPES[g.recipe];
   if (r && r.probes.some((x) => !/Cut$/.test(x.name))) pr.append(h('div', { class: 'gen-var' }, h('button', { class: 'chip' + (g.showProbe !== false ? ' primary' : ''), disabled: genBusy, onclick: () => { g.showProbe = g.showProbe === false; savePart(); rebuildGen(false); } },
     (g.showProbe !== false ? L('Hide: ', 'Sembunyikan: ') : L('Show: ', 'Tampilkan: ')) + L(...(g.probeLabel || ['Reference', 'Referensi'])))));
@@ -7417,6 +7631,8 @@ const assyInfo = (cid) => (state.assy2.info || []).find((x) => x.cid === cid);
 async function assyInterference(quiet) {
   const a = state.assy2; if (!a || !a.info) return [];
   const R = await kernel(), ok = a.info.filter((x) => x.ok), out = [];
+  /* S11-B4: without two built parts there is nothing to compare, so IDRIS must not say "No interference". */
+  if (ok.length < 2) { a.clashDone = false; if (!quiet) say(para(L('Interference needs at least two parts in an assembly. Insert another component first.', 'Interferensi butuh minimal dua part di assembly. Masukkan komponen lain dulu.'), 'm')); return []; }
   for (let i = 0; i < ok.length; i++) for (let j = i + 1; j < ok.length; j++) {
     const A = ok[i], B = ok[j], ca = a.comps.find((c) => c.cid === A.cid), cb = a.comps.find((c) => c.cid === B.cid);
     const bx = A.bounds, by = B.bounds; if (bx[1][0] < by[0][0] || by[1][0] < bx[0][0] || bx[1][1] < by[0][1] || by[1][1] < bx[0][1] || bx[1][2] < by[0][2] || by[1][2] < bx[0][2]) continue;
@@ -7583,6 +7799,11 @@ function renderAssyCad() {
           h('button', { class: 'chip', disabled: assyBusy, onclick: () => { a.comps = a.comps.filter((x) => x.cid !== c.cid); a.mates = a.mates.filter((m) => m.upper !== c.cid && m.lower !== c.cid && m.bolt !== c.cid); assySel = null; a.clashDone = false; assyRebuild(false); } }, L('Remove', 'Hapus')))),
       inf && inf.ok ? kvs([[L('Volume', 'Volume'), `${f(inf.vol / 1000, 2)} cm³`], [L('Size X × Y × Z', 'Ukuran X × Y × Z'), inf.bounds[1].map((x, k) => f(x - inf.bounds[0][k], 1)).join(' × ') + ' mm']]) : null,
       c.src === 'bolt' ? para(L('Socket head cap screw from the solver catalog (ISO 4762 head and length). The thread is not modelled.', 'Baut kepala silinder dari katalog solver (kepala dan panjang ISO 4762). Ulir tidak dimodelkan.'), 'm') : null].filter(Boolean)); }
+  /* S11-B6: the assembly (components) panel comes first; bolt checks follow it. */
+  pr.append(h('h3', { class: 'gen-h' }, L('Assembly components', 'Komponen assembly')));
+  pr.append(info.length ? h('ul', { class: 'gen-checks' }, info.map((x) => { const c = a.comps.find((q) => q.cid === x.cid) || {};
+    return h('li', null, h('span', { class: 'cdot ' + (x.ok ? 'ok' : 'bad'), 'aria-hidden': 'true' }), h('div', null, h('b', null, c.name || x.cid), h('span', null, x.ok ? `${L('position', 'posisi')} x ${f(c.t[0], 1)} · y ${f(c.t[1], 1)} · z ${f(c.t[2], 1)} mm` : x.err))); }))
+    : para(L('No components yet. Insert Component brings in saved parts, Library parts or ISO bolts.', 'Belum ada komponen. Insert Component memasukkan part tersimpan, part Library, atau baut ISO.'), 'm'));
   pr.append(h('h3', { class: 'gen-h' }, L('Bolt checks (solver)', 'Cek baut (solver)')));
   if (!(a.findings || []).length) pr.append(para(a.mates.length ? L('No findings: every bolt passed the solver check.', 'Tidak ada temuan: semua baut lolos cek solver.') : L('Run Auto Assembly to place and check bolts.', 'Jalankan Auto Assembly untuk memasang dan mengecek baut.'), 'm'));
   else pr.append(h('ul', { class: 'gen-checks' }, assyGroup(a.findings).map((fd) => h('li', null, h('span', { class: 'cdot ' + (/error|fail|bad/i.test(fd.level || '') ? 'bad' : /warn/i.test(fd.level || '') ? 'warn' : 'ok'), 'aria-hidden': 'true' }),
@@ -7599,7 +7820,7 @@ function renderAssyCad() {
     if (act === 'asmAuto') { if (!state.assy2) { assyStart(); return assyPicker(); } return assyAuto(); }
     if (act === 'asmBolt') { if (!state.assy2) assyStart(); return assyPicker(); }
     if (act === 'asmMove') { if (!state.assy2) return say(para(L('Start an assembly first: Insert Component.', 'Mulai assembly dulu: Insert Component.'), 'm')); return say(para(L('Pick a component in the assembly tree, then type its position and rotation on the right.', 'Pilih komponen di pohon assembly, lalu ketik posisi dan putarannya di kanan.'), 'm')); }
-    if (act === 'interf') { if (state.assy2) return assyInterference(false); const g = gbRunner('gbCheck'); if (g) return g(); return say(para(L('Interference needs an assembly (Insert Component) or a gearbox design.', 'Interferensi butuh assembly (Insert Component) atau desain gearbox.'), 'm')); }
+    if (act === 'interf') { if (state.assy2) return assyInterference(false); const g = gbRunner('gbCheck'); if (g) return g(); return say(para(L('Interference needs at least two parts in an assembly (Insert Component) or a gearbox design.', 'Interferensi butuh minimal dua part di assembly (Insert Component) atau desain gearbox.'), 'm')); }
     return ra.apply(this, arguments); };
   const set = (n, st, act, en, id) => { const t = RIB_ALL.find((x) => x.n === n); if (t) { t.st = st; t.act = act; if (en) { t.en = en; t.id = id; } } };
   set('Insert Component', 'on', 'asmInsert', 'Start an assembly and bring in saved parts, Library parts or ISO bolts.', 'Mulai assembly dan masukkan part tersimpan, part Library, atau baut ISO.');
@@ -7609,7 +7830,8 @@ function renderAssyCad() {
     'IDRIS menumpuk part, memutar dan menggesernya supaya lubang sejajar, menambah baut ISO dengan panjang standar, mengecek setiap baut dengan solver (lubang ISO 273, ulir masuk, panjang), dan mencari tabrakan dengan OpenCascade. Kalau ukuran harus berubah, IDRIS bertanya, mis. “lubangnya untuk M5 tapi bautnya M6”.');
   set('Interference Detection', 'on', 'interf', 'Common volume between every pair of components (OpenCascade), or the gearbox assembly review.', 'Volume irisan antar setiap pasang komponen (OpenCascade), atau review assembly gearbox.');
   const rt = renderTree; renderTree = function () { rt.apply(this, arguments);
-    if (gearboxActive()) return; const body = document.querySelector('#tree > details > .tbody'); if (!body) return; const l = loadAssys(); if (!l.length) return;
+    if (gearboxActive()) return; const body = document.querySelector('#tree > details > .tbody'); if (!body) return; const l = loadAssys().filter((x) => x.comps && x.comps.length); if (!l.length) return;
+    /* S11-ACE-3: an assembly with 0 components is not a thing to show in the tree. */
     body.append(tnode('assys', 'asm', L('Assemblies', 'Assembly'), l.map((x) => h('button', { class: 'titem', onclick: () => { if (state.part) { savePart(); state.part = null; } state.assy2 = JSON.parse(JSON.stringify(x)); assySel = null; assyRebuild(true); } },
       h('span', { class: 'two' }, h('span', { class: 'nm' }, x.name), h('span', { class: 'tg' }, L(`${x.comps.length} components`, `${x.comps.length} komponen`))))), l.length)); };
   const sp = startPart; startPart = function () { if (state.assy2) { saveAssy(); state.assy2 = null; } return sp.apply(this, arguments); }; }
@@ -8362,16 +8584,51 @@ function conceptNumbers(p, v, r) {
   const dens = PMAT[p.material] ? PMAT[p.material][1] : null;
   return { vol: r.vol, mass: dens ? r.vol / 1000 * dens : null, size: [0, 1, 2].map((k) => r.bounds[1][k] - r.bounds[0][k]), valid: r.valid, solids: r.solids, ok, n };
 }
-async function conceptFix(p, v, error) {
-  /* ask the solver to fix one concept, outside the chat (the card shows the progress) */
-  const g = p.gen, body = { message: 'Fix the CAD code', reply_language: 'en', context: { concept: v.concept, cad_error: { title: v.name, code: v.code, error: String(error).slice(0, 600),
-    params: v.params.map((q) => ({ k: q.k, value: +q.v, source: q.src === 'user' ? 'user' : q.src || 'default', unit: q.unit })), attempt: v.fixes, request: g.request || '' } } };
+/* S11-ACE-1: concept fixes run one at a time and survive a busy server. The solver allows 12 chat calls a
+ * minute per IP; three concepts fixing together used to look like a network failure ("NetworkError"). */
+let conceptChatQ = Promise.resolve();
+const conceptSleep = (ms) => new Promise((res) => setTimeout(res, ms));
+const conceptBusyText = () => L('the server was busy, retried once — tap Retry fix', 'server sibuk, dicoba sekali lagi — tekan Retry fix');
+async function conceptChatOnce(body) {
   const ctrl = new AbortController(), to = setTimeout(() => ctrl.abort(), 110000);
-  try { const r = await fetch(API + '/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Idris-Concept': '1' }, body: JSON.stringify(body), signal: ctrl.signal });
-    const d = await r.json(); const cad = d && d.cad;
+  try {
+    const r = await fetch(API + '/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Idris-Concept': '1' }, body: JSON.stringify(body), signal: ctrl.signal });
+    const txt = await r.text(); let d = {}; try { d = JSON.parse(txt); } catch (e) { d = {}; }
+    if (r.status === 429) { const e = new Error(L('the chat rate limit was reached', 'batas laju chat tercapai')); e.status = 429; e.retryAfter = +(r.headers.get('Retry-After') || 0); throw e; }
+    if (r.status === 502 || r.status === 503 || r.status === 504) { const e = new Error(`HTTP ${r.status}`); e.status = r.status; throw e; }
+    if (!r.ok) { const e = new Error((d && (d.detail || d.error)) || `HTTP ${r.status}`); e.status = r.status; throw e; }
+    const cad = d && d.cad;
     if (!cad || typeof cad.code !== 'string' || !cad.code.trim()) throw new Error((d && (d.error || d.answer || d.detail)) || L('no code came back', 'tidak ada kode yang kembali'));
-    v.code = cad.code; const ps = genParamsFromCad(cad); if (ps.length) v.params = ps; if (Array.isArray(cad.expect)) v.expect = cad.expect; }
-  finally { clearTimeout(to); }
+    return cad;
+  } finally { clearTimeout(to); }
+}
+async function conceptFix(p, v, error, kernel) {
+  /* ask the solver to fix one concept, outside the chat (the card shows the progress) */
+  const g = p.gen, body = { message: 'Fix the CAD code', reply_language: 'en', context: { concept: v.concept, cad_error: { title: v.name, code: v.code, error: String(error).slice(0, 600), kernel: kernel || null,
+    params: v.params.map((q) => ({ k: q.k, value: +q.v, source: q.src === 'user' ? 'user' : q.src || 'default', unit: q.unit })), attempt: v.fixes, request: g.request || '' } } };
+  const job = async () => {
+    try { return await conceptChatOnce(body); }
+    catch (e) {
+      const retryable = e.status === 429 || e.status === 502 || e.status === 503 || e.status === 504 || !e.status || e.name === 'AbortError';
+      if (!retryable) throw e;
+      const waitMs = e.status === 429 ? Math.min(20000, Math.max(1000, (+e.retryAfter || 2) * 1000)) : 1500;
+      await conceptSleep(waitMs);
+      try { return await conceptChatOnce(body); }
+      catch (e2) { throw new Error(`${conceptBusyText()}${e2 && e2.message ? ` (${String(e2.message).slice(0, 80)})` : ''}`); }
+    }
+  };
+  const run = conceptChatQ.then(job, job); conceptChatQ = run.catch(() => {});
+  const cad = await run;
+  v.code = cad.code; const ps = genParamsFromCad(cad); if (ps.length) v.params = ps; if (Array.isArray(cad.expect)) v.expect = cad.expect;
+}
+/** the kernel's own reason for "built, but not a valid solid", in words an engineer and the fixer can use */
+function conceptBuildReason(r) {
+  if (!r) return L('the kernel returned nothing', 'kernel tidak mengembalikan apa pun');
+  if (r.valid === false && (r.solids == null || r.solids <= 1)) return L('the kernel reports an invalid solid (not closed or self-intersecting)', 'kernel melaporkan solid tidak valid (tidak tertutup atau memotong diri sendiri)');
+  if (r.valid !== false && (r.solids == null || r.solids === 1)) return '';
+  const parts = r.solids != null ? `${r.solids} ${L(r.solids === 1 ? 'solid' : 'separate solids', r.solids === 1 ? 'solid' : 'solid terpisah')}` : L('an invalid solid', 'solid tidak valid');
+  const hint = r.solids > 1 ? L(' — the shapes do not touch, so it is not one body', ' — bentuk-bentuknya tidak bersentuhan, jadi bukan satu body') : L('', '');
+  return `${parts}${hint}`;
 }
 async function conceptPipeline(p) {
   const run = conceptRun = { p }; const g = p.gen, alive = () => conceptRun === run && state.part === p;
@@ -8382,12 +8639,14 @@ async function conceptPipeline(p) {
       for (;;) { await wait(); if (!alive()) return;
         v.status = v.fixes ? 'fixing' : 'building'; renderCad();
         try { await genWorker(); const r = await genCall({ t: 'run', code: v.code, params: Object.fromEntries(v.params.map((q) => [q.k, +q.v])) }, 40000);
-          if (!r || !r.mesh || r.valid === false) throw new Error(L('the code built, but not as a valid solid', 'kode jalan, tapi tidak menjadi solid yang valid'));
+          if (!r || !r.mesh || r.valid === false || (r.solids != null && r.solids > 1)) { const why = r ? conceptBuildReason(r) : L('the kernel returned nothing', 'kernel tidak mengembalikan apa pun');
+            const err = new Error(L(`the code built, but not as a valid solid: ${why}`, `kode jalan, tapi tidak menjadi solid valid: ${why}`)); err.kernel = r ? { valid: r.valid, solids: r.solids, volume_mm3: r.vol, bounds: r.bounds } : null; throw err; }
           v.status = 'built'; v.err = null; v.kres = conceptNumbers(p, v, r); conceptMeshes[conceptKey(p, v)] = r.mesh; break; }
         catch (e) { const msg = String((e && e.message) || e);
+          v.kernel = (e && e.kernel) || null;
           if (v.fixes >= CONC_FIX_MAX || state.chatOff) { v.status = 'failed'; v.err = msg.slice(0, 300); break; }
           v.fixes++; v.status = 'fixing'; renderCad();
-          try { await conceptFix(p, v, msg); } catch (e2) { v.status = 'failed'; v.err = `${msg.slice(0, 200)} · ${L('fix', 'perbaikan')}: ${String(e2.message || e2).slice(0, 120)}`; break; } } }
+          try { await conceptFix(p, v, msg, v.kernel); } catch (e2) { v.status = 'failed'; v.err = `${msg.slice(0, 200)} · ${L('fix', 'perbaikan')}: ${String(e2.message || e2).slice(0, 160)}`; break; } } }
       savePart(); renderCad(); }
     if (!alive()) return;
     /* the worker keeps the last shape it ran (STEP export uses it): run the shown concept again */
@@ -8406,8 +8665,13 @@ async function conceptRank(p, run) {
   for (const v of g.variants.filter((x) => x.concept)) {
     if (!alive()) return;
     const res = { name: v.name, params: Object.fromEntries(v.params.map((q) => [q.k, +q.v])), geometry_ok: v.status === 'built', status: 'not checked', reason: '' };
-    if (v.status !== 'built') { res.reason = v.err || 'did not build'; results.push(res); continue; }
-    if (!conceptHasLoads(v, p)) { res.reason = 'no load in this concept'; results.push(res); continue; }
+    /* S11-ACE-2: a built concept that is not checked by FEA says why, on its own card. */
+    if (v.status !== 'built') { const why = v.err || L('did not build', 'tidak terbangun'); v.fea = { status: 'skipped', reason: why }; res.reason = why; results.push(res); continue; }
+    if (!conceptHasLoads(v, p)) { const rq0 = v.requirements || g.requirements || {};
+      const hasLoad = (rq0.loads || []).some((x) => x && x.where && Array.isArray(x.force_N) && x.force_N.some((n) => Math.abs(+n) > 0));
+      const hasSup = (rq0.supports || []).some((x) => x && x.where);
+      const why = !hasLoad ? L('no load given', 'belum ada beban') : !hasSup ? L('supports not found on this shape: pick faces', 'tumpuan tidak ditemukan di bentuk ini: pilih muka') : L('the load case is incomplete', 'kasus beban belum lengkap');
+      v.fea = { status: 'skipped', reason: why }; res.reason = why; results.push(res); continue; }
     let mesh = conceptMeshes[conceptKey(p, v)];
     try { if (!mesh) { await genWorker(); const r = await genCall({ t: 'run', code: v.code, params: res.params }, 40000); mesh = r.mesh; }
       v.fea = { status: 'running' }; g.conceptRank.stage = L(`Stress check: ${v.name}`, `Cek tegangan: ${v.name}`); renderCad();
@@ -8427,6 +8691,13 @@ async function conceptRank(p, run) {
   savePart();
 }
 /* cards: one per concept, in the design tree card (top), like the gearbox variant list */
+function conceptRetry(p, i) {
+  const g = p.gen, v = g && g.variants && g.variants[i];
+  if (!v || genBusy) return;
+  /* S11-ACE-1: try the same concept again after a busy server, without asking the AI for a new concept. */
+  v.fixes = 0; v.err = null; v.kernel = null; v.fea = null; v.status = 'pending'; savePart(); renderCad();
+  if (i === g.active) rebuildGen(false); else if (!conceptRun || conceptRun.done) conceptPipeline(p);
+}
 function conceptCards(p) {
   const g = p.gen, cr = g.conceptRank || {}, box = h('div', { class: 'gen-src conc' });
   const list = g.variants.map((v, i) => ({ v, i })).sort((a, b) => ((a.v.rank && a.v.rank.rank) || 99) - ((b.v.rank && b.v.rank.rank) || 99) || a.i - b.i);
@@ -8440,11 +8711,17 @@ function conceptCards(p) {
       : st === 'failed' ? L('did not build: ', 'gagal dibangun: ') + (v.err || '') : k ? `${k.mass != null ? f(k.mass, k.mass < 100 ? 1 : 0) + ' g · ' : ''}${k.size.map((x) => f(x, 0)).join(' × ')} mm · ${k.ok}/${k.n} ${L('checks', 'cek')}` : '';
     const sfTxt = fea && fea.status === 'done' && fea.sf != null ? `SF ${f(fea.sf, 2)}` : fea && fea.status === 'running' ? L('FEA…', 'FEA…') : fea && fea.status === 'error' ? L('FEA failed', 'FEA gagal') : '';
     const df = (cr.targets && cr.targets.design_factor) || 2;
-    row.append(h('button', { class: 'conc-c' + (on ? ' on' : '') + (st === 'failed' ? ' bad' : ''), disabled: genBusy || st === 'failed' || st === 'pending' || st === 'building' || st === 'fixing' || st === 'designing', 'aria-pressed': on ? 'true' : 'false',
-      title: v.concept ? v.concept.idea : v.name, onclick: () => genSwitch(i) },
-      h('span', { class: 'conc-t' }, h('b', null, v.name), rk && rk.rank != null ? h('em', { class: 'conc-r' + (rk.status === 'pass' ? ' ok' : rk.status === 'fail' ? ' bad' : '') }, `#${rk.rank}${rk.score != null ? ' · ' + f(+rk.score, 0) : ''}`) : null),
+    const nameTitle = `${v.name}${v.concept && v.concept.idea ? ' — ' + v.concept.idea : ''}`;
+    const noFea = st === 'built' && !(fea && fea.status === 'done') && !(rk && rk.rank != null);
+    const blocked = genBusy || st === 'failed' || st === 'pending' || st === 'building' || st === 'fixing' || st === 'designing';
+    const slot = h('div', { class: 'conc-slot' }); row.append(slot);
+    slot.append(h('div', { class: 'conc-c' + (on ? ' on' : '') + (st === 'failed' ? ' bad' : ''), role: 'button', tabindex: blocked ? '-1' : '0', 'aria-pressed': on ? 'true' : 'false',
+      title: nameTitle, onclick: () => { if (!blocked) genSwitch(i); } }, h('span', { class: 'conc-t' }, h('b', { title: nameTitle }, v.name), rk && rk.rank != null ? h('em', { class: 'conc-r' + (rk.status === 'pass' ? ' ok' : rk.status === 'fail' ? ' bad' : '') }, `#${rk.rank}${rk.score != null ? ' · ' + f(+rk.score, 0) : ''}`) : null),
       v.concept && v.concept.idea ? h('span', { class: 'conc-i' }, v.concept.idea) : null,
-      h('span', { class: 'conc-m' }, line, sfTxt ? h('span', { class: fea.sf != null && fea.sf >= df ? 'ok' : 'bad' }, ` · ${sfTxt}`) : null)));
+      h('span', { class: 'conc-m' }, line, sfTxt ? h('span', { class: fea.sf != null && fea.sf >= df ? 'ok' : 'bad' }, ` · ${sfTxt}`) : null,
+        noFea ? h('span', { class: 'conc-nofea', title: (fea && fea.reason) || L('no FEA has been run on this concept', 'belum ada FEA untuk konsep ini') }, ` · ${L('not ranked: not checked by FEA', 'tidak diperingkat: belum dicek FEA')}`) : null)));
+    if (st === 'failed') slot.append(h('div', { class: 'conc-fix' }, h('button', { class: 'chip', disabled: genBusy, onclick: () => conceptRetry(p, i) }, L('Retry fix', 'Coba perbaiki lagi'))));
+    else if (st === 'built' && !(fea && fea.status === 'done')) slot.append(h('div', { class: 'conc-fix' }, h('button', { class: 'chip', disabled: genBusy, onclick: () => { genSwitch(i); setTimeout(() => ribAct('partFea'), 250); } }, L('Run Part Stress on this concept', 'Jalankan Part Stress untuk konsep ini'))));
   });
   (g.conceptFail || []).forEach((c) => row.append(h('div', { class: 'conc-c bad', role: 'note' }, h('span', { class: 'conc-t' }, h('b', null, c.name)), c.idea ? h('span', { class: 'conc-i' }, c.idea) : null,
     h('span', { class: 'conc-m' }, L('The AI could not write this one: ', 'AI tidak bisa menulis konsep ini: ') + c.error))));
@@ -8528,6 +8805,119 @@ const conceptSave = (n) => { try { if (n) localStorage.setItem('idris-concepts',
     if (/^(ask me (each|every) time|tanya (aku )?(tiap|setiap) (kali|desain))$/.test(t)) { addUser(text); conceptSave(null); return say(para(L('OK: IDRIS will ask how many concepts for each new design.', 'Oke: IDRIS akan bertanya jumlah konsep untuk setiap desain baru.'))); }
     return ht.apply(this, arguments); }; }
 
+/* ---- v0.40 design brief (solver route `brief`): the questions come as an engineer's conversation, the brief is a
+ * small card in the chat panel, and the engineer's answers are sent back as context.brief every turn. Nothing is
+ * designed while the brief is open; the card's Start button is what sends the explicit start. */
+function briefEmpty(b) { return !b || typeof b !== 'object' || !Object.keys(b).length; }
+/** the fields the card shows, in the order the brief asks for them */
+function briefRows(b) {
+  if (briefEmpty(b)) return [];
+  return [['object', 'Object', 'Benda'], ['purpose', 'For', 'Untuk'], ['key_sizes', 'Sizes', 'Ukuran'], ['envelope', 'Space', 'Ruang'],
+    ['loads', 'Load', 'Beban'], ['material', 'Material', 'Material'], ['process', 'Process', 'Proses']]
+    .map(([k, en, id]) => ({ k, label: L(en, id), value: String(b[k] == null ? '' : b[k]) }));
+}
+/** only the options the solver really sent: a chip is never invented here */
+function briefChipOptions(q) {
+  return (q && Array.isArray(q.options) ? q.options : []).map((o) => ({ label: String((o && o.label) || ''), note: String((o && o.note) || '') })).filter((o) => o.label);
+}
+function briefAssumed(b) { return (!b || !Array.isArray(b.assumptions) ? [] : b.assumptions).filter((a) => a && a.assumed === true); }
+function briefOpen(b) { return (!b || !Array.isArray(b.open) ? [] : b.open).map((x) => (typeof x === 'string' ? x : x && x.text)).filter(Boolean); }
+/** what the Start button sends: the start words plus the concept count the engineer picked */
+function briefStart(b, n) {
+  const kind = b && b.kind === 'assembly' ? 'assembly' : 'part';
+  return { kind, text: kind === 'assembly' ? L('Plan the assembly', 'Rencanakan rakitan') : L('Start design', 'Mulai desain'), concepts: kind === 'part' ? (Number(n) || 3) : null };
+}
+/* ---- end brief helpers */
+
+let chatBrief = null, briefReply = null, briefEditing = false, briefDone = false;
+const BRIEF_KEY = 'idris-brief';
+const loadBrief = () => { try { const b = JSON.parse(localStorage.getItem(BRIEF_KEY) || 'null'); return b && typeof b === 'object' && !Array.isArray(b) ? b : null; } catch (e) { return null; } };
+const saveBrief = (b) => { try { if (b) localStorage.setItem(BRIEF_KEY, JSON.stringify(b)); else localStorage.removeItem(BRIEF_KEY); } catch (e) { /* storage unavailable */ } };
+chatBrief = loadBrief();
+function editBriefField(k, cell) {
+  if (briefEditing || !chatBrief) return;
+  briefEditing = true;
+  const inp = h('input', { class: 'bc-in', value: String(chatBrief[k] || ''), 'aria-label': k });
+  cell.replaceWith(inp); inp.focus(); inp.select();
+  let closed = false;
+  const done = (keep) => { if (closed) return; closed = true; briefEditing = false;
+    if (keep) { const v = inp.value.trim(); if (v) chatBrief[k] = v; else delete chatBrief[k]; saveBrief(chatBrief); }
+    renderBriefCard(); };
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); done(true); } else if (e.key === 'Escape') { e.preventDefault(); done(false); } });
+  inp.addEventListener('blur', () => done(true));
+}
+let briefLearn = null;
+function renderBriefCard() {
+  const el = $('#briefCard'); if (!el) return;
+  const lb = $('#learn');
+  if (briefDone || briefEmpty(chatBrief)) { el.hidden = true; el.innerHTML = '';
+    if (briefLearn) { briefLearn.hidden = false; briefLearn = null; }   // the guide comes back when the brief is done
+    return; }
+  if (lb && !lb.hidden) { lb.hidden = true; briefLearn = lb; }           // the brief is the work now; the first-design guide waits its turn
+  el.hidden = false; el.innerHTML = '';
+  const b = chatBrief, rows = briefRows(b), assumed = briefAssumed(b), open = briefOpen(b);
+  el.append(h('div', { class: 'bc-h' }, h('b', null, L('Design brief', 'Design brief')),
+    h('span', { class: 'bc-st' }, b.ready ? L('ready', 'siap') : L('asking', 'menanyakan')),
+    h('button', { class: 'linkbtn', onclick: () => { chatBrief = null; saveBrief(null); renderBriefCard(); } }, L('Clear', 'Hapus'))));
+  const body = h('div', { class: 'bc-b' });
+  rows.forEach((r) => body.append(h('div', { class: 'bc-r' }, h('span', { class: 'bc-k' }, r.label),
+    h('button', { class: 'bc-v' + (r.value ? '' : ' empty'), title: L('Click to edit', 'Klik untuk ubah'), onclick: (e) => editBriefField(r.k, e.currentTarget) }, r.value || L('not set', 'belum diisi')))));
+  if (assumed.length) body.append(h('div', { class: 'bc-a' }, h('b', null, L('Assumed', 'Asumsi')),
+    ...assumed.map((a) => h('span', { class: 'bc-tag', title: String(a.why || '') }, `${a.what}: ${a.value}`))));
+  if (open.length) body.append(h('div', { class: 'bc-o' }, h('b', null, L('Still open', 'Masih terbuka')), ...open.map((t) => h('span', { class: 'bc-tag' }, t))));
+  el.append(body);
+  if (b.ready) {
+    const st = briefStart(b, 3), go = h('div', { class: 'bc-go' });
+    if (st.kind === 'assembly') go.append(h('button', { class: 'chip primary', onclick: () => { briefHide(); handleText(st.text); } }, st.text));
+    else {
+      go.append(h('span', { class: 'bc-k' }, L('Concepts', 'Konsep')));
+      [3, 5, 7, 10].forEach((n) => go.append(h('button', { class: 'chip', title: L(`${n} concepts`, `${n} konsep`), onclick: () => { conceptNext = n; briefHide(); handleText(st.text); } }, String(n))));
+      go.append(h('button', { class: 'chip primary', onclick: () => { briefHide(); handleText(st.text); } }, st.text));
+    }
+    el.append(go);
+  }
+}
+/** the brief is done being discussed: hide the card but keep it in this session (New design is what clears it) */
+function briefHide() { briefDone = true; const el = $('#briefCard'); if (el) { el.hidden = true; el.innerHTML = ''; } }
+function briefChips(j, box) {
+  const qs = Array.isArray(j.questions) ? j.questions : [], sug = Array.isArray(j.suggestions) ? j.suggestions : [];
+  if (!qs.length && !sug.length) return;
+  const wrap = h('div', { class: 'bchips' });
+  qs.forEach((q) => {
+    const opts = briefChipOptions(q); if (!opts.length) return;
+    wrap.append(h('div', { class: 'bq' }, h('b', null, String(q.text || '')),
+      h('div', { class: 'bq-o' }, opts.map((o) => h('button', { class: 'chip', title: o.note, onclick: () => handleText(o.label) }, o.label))),
+      h('p', { class: 'hint' }, L('…or type your own answer below.', '…atau ketik jawabanmu sendiri di bawah.'))));
+  });
+  sug.forEach((s) => {
+    if (!s || !s.text) return;
+    const row = h('div', { class: 'bsg' }, h('span', null, '+ ' + s.text + (s.why ? ' — ' + s.why : '')),
+      h('button', { class: 'chip', onclick: () => { row.remove(); handleText('add: ' + s.text); } }, L('+ add', '+ tambah')),
+      h('button', { class: 'chip', onclick: () => row.remove() }, L('no thanks', 'tidak')));
+    wrap.append(row);
+  });
+  box.append(wrap);
+}
+{ const pane = document.querySelector('.pane-chat'), card = h('section', { class: 'briefcard', id: 'briefCard', hidden: true, 'aria-label': L('Design brief', 'Design brief') });
+  if (pane && $('#chat')) pane.insertBefore(card, $('#chat')); else if (pane) pane.append(card);
+  renderBriefCard(); }
+{ const f3 = window.fetch; window.fetch = async function (url, opt) {
+    const isChat = typeof url === 'string' && url === API + '/chat' && opt && typeof opt.body === 'string' && !(opt.headers && opt.headers['X-Idris-Brief']);
+    if (isChat && chatBrief) { try { const b = JSON.parse(opt.body); b.context = { ...(b.context || {}), brief: chatBrief }; opt = { ...opt, body: JSON.stringify(b) }; } catch (e) { /* unchanged */ } }
+    const r = await f3(url, opt);
+    if (isChat) { try { const j = await r.clone().json();
+      if (j && j.brief && typeof j.brief === 'object') { chatBrief = j.brief; saveBrief(chatBrief); if (j.route && j.route.route === 'brief') briefDone = false; renderBriefCard(); }
+      else { const rt = j && j.route && j.route.route; if (rt && rt !== 'brief' && rt !== 'chat' && rt !== 'discuss') briefHide(); }
+      briefReply = j && (Array.isArray(j.questions) || (j.route && j.route.route === 'brief')) ? j : null; } catch (e) { briefReply = null; } }
+    return r; }; }
+{ const ca3 = chatAI; chatAI = async function () { const r = await ca3.apply(this, arguments);
+    if (briefReply) { const j = briefReply; briefReply = null;
+      const last = [...document.querySelectorAll('#chat .msg.ai .ai-body')].pop();
+      if (last) briefChips(j, last); else { const box = h('div', { class: 'ai-body' }); briefChips(j, box); say(box); }
+      scrollDown(); }
+    return r; }; }
+{ const ra = resetAll; resetAll = function () { chatBrief = null; briefDone = false; saveBrief(null); renderBriefCard(); return ra.apply(this, arguments); }; }
+
 /* ---- v64: connect solver v0.36 (solver/untuk-ui-sambungkan-solver-v0.36.md), part 1–4 and 8.
  * 1 (G) POST /design/job: timeline from events, feature-by-feature build from cad.steps, the browser half of the
  *       validation circle (POST /design/job/<id>/feedback with kernel measurements, renders, Part Stress),
@@ -8545,6 +8935,44 @@ async function apiJSON(path, body, ms = 30000) {
     let d = null; try { d = await r.json(); } catch (e) { d = null; }
     return { status: r.status, ok: r.ok, d }; }
   finally { clearTimeout(to); }
+}
+/* ---- S12 B11: one Bearing Life tool. With a part open it is the S4 calculator
+ * (POST /solve/bearing_life_iso281, ISO 281:2007), with a gearbox open it is the solver's own check. */
+const BEAR_DES = ['6004', '6005', '6006', '6204', '6205', '6206', '6207', '6304', '6305', '6306'];
+const BEAR_E = ['extreme_cleanliness', 'high_cleanliness', 'normal_cleanliness', 'slight_contamination', 'typical_contamination', 'severe_contamination'];
+function bearingPanel() {
+  const old = $('#bearDlg'); if (old) { old.remove(); return; } closeRibPop();
+  const num = (v, min, max) => h('input', { type: 'number', inputmode: 'decimal', value: v, step: 'any', min, max, 'aria-label': '' });
+  const des = h('input', { type: 'text', value: '6206', list: 'bearDesList', maxlength: 8, 'aria-label': L('Bearing designation', 'Tipe bearing') });
+  const load = num(2000, 0), rpm = num(3000, 1), visc = num(20, 0), need = num(20000, 0);
+  const clean = h('select', { 'aria-label': L('Contamination', 'Kontaminasi') }, BEAR_E.map((k) => h('option', { value: k, selected: k === 'normal_cleanliness' }, k.replace(/_/g, ' '))));
+  const out = h('div', { class: 'bear-out', 'aria-live': 'polite' });
+  const field = (label, input) => h('label', { class: 'pform-l' }, h('span', null, label), input);
+  const run = async () => {
+    out.innerHTML = ''; out.append(h('p', { class: 'hint' }, L('Running the ISO 281 solver…', 'Menjalankan solver ISO 281…')));
+    const body = { designation: des.value.trim(), radial_load_n: +load.value, rpm: +rpm.value, viscosity_mm2_s: +visc.value, contamination: clean.value };
+    if (+need.value > 0) body.required_life_h = +need.value;
+    const res = await apiJSON('/solve/bearing_life_iso281', body, 60000);
+    out.innerHTML = '';
+    if (!res.ok) { const msg = (res.d && (res.d.detail || res.d.error)) || `HTTP ${res.status}`; out.append(h('div', { class: 'warnbox bad' }, L('The solver did not run: ', 'Solver tidak jalan: ') + (typeof msg === 'string' ? msg : JSON.stringify(msg)))); return; }
+    const d = res.d || {}, o = d.outputs || {}, ck = (d.checks || [])[0];
+    const rows = [[L('Modified rating life L_nm', 'Umur rating termodifikasi L_nm'), o.L_nm_h != null ? `${f(o.L_nm_h, 0)} h` : '—'],
+      [L('Basic rating life L10', 'Umur rating dasar L10'), o.L10_h != null ? `${f(o.L10_h, 0)} h` : '—'],
+      [L('Life factor a_ISO', 'Faktor umur a_ISO'), o.a_ISO != null ? f(o.a_ISO, 3) : '—'],
+      [L('Fatigue load limit C_u', 'Batas beban lelah C_u'), o.Cu_n != null ? `${f(o.Cu_n, 0)} N` : '—']];
+    out.append(h('div', { class: 'kvs' }, rows.map(([k, v]) => h('div', null, h('span', null, k), h('b', null, v)))),
+      h('p', { class: 'hint' }, `${L('Solver', 'Solver')}: bearing_life_iso281 ${d.version || ''} · ISO 281:2007 · ${L('pure radial load, catalogue C/C0', 'beban radial murni, C/C0 katalog')}`),
+      ...(ck ? [h('p', { class: 'hint' }, `${ck.name || L('required life', 'umur diminta')}: ${ck.value != null ? f(ck.value, 0) : '—'} ${ck.unit || 'h'} vs ${ck.limit != null ? f(ck.limit, 0) : '—'} ${ck.unit || 'h'} · ${ck.pass === false ? L('below the requirement', 'di bawah kebutuhan') : L('meets the requirement', 'memenuhi kebutuhan')}`)] : []),
+      ...((d.warnings || []).filter(Boolean).length ? [h('div', { class: 'hint' }, d.warnings.filter(Boolean).join(' · '))] : []));
+  };
+  const dlg = h('div', { class: 'libdlg', id: 'bearDlg', role: 'dialog', 'aria-modal': 'true', 'aria-label': L('Bearing life (ISO 281)', 'Umur bearing (ISO 281)'), onclick: (e) => { if (e.target === dlg) dlg.remove(); } },
+    h('div', { class: 'lib-in' }, h('div', { class: 'lib-h' }, h('b', null, L('Bearing life & fatigue · ISO 281', 'Umur bearing & fatigue · ISO 281')), h('button', { class: 'x', 'aria-label': L('Close', 'Tutup'), onclick: () => dlg.remove() }, '✕')),
+      h('p', { class: 'hint' }, L('Modified rating life of a catalogue deep-groove ball bearing, pure radial load. The number comes from the solver, not from this page.', 'Umur rating termodifikasi bearing deep-groove dari katalog, beban radial murni. Angkanya dari solver, bukan dari halaman ini.')),
+      h('div', { class: 'bear-form' }, field(L('Designation', 'Tipe'), des), field(L('Radial load (N)', 'Beban radial (N)'), load), field(L('Speed (rpm)', 'Putaran (rpm)'), rpm),
+        field(L('Viscosity (mm²/s)', 'Viskositas (mm²/s)'), visc), field(L('Cleanliness', 'Kebersihan'), clean), field(L('Required life (h)', 'Umur diminta (h)'), need)),
+      h('div', { class: 'pact' }, h('button', { class: 'chip primary', onclick: run }, L('Run ISO 281', 'Jalankan ISO 281'))), out));
+  dlg.querySelector('datalist') || dlg.append(h('datalist', { id: 'bearDesList' }, BEAR_DES.map((x) => h('option', { value: x }))));
+  document.querySelector('.app').append(dlg);
 }
 /* the last code line that assigns a shape: a step's partial code gets "return <it>" so it can be built */
 function stepCode(code) {
@@ -8732,13 +9160,15 @@ function refsBox(rf) {
 
 /* ---- 4: report */
 async function partReport(p) {
-  const g = p.gen, w = window.open('', '_blank'); if (w) w.document.write('<p style="font:14px sans-serif">IDRIS is writing the report…</p>');
+  /* B9: a feature-tree part has no g.code, but it still has kernel numbers and a material, so it gets its report too. */
+  const g = p.gen || {}, w = window.open('', '_blank'); if (w) w.document.write('<p style="font:14px sans-serif">IDRIS is writing the report…</p>');
   const mat = PMAT[p.material] || null, s = p.fea || {}, fr = feaRun && feaRun.status === 'done' ? feaRun.out : null;
-  const sz = genRes ? [0, 1, 2].map((k) => +(genRes.bounds[1][k] - genRes.bounds[0][k]).toFixed(3)) : null;
+  const sz = genRes ? [0, 1, 2].map((k) => +(genRes.bounds[1][k] - genRes.bounds[0][k]).toFixed(3)) : partInfo ? partInfo.size.map((x) => +x.toFixed(3)) : null;
   const body = { request: g.request || '', title: p.name,
-    cad: { title: p.name, process: g.process || null, params: g.params.map((q) => ({ k: q.k, label: q.en, value: +q.v, unit: q.unit, source: q.src === 'user' ? 'user' : q.src === 'table' ? 'standard table' : 'default' })) },
+    cad: { title: p.name, process: g.process || null, params: (g.params || []).map((q) => ({ k: q.k, label: q.en, value: +q.v, unit: q.unit, source: q.src === 'user' ? 'user' : q.src === 'table' ? 'standard table' : 'default' })) },
     material: mat ? { name: mat[0], density_kg_m3: mat[1] * 1000, density_source: PMAT_SRC[p.material] || 'IDRIS Studio material table (typical value)' } : p.material,
-    measurements: genRes ? { x: sz[0], y: sz[1], z: sz[2], volume_mm3: +genRes.vol.toFixed(3), mass_g: mat ? +(genRes.vol / 1000 * mat[1]).toFixed(2) : null, valid: genRes.valid, source: 'OpenCascade kernel in the browser' } : null,
+    measurements: genRes ? { x: sz[0], y: sz[1], z: sz[2], volume_mm3: +genRes.vol.toFixed(3), mass_g: mat ? +(genRes.vol / 1000 * mat[1]).toFixed(2) : null, valid: genRes.valid, source: 'OpenCascade kernel in the browser' }
+      : partInfo ? { x: sz[0], y: sz[1], z: sz[2], volume_mm3: +partInfo.vol.toFixed(3), mass_g: mat ? +(partInfo.vol / 1000 * mat[1]).toFixed(2) : null, valid: null, source: 'OpenCascade kernel in the browser (feature tree)' } : null,
     part_check: fr ? { sf: fr.sf, von_mises_max_mpa: fr.vmax, max_displacement_mm: fr.dmax, solver: 'fea_part_3d', loads: (s.loads || []).length + feaReq(p).loads.length, supports: (s.supports || []).length + feaReq(p).supports.length } : null,
     rank: g.conceptRank && g.conceptRank.status === 'done' ? { ranking: (g.variants || []).filter((v) => v.rank).map((v) => ({ name: v.name, score: v.rank.score, values: { SF: v.fea && v.fea.sf, mass_g: v.kres && v.kres.mass } })) } : null,
     references: g.references || null, not_checked: g.not_checked || [] };
@@ -8842,14 +9272,42 @@ const ISO2768M = [[0.5, 3, 0.1], [3, 6, 0.1], [6, 30, 0.2], [30, 120, 0.3], [120
 const iso2768Note = (sizes) => 'ISO 2768-m: ' + [...new Set(sizes.map((L0) => ISO2768M.findIndex(([lo, hi]) => L0 > lo && L0 <= hi)).filter((i) => i >= 0))].sort((a, b) => a - b).map((i) => `${ISO2768M[i][0]}–${ISO2768M[i][1]}: ±${ISO2768M[i][2]}`).join(', ') + ' mm';
 const SCALES = [50, 20, 10, 5, 2, 1, 1 / 2, 1 / 5, 1 / 10, 1 / 20, 1 / 50, 1 / 100, 1 / 200];   /* ISO 5455 */
 const scaleText = (k) => k >= 1 ? `${k}:1` : `1:${Math.round(1 / k)}`;
+let sheetGeo = null;   /* bounds and volume of the drawing that is open: generated (worker) or feature-tree (browser) */
 async function partDrawing(p) {
-  if (!genRes) return say(para(L('Build the part first.', 'Bangun part dulu.'), 'm'));
+  if (!p) return say(para(L('Build or open a part first.', 'Bangun atau buka part dulu.'), 'm'));
   say(para(L('Making the A3 drawing from the kernel’s projections…', 'Membuat gambar A3 dari proyeksi kernel…'), 'm'));
-  let r; try { await genWorker(); /* the worker must hold this part */ if (!p.gen.imported) await genCall({ t: 'run', code: p.gen.code, params: genParamVals(p.gen) }, 40000); else await genCall({ t: 'import', buf: importBufs[p.gen.imported.key].slice(0) }, 120000);
-    /* the kernel's camera presets are named after planes: 'bottom' looks down from +Z (a top view), 'right' looks from −X (a left view) */
-    r = await genCall({ t: 'drawing', views: ['front', 'bottom', 'right', 'iso'] }, 120000); r.views = { front: r.views.front, top: r.views.bottom, left: r.views.right, iso: r.views.iso }; }
+  let r, geo = null; try {
+    if (p.gen) {
+      await genWorker(); /* the worker must hold this part */
+      if (!p.gen.imported) await genCall({ t: 'run', code: p.gen.code, params: genParamVals(p.gen) }, 40000); else await genCall({ t: 'import', buf: importBufs[p.gen.imported.key].slice(0) }, 120000);
+      /* the kernel's camera presets are named after planes: 'bottom' looks down from +Z (a top view), 'right' looks from −X (a left view) */
+      r = await genCall({ t: 'drawing', views: ['front', 'bottom', 'right', 'iso'] }, 120000); r.views = { front: r.views.front, top: r.views.bottom, left: r.views.right, iso: r.views.iso };
+    } else {
+      /* B1: a part built from the feature tree is projected in this browser, not in the code worker. Same readings:
+       * hidden-line views, full circles (holes, bosses) and axis-aligned flat faces for step dimensions. */
+      if (!partShape) throw new Error(L('build the body first: the drawing comes from the built body', 'bangun body dulu: gambar diambil dari body yang sudah dibangun'));
+      const R = await kernel(), shape = partShape, views = {};
+      for (const v of ['front', 'bottom', 'right', 'iso']) {
+        const cam = v === 'iso' ? new R.ProjectionCamera([0, 0, 0], [1, -1, 1], [1, 1, 0]) : v;
+        const pr = R.drawProjection(shape, cam), bb = (d) => { try { const b = d.boundingBox; return { x: b.bounds[0][0], y: -b.bounds[1][1], w: b.width, h: b.height }; } catch (e) { return null; } };
+        const vis = pr.visible.toSVGPaths ? pr.visible.toSVGPaths() : [], hid = v === 'iso' || !pr.hidden.toSVGPaths ? [] : pr.hidden.toSVGPaths();
+        views[v] = { visible: vis.flat ? vis.flat() : vis, hidden: hid.flat ? hid.flat() : hid, box: bb(pr.visible) };
+      }
+      const circles = [], planes = [];
+      try { const oc = R.getOC();
+        for (const e of shape.edges) { if (e.geomType !== 'CIRCLE') continue; const a = new oc.BRepAdaptor_Curve(e.wrapped);
+          if (Math.abs(a.LastParameter() - a.FirstParameter()) > 2 * Math.PI - 1e-3) { const c = a.Circle(), o = c.Location(), d = c.Axis().Direction(); circles.push({ c: [o.X(), o.Y(), o.Z()], r: c.Radius(), n: [d.X(), d.Y(), d.Z()] }); }
+          a.delete(); } } catch (e) { /* the views still draw without circles */ }
+      try { const oc = R.getOC();
+        for (const fc of shape.faces) { if (fc.geomType !== 'PLANE') continue; const a = new oc.BRepAdaptor_Surface(fc.wrapped, true), pl = a.Plane(), o = pl.Location(), d = pl.Axis().Direction(), n = [d.X(), d.Y(), d.Z()], ax = n.findIndex((x) => Math.abs(Math.abs(x) - 1) < 1e-6);
+          if (ax >= 0) planes.push({ ax, at: [o.X(), o.Y(), o.Z()][ax] }); a.delete(); } } catch (e) { /* steps are optional */ }
+      const b0 = shape.boundingBox.bounds;
+      r = { views: { front: views.front, top: views.bottom, left: views.right, iso: views.iso }, circles, planes };
+      geo = { bounds: [[...b0[0]], [...b0[1]]], vol: partInfo ? partInfo.vol : R.measureVolume(shape) };
+    }
+  }
   catch (e) { return say(h('div', { class: 'warnbox bad' }, L('The drawing could not be made: ', 'Gambar tidak bisa dibuat: ') + e.message)); }
-  drawingDialog(p, r.views, r.circles || [], r.planes || []);
+  drawingDialog(p, r.views, r.circles || [], r.planes || [], geo);
 }
 /* model point → view coordinates (SVG y down), same mapping as the kernel's projection cameras */
 const DRAW_MAP = { front: (q) => [q[0], -q[2]], top: (q) => [q[0], -q[1]], left: (q) => [-q[1], -q[2]] };   /* front from −Y, top from +Z, left from −X */
@@ -8867,11 +9325,12 @@ function drawHoles(circles) {
   }
   return out;
 }
-function drawingSheet(p, vw, circles = [], ui = false, planes = []) {
+function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null) {
+  const GS = geo || sheetGeo || genRes;   /* S11-B1: the same sheet serves a generated part and a feature-tree part */
   const opt = p.drawing || {}, off = opt.off || {}, O = (n) => off[n] || [0, 0];   /* v65.1: engineer's edits, saved with the part */
   const W = 420, H = 297, FR = { x: 20, y: 10, w: 390, h: 277 }, IN = { x: 25, y: 15, x2: 405, y2: 282 };
   const TB = { x: 230, y: 237, w: 180, h: 50 }, NOTE = { x: 230, y: 207, w: 180, h: 27 };   /* NOTE.y/h set once the notes are wrapped */
-  const lo = genRes.bounds[0], hi = genRes.bounds[1], sz = [0, 1, 2].map((i) => hi[i] - lo[i]);
+  const lo = GS.bounds[0], hi = GS.bounds[1], sz = [0, 1, 2].map((i) => hi[i] - lo[i]);
   const r1 = (v) => String(+(+v).toFixed(2)), esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   /* ---- dimensions, decided in view coordinates (all numbers from the kernel) ---- */
   const VN = ['front', 'top', 'left'], dims = { front: [], top: [], left: [] }, marks = { front: [], top: [], left: [] };
@@ -8994,7 +9453,7 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = []) {
   const lab = { front: 'Front view', top: 'Top view', left: 'Left view' };
   VN.forEach((v) => { const pl = place[v]; tx(pl.x, pl.y + pl.v.box.h * k + mg(v, 'bottom') + 1.5, lab[v], 2.5, { fill: '#333' }); });
   /* ---- title block (ISO 7200) ---- */
-  const mat = PMAT[p.material], mass = mat ? genRes.vol / 1000 * mat[1] : null, today = new Date().toISOString().slice(0, 10);
+  const mat = PMAT[p.material], mass = mat ? GS.vol / 1000 * mat[1] : null, today = new Date().toISOString().slice(0, 10);
   const docNo = opt.docNo || 'IDR-' + String(p.id || Date.now().toString(36)).toUpperCase();
   const tbL = (x1, y1, x2, y2, w = LW.thin) => ln(x1, y1, x2, y2, 'TITLE', w);
   const X0 = TB.x, Y0 = TB.y, X1 = TB.x + TB.w, Y1 = TB.y + TB.h;
@@ -9010,7 +9469,7 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = []) {
   cell(X0, Y0 + 10, cw, 10, 'General tolerances', 'ISO 2768-m', 3.5);
   cell(X0, Y0 + 20, cw, 10, 'Material', mat ? mat[0] : String(p.material || '—'), mat && mat[0].length > 26 ? 2.6 : 3.2);
   cell(X0, Y0 + 30, cw, 11, 'Mass (kernel volume × density)', mass != null ? `${f(mass, mass < 100 ? 1 : 0)} g` : '—', 3.5);
-  if (mat) tx(X0 + 1.5, Y0 + 46, `${f(genRes.vol / 1000, 2)} cm³ × ${mat[1]} g/cm³`, 2.2, { fill: '#555' });
+  if (mat) tx(X0 + 1.5, Y0 + 46, `${f(GS.vol / 1000, 2)} cm³ × ${mat[1]} g/cm³`, 2.2, { fill: '#555' });
   /* right part */
   const xr = X0 + cw, wr = TB.w - cw;
   tbL(xr, Y0 + 10, X1, Y0 + 10); tbL(xr, Y0 + 30, X1, Y0 + 30); tbL(xr, Y0 + 40, X1, Y0 + 40);
@@ -9070,7 +9529,8 @@ function drawingDXF(p, sheet) {
   for (const t of sheet.texts) ents.push(`0\nTEXT\n8\nTEXT\n10\n${t.x.toFixed(3)}\n20\n${(H - t.y).toFixed(3)}\n40\n${t.h}\n1\n${String(t.t).replace(/\n/g, ' ')}` + (t.rot ? `\n50\n${-t.rot}` : '') + (t.anchor === 'middle' ? `\n72\n1\n11\n${t.x.toFixed(3)}\n21\n${(H - t.y).toFixed(3)}` : ''));
   return `0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n${ents.join('\n')}\n0\nENDSEC\n0\nEOF\n`;
 }
-function drawingDialog(p, vw, circles, planes = []) {
+function drawingDialog(p, vw, circles, planes = [], geo = null) {
+  sheetGeo = geo || null;
   const old = $('#drawdlg'); if (old) old.remove();
   const close = () => { const d0 = $('#drawdlg'); if (d0) d0.remove(); };
   const dl = (data, name, type) => { const u = URL.createObjectURL(new Blob([data], { type })), a = h('a', { href: u, download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000); };
@@ -9377,7 +9837,7 @@ async function openReferences() {
   set('Import STEP', 'on', 'importStep', 'Open a STEP file from another CAD (up to 20 MB). The kernel measures it, the solver reads its faces, Part Stress works on it. It has no editable features yet.', 'Buka file STEP dari CAD lain (sampai 20 MB). Kernel mengukurnya, solver membaca mukanya, Part Stress berlaku. Belum ada fitur yang bisa diedit.');
   const ra = ribAct; ribAct = function (act) {
     if (act === 'importStep') return pickStep();
-    if (act === 'partDrawing') return state.part && state.part.gen ? partDrawing(state.part) : say(para(L('Open a generated or imported part first.', 'Buka part buatan IDRIS atau part impor dulu.'), 'm'));
+    if (act === 'partDrawing') return state.part ? partDrawing(state.part) : say(para(L('Build or open a part first.', 'Bangun atau buka part dulu.'), 'm'));
     if (act === 'asmPlan') { const q = (window.prompt(L('Describe the whole assembly (e.g. “city bicycle for a 170 cm rider, 700c wheels”):', 'Jelaskan rakitannya (mis. “sepeda kota untuk pengendara 170 cm, roda 700c”):')) || '').trim(); return q ? (addUser(q), assemblyPlan(q)) : null; }
     if (act === 'bearings') return openBearings();
     return ra.apply(this, arguments); };
@@ -10146,8 +10606,10 @@ function swGraph(p) {
   return { model: { model_id: String(p.id || 'part'), revision: n, units: 'mm', features: feats }, local };
 }
 async function exportSWMacro() {
-  const p = state.part; if (!p) return say(para(L('Open a part first.', 'Buka part dulu.'), 'm'));
-  if (p.gen || !(p.features || []).length) return say(h('div', { class: 'warnbox' }, L('This part was written by the AI as code, so it has no feature tree to rebuild in SolidWorks. Export STEP (exact B-rep) or STEP AP242 instead.', 'Part ini ditulis AI sebagai kode, jadi tidak punya pohon fitur untuk dibangun ulang di SolidWorks. Pakai Export STEP (B-rep eksak) atau STEP AP242.')),
+  const p = state.part;
+  /* S11-B5: an empty workspace is not "a part written by the AI". Only a part that really came from the AI gets that message. */
+  if (!p || !(p.gen || (p.features || []).length)) return say(para(L('Build or open a part first.', 'Bangun atau buka part dulu.'), 'm'));
+  if (p.gen) return say(h('div', { class: 'warnbox' }, L('This part was written by the AI as code, so it has no feature tree to rebuild in SolidWorks. Export STEP (exact B-rep) or STEP AP242 instead.', 'Part ini ditulis AI sebagai kode, jadi tidak punya pohon fitur untuk dibangun ulang di SolidWorks. Pakai Export STEP (B-rep eksak) atau STEP AP242.')),
     chips([{ label: L('Export STEP AP242', 'Ekspor STEP AP242'), fn: () => exportAP242(false) }, { label: L('Export STEP (exact)', 'Ekspor STEP (eksak)'), fn: () => exportPart('step') }]));
   const g = swGraph(p);
   const res = await apiJSON('/exchange/solidworks-macro', { name: p.name || 'Idris part', model: g.model }, 30000).catch((e) => ({ status: 0, d: { error: e.message } }));
@@ -10198,6 +10660,111 @@ try { renderRibbon(); } catch (e) { /* not drawn yet */ }
 { const st = document.createElement('style'); st.textContent = `.tool-in{width:min(680px,96vw)} .tool-out{margin-top:8px;display:flex;flex-direction:column;gap:6px} .tool-src{font-size:11px;color:var(--muted);display:block}
   .tool-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin:8px 0} .tool-grid .dr-f[hidden]{display:none}
   .tool-tab{border-collapse:collapse;font-size:12.5px} .tool-tab td,.tool-tab th{padding:3px 10px 3px 0;text-align:left;border-bottom:1px solid var(--line)} .job-chg{font-size:12px;margin:4px 0 0 16px}`; document.head.append(st); }
+
+/* ---- S11: exit sketch, section view, bill of materials, exploded view, and one button per function --- */
+function exitSketch() {
+  if (!state.part) return say(para(L('Build or open a part first.', 'Bangun atau buka part dulu.'), 'm'));
+  /* B2: leave sketch mode. The form closes without saving, the Features tab opens, and no error is said. */
+  partArm = null; partSel = null; if (viewer.setPreview) viewer.setPreview(null); if (typeof hideSkLabel === 'function') hideSkLabel();
+  cadTab = 'design'; ribTab = 'feat'; try { localStorage.setItem('idris-ribtab', 'feat'); } catch (e) { /* storage unavailable */ }
+  renderCad(); renderRibbon();
+  say(para(L('Sketch closed. Pick Extruded Boss/Base to add it or Extruded Cut to remove it; the sketch stays in the feature tree.', 'Sketch ditutup. Pilih Extruded Boss/Base untuk menambah atau Extruded Cut untuk membuang; sketch tetap di pohon fitur.'), 'm'));
+}
+
+async function partSection() {
+  if (!state.part || !partShape) return say(para(L('Build or open a part first, then cut a section through it.', 'Bangun atau buka part dulu, lalu potong section melaluinya.'), 'm'));
+  const old = $('#sectdlg'); if (old) old.remove();
+  const R = await kernel(), b0 = partShape.boundingBox.bounds, mid = [0, 1, 2].map((i) => (b0[0][i] + b0[1][i]) / 2);
+  const out = h('div', { class: 'tool-out' });
+  const plane = h('select', { 'aria-label': L('Section plane', 'Bidang potong') }, [['XY', 'XY · ' + L('cut away +Z', 'buang +Z')], ['XZ', 'XZ · ' + L('cut away +Y', 'buang +Y')], ['YZ', 'YZ · ' + L('cut away +X', 'buang +X')]].map(([v, t]) => h('option', { value: v }, t)));
+  const off = h('input', { type: 'number', step: 'any', value: +mid[2].toFixed(2), 'aria-label': L('Section offset', 'Offset potongan') });
+  const apply = async () => {
+    out.innerHTML = '';
+    try {
+      const pad = 10, mn = [0, 1, 2].map((i) => b0[0][i] - pad), mx = [0, 1, 2].map((i) => b0[1][i] + pad), pl = plane.value, at = +off.value;
+      if (!isFinite(at)) throw new Error(L('Type an offset in mm.', 'Ketik offset dalam mm.'));
+      const box = pl === 'XY' ? R.makeBox([mn[0], mn[1], at], [mx[0], mx[1], mx[2]]) : pl === 'XZ' ? R.makeBox([mn[0], at, mn[2]], [mx[0], mx[1], mx[2]]) : R.makeBox([at, mn[1], mn[2]], [mx[0], mx[1], mx[2]]);
+      const cut = partShape.clone().cut(box), m = cut.mesh({ tolerance: 0.05, angularTolerance: 0.2 });
+      viewer.setParts([{ buf: meshToSTL(zUp({ vertices: m.vertices, triangles: m.triangles })), kind: 'part', name: state.part.name }]); $('#vempty').classList.add('hide');
+      out.append(para(L(`Section on ${pl} at ${f(at, 2)} mm: the model with one half removed by the kernel. Volume left ${f(R.measureVolume(cut) / 1000, 2)} cm³. The real part is not changed.`, `Section pada ${pl} di ${f(at, 2)} mm: model dengan separuh dibuang oleh kernel. Volume tersisa ${f(R.measureVolume(cut) / 1000, 2)} cm³. Part aslinya tidak berubah.`), 'm'));
+    } catch (e) { out.append(h('div', { class: 'warnbox bad' }, L('The kernel could not cut this section: ', 'Kernel tidak bisa memotong section ini: ') + String(e.message || e))); }
+  };
+  const close = () => { const d = $('#sectdlg'); if (d) d.remove(); rebuildPart(false); };
+  const dlg = h('div', { class: 'libdlg', id: 'sectdlg', role: 'dialog', 'aria-modal': 'true', 'aria-label': L('Section View', 'Section View'), onclick: (e) => { if (e.target === dlg) close(); } },
+    h('div', { class: 'lib-in tool-in' }, h('div', { class: 'lib-h' }, h('b', null, L('Section View', 'Section View')), h('button', { class: 'x', 'aria-label': L('Close', 'Tutup'), onclick: close }, '✕')),
+      h('p', { class: 'hint' }, L('The plane cuts the built body with the kernel; the section is a real solid, not a picture. Close restores the full part.', 'Bidang memotong body yang sudah dibangun dengan kernel; potongannya solid nyata, bukan gambar. Tutup mengembalikan part utuh.')),
+      h('div', { class: 'pform' }, h('label', null, h('span', null, L('Plane', 'Bidang')), plane), h('label', null, h('span', null, L('Offset', 'Offset')), off)),
+      h('div', { class: 'pact' }, h('button', { class: 'chip primary', onclick: apply }, L('Cut section', 'Potong section'))), out));
+  document.body.append(dlg); apply();
+}
+
+function bomRows() {
+  const mat = (k) => PMAT[k] || PMAT.aluminium;
+  const a = state.assy2;
+  if (a && a.comps && a.comps.length) {
+    const rows = new Map();
+    for (const c of a.comps) { const inf = (a.info || []).find((x) => x.cid === c.cid);
+      const material = c.src === 'part' ? mat(c.part.material)[0] : L('standard part (catalog)', 'part standar (katalog)');
+      const mass = c.src === 'part' && inf && inf.ok ? inf.vol / 1000 * mat(c.part.material)[1] : null;
+      const key = c.name + '|' + material, r = rows.get(key) || { name: c.name, qty: 0, material, mass: 0, allMass: true };
+      r.qty++; if (mass == null) r.allMass = false; else r.mass += mass; rows.set(key, r); }
+    return { source: L('the open assembly, measured by OpenCascade in this browser', 'assembly yang terbuka, diukur OpenCascade di browser ini'), rows: [...rows.values()] };
+  }
+  if (typeof asmJob !== 'undefined' && asmJob && Array.isArray(asmJob.parts) && asmJob.parts.length) {
+    return { source: L('the solver assembly job (masses where the solver reported them)', 'job assembly solver (massa bila solver melaporkannya)'),
+      rows: asmJob.parts.map((p) => ({ name: String(p.name || p.id || 'part'), qty: +p.qty || 1, material: String(p.material || p.fidelity || '—'), mass: isFinite(+p.mass_g) ? +p.mass_g : null, allMass: isFinite(+p.mass_g) })) };
+  }
+  return null;
+}
+async function asmBom() {
+  const d = bomRows(); if (!d) return say(para(L('Insert components first (Insert Component), then Auto Assembly or Bill of Materials.', 'Masukkan komponen dulu (Insert Component), lalu Auto Assembly atau Bill of Materials.'), 'm'));
+  const old = $('#bomdlg'); if (old) old.remove();
+  const table = h('table', { class: 'grid' }, h('thead', null, h('tr', null, ...['#', L('Part', 'Part'), L('Qty', 'Jml'), L('Material', 'Material'), L('Mass', 'Massa')].map((t) => h('th', null, t)))),
+    h('tbody', null, d.rows.map((r, i) => h('tr', null, h('td', null, String(i + 1)), h('td', { style: 'text-align:left' }, h('b', null, r.name)), h('td', null, String(r.qty)), h('td', { style: 'text-align:left' }, r.material), h('td', null, r.mass != null ? `${f(r.mass, 1)} g` : '—')))));
+  const csv = () => { const lines = ['item,name,qty,material,mass_g', ...d.rows.map((r, i) => [i + 1, '"' + r.name.replace(/"/g, '""') + '"', r.qty, '"' + r.material.replace(/"/g, '""') + '"', r.mass != null ? r.mass.toFixed(2) : ''].join(','))]; dlText(lines.join('\n'), 'idris-bom.csv', 'text/csv'); };
+  const close = () => { const el = $('#bomdlg'); if (el) el.remove(); };
+  const dlg = h('div', { class: 'libdlg', id: 'bomdlg', role: 'dialog', 'aria-modal': 'true', 'aria-label': L('Bill of Materials', 'Bill of Materials'), onclick: (e) => { if (e.target === dlg) close(); } },
+    h('div', { class: 'lib-in tool-in' }, h('div', { class: 'lib-h' }, h('b', null, L('Bill of Materials', 'Bill of Materials')), h('button', { class: 'x', 'aria-label': L('Close', 'Tutup'), onclick: close }, '✕')),
+      para(L('Item, quantity, material and mass. Source: ', 'Item, jumlah, material, dan massa. Sumber: ') + d.source + '.', 'm'), table,
+      h('p', { class: 'hint' }, L('Mass = kernel volume × the density of the material table; standard parts come from the solver catalog and are not weighed here.', 'Massa = volume kernel × densitas tabel material; part standar berasal dari katalog solver dan tidak ditimbang di sini.')),
+      h('div', { class: 'pact' }, h('button', { class: 'chip', onclick: csv }, L('Download CSV', 'Unduh CSV')), h('button', { class: 'chip', onclick: () => window.print() }, L('Print', 'Cetak')))));
+  document.body.append(dlg);
+}
+async function asmExplode() {
+  const a = state.assy2, ok = a && (a.info || []).filter((x) => x.ok);
+  if (!ok || !ok.length) return say(para(L('Insert components first (Insert Component). Exploded View slides the built components apart.', 'Masukkan komponen dulu (Insert Component). Exploded View menggeser komponen yang sudah dibangun.'), 'm'));
+  const old = $('#expoDlg'); if (old) old.remove();
+  const R = await kernel(), out = h('div', { class: 'tool-out' });
+  let seq = 0;
+  const apply = async (dist) => { const my = ++seq; out.innerHTML = '';
+    try { const parts = [];
+      for (const [i, inf] of ok.entries()) { const sh = inf.shape.clone().translate([0, 0, dist * i]), m = sh.mesh({ tolerance: 0.06, angularTolerance: 0.25 });
+        const c = a.comps.find((q) => q.cid === inf.cid) || {}; parts.push({ buf: meshToSTL(zUp({ vertices: m.vertices, triangles: m.triangles })), kind: ['bolt', 'nut', 'washer'].includes(c.src) ? 'fastener' : 'part', name: c.name || inf.cid }); }
+      if (my !== seq) return; viewer.setParts(parts); $('#vempty').classList.add('hide');
+      out.append(para(L(`Exploded by ${f(dist, 0)} mm between components along the assembly Z axis. The stored positions did not change; Close puts them back.`, `Diurai ${f(dist, 0)} mm antar komponen sepanjang sumbu Z assembly. Posisi tersimpan tidak berubah; Tutup mengembalikannya.`), 'm'));
+    } catch (e) { out.append(h('div', { class: 'warnbox bad' }, L('The kernel could not rebuild the exploded view: ', 'Kernel tidak bisa membangun ulang exploded view: ') + String(e.message || e))); } };
+  const range = h('input', { type: 'range', min: 0, max: 200, step: 5, value: 0, 'aria-label': L('Explode distance', 'Jarak urai') });
+  const close = () => { const d = $('#expoDlg'); if (d) d.remove(); assyRebuild(false); };
+  const dlg = h('div', { class: 'libdlg', id: 'expoDlg', role: 'dialog', 'aria-modal': 'true', 'aria-label': L('Exploded View', 'Exploded View'), onclick: (e) => { if (e.target === dlg) close(); } },
+    h('div', { class: 'lib-in tool-in' }, h('div', { class: 'lib-h' }, h('b', null, L('Exploded View', 'Exploded View')), h('button', { class: 'x', 'aria-label': L('Close', 'Tutup'), onclick: close }, '✕')),
+      h('p', { class: 'hint' }, L('Slide the components apart along Z. It is a view only: the assembly tree, mates and saved positions stay as they are.', 'Geser komponen terpisah sepanjang Z. Ini hanya tampilan: pohon assembly, mate, dan posisi tersimpan tetap.')),
+      h('div', { class: 'pform' }, h('label', null, h('span', null, L('Distance between components', 'Jarak antar komponen')), range)), h('div', { class: 'pact' }, h('button', { class: 'chip primary', onclick: close }, L('Done', 'Selesai'))), out));
+  range.addEventListener('input', () => apply(+range.value));
+  document.body.append(dlg); apply(0);
+}
+
+{ const ra = ribAct; ribAct = function (a, name) {
+    if (a === 'sketchExit') return exitSketch();
+    if (a === 'measureAny') { if (!state.part) { if (state.variants.length || (typeof genRes !== 'undefined' && genRes)) { cadTab = 'check'; return renderCad(); } return say(para(L('Build or open a part first.', 'Bangun atau buka part dulu.'), 'm')); } return partTool('measure'); }
+    if (a === 'mass') { if (!state.part || !partInfo) return say(para(L('Build or open a part first.', 'Bangun atau buka part dulu.'), 'm')); partArm = null; partSel = 'mass'; cadTab = 'design'; return renderCad(); }
+    if (a === 'sectionAny') { if (state.part) return partSection(); const g = gbRunner('gbSection'); return g ? g() : say(para(L('Build a part first, then cut a section through it.', 'Bangun part dulu, lalu potong section melaluinya.'), 'm')); }
+    if (a === 'stressAny') { if (state.part) return ribAct('partFea'); const g = gbRunner('gbCheck'); return g ? g() : say(para(L('Open a part or a gearbox design first.', 'Buka part atau desain gearbox dulu.'), 'm')); }
+    if (a === 'modalAny') { if (state.part) return modalPart(); const g = gbRunner('gbCheck'); return g ? g() : say(para(L('Open a part or a gearbox design first.', 'Buka part atau desain gearbox dulu.'), 'm')); }
+    if (a === 'drawingAny') { if (state.part) return partDrawing(state.part); const g = gbRunner('gbShop'); return g ? g() : say(para(L('Build a part or open a gearbox design first.', 'Bangun part atau buka desain gearbox dulu.'), 'm')); }
+    if (a === 'reportAny') { if (state.part) return partReport(state.part); const g = gbRunner('gbReport'); return g ? g() : say(para(L('Build a part or open a gearbox design first.', 'Bangun part atau buka desain gearbox dulu.'), 'm')); }
+    if (a === 'asmBom') return asmBom();
+    if (a === 'asmExplode') return asmExplode();
+    return ra.apply(this, arguments); }; }
 
 window.__idris = { state, parseText, viewer, frameFit, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids } };
 })();
