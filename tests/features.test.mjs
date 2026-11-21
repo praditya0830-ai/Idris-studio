@@ -69,7 +69,7 @@ const revCut = await run([F('shape', { kind: 'box', L: 40, W: 40, H: 20, x: 0, y
 const cutVol = vol(revCut.body);
 check('revolved cut removes material', () => ok(revCut.body && cutVol < 32000, `cut ran, ${cutVol.toFixed(1)} mm³ of 32000 left`));
 check('revolved cut leaves no error on any step', () => ok(!errs(revCut.features).length, 'errors: ' + JSON.stringify(revCut.features.map((x) => x.err || null))));
-check('revolved cut removes the amount the geometry gives (13534 mm³)',
+check('revolved cut removes 13000–14000 mm³ (about 13534 mm³)',
   () => ok(32000 - cutVol > 13000 && cutVol > 18000 && cutVol < 19000, `removed ${(32000 - cutVol).toFixed(1)} mm³, ${cutVol.toFixed(1)} left`));
 
 const revBadAngle = await run([SK(), F('revolve', { axis: 'Z', angle: 0, op: 'add' })]);
