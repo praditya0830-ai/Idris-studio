@@ -616,6 +616,10 @@ body.cad .xrib{display:block;background:var(--white);border-bottom:1px solid var
 .lib-in{background:var(--panel);color:var(--text);border-radius:14px;width:100%;max-width:780px;max-height:88vh;overflow:auto;padding:16px 20px 20px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
 .lib-h{display:flex;align-items:center;justify-content:space-between} .lib-h b{font-size:17px} .lib-h .x{border:0;background:none;font-size:16px;color:var(--muted)}
 .lib-in h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 8px}
+.bear-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;margin:10px 0}
+.bear-form .pform-l{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+.bear-form input,.bear-form select{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line2);border-radius:6px;background:var(--white);color:var(--text);min-width:0}
+.bear-out{margin-top:8px} .bear-out .kvs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 14px;margin:8px 0}
 .lib-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
 .lib-c{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;border:1px solid var(--line);background:var(--white);border-radius:10px;padding:10px 12px;color:var(--text);cursor:pointer}
 .lib-c:hover{border-color:var(--accent-line);background:var(--hover)} .lib-c b{font-size:13.5px} .lib-c span{font-size:12px;color:var(--muted)} .lib-c em{font-style:normal;font-size:10.5px;color:var(--tag-ink)}
@@ -6807,15 +6811,14 @@ const RIBBON = [
       T('Static Stress (FEA)', 'fea', 'on', 'Static stress of the open part (Part Stress, solver), or the gearbox housing check. The solver used is named in the result.', 'Tegangan statik part yang terbuka (Part Stress, solver), atau cek housing gearbox. Solver yang dipakai ditulis di hasil.', 'Static, Linear Stress', 'stressAny'),
       T('Modal / Frequency', 'modal', 'on', 'Natural frequencies of the open part (solver), or the gearbox frequency check against the gear mesh.', 'Frekuensi alami part yang terbuka (solver), atau cek frekuensi gearbox terhadap mesh gear.', 'Frequency', 'modalAny'),
       T('Thermal', 'therm', 'gb', 'Oil temperature, with or without a fan.', 'Suhu oli, dengan atau tanpa kipas.', 'Heat Transfer', 'gbCheck', ALT_GB),
-      T('Bearing Life & Fatigue', 'fatigue', 'gb', 'ISO 281 bearing life and shaft fatigue.', 'Umur bearing ISO 281 dan fatigue poros.', 'Fatigue', 'gbCheck', ALT_GB)]],
-    ['Part', [T('Part Stress (FEA)', 'fea', 'mk1', 'Loads and supports on a part, then stress and safety factor.', 'Beban dan tumpuan pada part, lalu tegangan dan faktor keamanan.', 'SimulationXpress, Stress Analysis')]],
+      T('Bearing Life & Fatigue', 'fatigue', 'on', 'ISO 281 modified rating life L_nm of a catalogue deep-groove bearing (calculator S4). Inside a gearbox it runs the solver’s shaft and bearing check instead; the solver used is named in the result.', 'Umur rating termodifikasi L_nm ISO 281 untuk bearing deep-groove dari katalog (kalkulator S4). Di dalam gearbox, yang jalan adalah cek poros dan bearing dari solver; solver yang dipakai ditulis di hasil.', 'Fatigue', 'bearingAny')]],
     ['Advanced', [T('Topology Optimisation', 'topo', 'no', 'Remove material that carries no load.', 'Buang material yang tidak menahan beban.', 'Generative Design, Shape Optimization'),
       T('CFD', 'cfd', 'no', 'Air and fluid flow.', 'Aliran udara dan fluida.', 'Flow Simulation'), T('Buckling', 'buck', 'no', 'Collapse load of thin parts.', 'Beban runtuh part tipis.', ''),
       T('Drop Test', 'drop', 'no', 'Impact on the floor.', 'Benturan ke lantai.', 'Explicit Dynamics')]]]],
   ['draw', 'Drawing', 'Gambar', [
     ['Drawing', [T('Working Drawings (A3)', 'draw', 'on', 'A3 drawing: the open part from the kernel, or the gearbox shop files from the solver.', 'Gambar A3: part yang terbuka dari kernel, atau file bengkel gearbox dari solver.', 'Make Drawing, Standard 3 View', 'drawingAny'),
       T('BOM Table', 'bom', 'on', 'Parts list of the open assembly, ready to print or save as CSV.', 'Daftar part assembly yang terbuka, siap dicetak atau disimpan sebagai CSV.', 'Balloons', 'asmBom'),
-      T('Part Drawing', 'views', 'on', 'Three views of a single part, with its sizes, from the kernel’s projections.', 'Tiga tampilan part tunggal, dengan ukurannya, dari proyeksi kernel.', 'Drawing from Part', 'drawing'),
+
       T('Section / Detail View', 'detail', 'no', 'Cut and zoomed views on the sheet.', 'Tampilan potong dan perbesaran di lembar.', ''),
       T('Dimensions & Notes', 'note', 'no', 'Add dimensions and notes by hand.', 'Tambah dimensi dan catatan manual.', 'Annotations'),
       T('GD&T', 'gdt', 'no', 'Geometric tolerances and datums.', 'Toleransi geometris dan datum.', 'Feature Control Frame'),
@@ -6851,6 +6854,8 @@ function ribAct(a, name) {
   if (typeof a === 'object' && a.part) return partTool(a.part, a.p, name);
   if (a === 'library') return openLibrary();
   if (a === 'measure') return !state.part && state.variants.length ? cadTabGo('check') : partTool('measure');
+  /* S12 B11: a part routes to the S4 calculator, a gearbox to its own solver check. */
+  if (a === 'bearingAny') { if (state.part) return bearingPanel(); const g = gbRunner('gbCheck'); return g ? g() : bearingPanel(); }
   if (a === 'expStep' || a === 'expStl') { if (partShape) return exportPart(a === 'expStep' ? 'step' : 'stl'); return say(para(L('Build a part first, then export it.', 'Bangun part dulu, lalu ekspor.'), 'm')); }
   if (a === 'rename') { if (state.part) return renamePart(); return say(para(L('Open a part first.', 'Buka part dulu.'), 'm')); }
   const g = gbRunner(a); if (g) return g();
@@ -8726,6 +8731,44 @@ async function apiJSON(path, body, ms = 30000) {
     let d = null; try { d = await r.json(); } catch (e) { d = null; }
     return { status: r.status, ok: r.ok, d }; }
   finally { clearTimeout(to); }
+}
+/* ---- S12 B11: one Bearing Life tool. With a part open it is the S4 calculator
+ * (POST /solve/bearing_life_iso281, ISO 281:2007), with a gearbox open it is the solver's own check. */
+const BEAR_DES = ['6004', '6005', '6006', '6204', '6205', '6206', '6207', '6304', '6305', '6306'];
+const BEAR_E = ['extreme_cleanliness', 'high_cleanliness', 'normal_cleanliness', 'slight_contamination', 'typical_contamination', 'severe_contamination'];
+function bearingPanel() {
+  const old = $('#bearDlg'); if (old) { old.remove(); return; } closeRibPop();
+  const num = (v, min, max) => h('input', { type: 'number', inputmode: 'decimal', value: v, step: 'any', min, max, 'aria-label': '' });
+  const des = h('input', { type: 'text', value: '6206', list: 'bearDesList', maxlength: 8, 'aria-label': L('Bearing designation', 'Tipe bearing') });
+  const load = num(2000, 0), rpm = num(3000, 1), visc = num(20, 0), need = num(20000, 0);
+  const clean = h('select', { 'aria-label': L('Contamination', 'Kontaminasi') }, BEAR_E.map((k) => h('option', { value: k, selected: k === 'normal_cleanliness' }, k.replace(/_/g, ' '))));
+  const out = h('div', { class: 'bear-out', 'aria-live': 'polite' });
+  const field = (label, input) => h('label', { class: 'pform-l' }, h('span', null, label), input);
+  const run = async () => {
+    out.innerHTML = ''; out.append(h('p', { class: 'hint' }, L('Running the ISO 281 solver…', 'Menjalankan solver ISO 281…')));
+    const body = { designation: des.value.trim(), radial_load_n: +load.value, rpm: +rpm.value, viscosity_mm2_s: +visc.value, contamination: clean.value };
+    if (+need.value > 0) body.required_life_h = +need.value;
+    const res = await apiJSON('/solve/bearing_life_iso281', body, 60000);
+    out.innerHTML = '';
+    if (!res.ok) { const msg = (res.d && (res.d.detail || res.d.error)) || `HTTP ${res.status}`; out.append(h('div', { class: 'warnbox bad' }, L('The solver did not run: ', 'Solver tidak jalan: ') + (typeof msg === 'string' ? msg : JSON.stringify(msg)))); return; }
+    const d = res.d || {}, o = d.outputs || {}, ck = (d.checks || [])[0];
+    const rows = [[L('Modified rating life L_nm', 'Umur rating termodifikasi L_nm'), o.L_nm_h != null ? `${f(o.L_nm_h, 0)} h` : '—'],
+      [L('Basic rating life L10', 'Umur rating dasar L10'), o.L10_h != null ? `${f(o.L10_h, 0)} h` : '—'],
+      [L('Life factor a_ISO', 'Faktor umur a_ISO'), o.a_ISO != null ? f(o.a_ISO, 3) : '—'],
+      [L('Fatigue load limit C_u', 'Batas beban lelah C_u'), o.Cu_n != null ? `${f(o.Cu_n, 0)} N` : '—']];
+    out.append(h('div', { class: 'kvs' }, rows.map(([k, v]) => h('div', null, h('span', null, k), h('b', null, v)))),
+      h('p', { class: 'hint' }, `${L('Solver', 'Solver')}: bearing_life_iso281 ${d.version || ''} · ISO 281:2007 · ${L('pure radial load, catalogue C/C0', 'beban radial murni, C/C0 katalog')}`),
+      ...(ck ? [h('p', { class: 'hint' }, `${ck.name || L('required life', 'umur diminta')}: ${ck.value != null ? f(ck.value, 0) : '—'} ${ck.unit || 'h'} vs ${ck.limit != null ? f(ck.limit, 0) : '—'} ${ck.unit || 'h'} · ${ck.pass === false ? L('below the requirement', 'di bawah kebutuhan') : L('meets the requirement', 'memenuhi kebutuhan')}`)] : []),
+      ...((d.warnings || []).filter(Boolean).length ? [h('div', { class: 'hint' }, d.warnings.filter(Boolean).join(' · '))] : []));
+  };
+  const dlg = h('div', { class: 'libdlg', id: 'bearDlg', role: 'dialog', 'aria-modal': 'true', 'aria-label': L('Bearing life (ISO 281)', 'Umur bearing (ISO 281)'), onclick: (e) => { if (e.target === dlg) dlg.remove(); } },
+    h('div', { class: 'lib-in' }, h('div', { class: 'lib-h' }, h('b', null, L('Bearing life & fatigue · ISO 281', 'Umur bearing & fatigue · ISO 281')), h('button', { class: 'x', 'aria-label': L('Close', 'Tutup'), onclick: () => dlg.remove() }, '✕')),
+      h('p', { class: 'hint' }, L('Modified rating life of a catalogue deep-groove ball bearing, pure radial load. The number comes from the solver, not from this page.', 'Umur rating termodifikasi bearing deep-groove dari katalog, beban radial murni. Angkanya dari solver, bukan dari halaman ini.')),
+      h('div', { class: 'bear-form' }, field(L('Designation', 'Tipe'), des), field(L('Radial load (N)', 'Beban radial (N)'), load), field(L('Speed (rpm)', 'Putaran (rpm)'), rpm),
+        field(L('Viscosity (mm²/s)', 'Viskositas (mm²/s)'), visc), field(L('Cleanliness', 'Kebersihan'), clean), field(L('Required life (h)', 'Umur diminta (h)'), need)),
+      h('div', { class: 'pact' }, h('button', { class: 'chip primary', onclick: run }, L('Run ISO 281', 'Jalankan ISO 281'))), out));
+  dlg.querySelector('datalist') || dlg.append(h('datalist', { id: 'bearDesList' }, BEAR_DES.map((x) => h('option', { value: x }))));
+  document.querySelector('.app').append(dlg);
 }
 /* the last code line that assigns a shape: a step's partial code gets "return <it>" so it can be built */
 function stepCode(code) {

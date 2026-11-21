@@ -364,7 +364,10 @@ check('B7 Revolved Cut is open and runs revolve with op cut', () => {
   ok(t.st === 'on', 'status ' + t.st);
   ok(t.act && t.act.part === 'revolve' && t.act.p.op === 'cut', JSON.stringify(t.act));
 });
-check('B8 Part Drawing is open', () => ok(tool('Part Drawing').st === 'on' && tool('Part Drawing').act === 'drawing', tool('Part Drawing').st + ' ' + tool('Part Drawing').act));
+check('B8 / B11 one Drawing tool: Working Drawings (A3) opens the part drawing', () => {
+  ok(!RIB_ALL.some((t) => t.n === 'Part Drawing'), 'the duplicate Part Drawing tool is gone');
+  ok(tool('Working Drawings (A3)').st === 'on' && tool('Working Drawings (A3)').act === 'drawingAny', tool('Working Drawings (A3)').act);
+});
 check('B3 Measure and Mass Properties are two different actions', () => {
   ok(tool('Measure').act === 'measureAny', String(tool('Measure').act));
   ok(tool('Mass Properties').act === 'mass', String(tool('Mass Properties').act));
