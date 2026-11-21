@@ -195,5 +195,62 @@ const suppressedShape = await run([F('shape', { kind: 'box', L: 10, W: 10, H: 10
 check('a suppressed step is skipped and the rest still builds', () => eq(vol(suppressedShape.body), 8000, 0.01, 'volume'));
 
 /* ------------------------------------------------------------------------ */
+
+/* --------------------------------------------------------------------- S9 --- */
+/* the DFM and AP242 answers, lifted from index.html and checked as data */
+const s9Start = html.indexOf('/* ---- S9 helpers'), s9End = html.indexOf('/* ---- end S9 helpers */');
+if (s9Start < 0 || s9End < 0) throw new Error('S9 helpers not found in index.html');
+const S9 = new Function('f', `${html.slice(s9Start, s9End)}\nreturn { dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids };`)(f);
+
+check('an exact wall measurement is named as exact', () => {
+  const n = S9.dfmWallNote({ method_id: 'exact-ray-triangle', resolution_mm: 0.0001, min_mm: 5 });
+  ok(n.known && n.exact, 'the exact cast must be known and exact');
+  eq(n.resolution_mm, 0.0001, 1e-9, 'resolution');
+});
+
+check('a voxel fallback is reported with its cell and never as exact', () => {
+  const n = S9.dfmWallNote({ method_id: 'voxel-fallback', resolution_mm: 0.25 });
+  ok(n.known && !n.exact, 'the fallback must not claim exact');
+  eq(n.resolution_mm, 0.25, 1e-9, 'cell');
+});
+
+check('a solver that does not say how it measured is not credited with a method', () => {
+  const n = S9.dfmWallNote({ min_mm: 5 });
+  ok(!n.known && n.method_id === null && n.resolution_mm === null, 'no method claimed');
+});
+
+check('a coarse measurement is not a pass', () => {
+  ok(S9.dfmIsCoarse({ id: 'min_wall', status: 'not_checked', message: 'measurement too coarse for this wall limit' }), 'coarse should be flagged');
+  ok(!S9.dfmIsCoarse({ id: 'min_wall', status: 'pass', message: 'measured 5 mm >= 3 mm' }), 'a pass is not coarse');
+  ok(!S9.dfmIsCoarse({ id: 'min_wall', status: 'not_checked', message: 'no wall could be measured' }), 'another not_checked is not coarse');
+  ok(!S9.dfmIsCoarse(undefined), 'nothing is not coarse');
+});
+
+check('the drill table names each diameter and the drill that makes it', () => {
+  const rows = S9.dfmDrillRows({ id: 'drill_size', unit: 'count', value: 3, diameters_mm: [
+    { d_mm: 6, standard_drill_mm: 6, in_series: true, holes: 2 },
+    { d_mm: 6.2, standard_drill_mm: 6, in_series: false, holes: 1 }] });
+  eq(rows.length, 2, 0, 'rows');
+  eq(rows[0].d, 6, 0, 'diameter');
+  eq(rows[0].holes, 2, 0, 'holes');
+  ok(rows[0].in_series && !rows[1].in_series, 'the series flags survive');
+  eq(rows[1].drill, 6, 0, 'nearest drill');
+});
+
+check('a solver without diameters_mm gives no table instead of an invented one', () => {
+  ok(S9.dfmDrillRows({ id: 'drill_size', unit: 'count', value: 1 }) === null, 'no table without the data');
+});
+
+check('solids per part: one is quiet, more than one is flagged, silence is not a claim', () => {
+  const one = S9.ap242Solids({ solids_per_part: { bracket: 1 } });
+  ok(one.reported && one.over.length === 0, 'one solid should not be flagged');
+  const many = S9.ap242Solids({ stats: { solids_per_part: { bracket: 3 } }, warnings: ['part bracket is 3 separate closed bodies'] });
+  eq(many.over.length, 1, 0, 'over count');
+  eq(many.by_part.bracket, 3, 0, 'solid count per part');
+  eq(many.warnings.length, 1, 0, 'warnings are carried');
+  const none = S9.ap242Solids({});
+  ok(!none.reported && none.over.length === 0, 'an unreported count is not a claim');
+});
+
 console.log(`\n${pass} passed, ${fails.length} failed`);
 if (fails.length) { for (const [name, e] of fails) console.log('FAILED: ' + name + ' -> ' + (e && e.message)); process.exit(1); }
