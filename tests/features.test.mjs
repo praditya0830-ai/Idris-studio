@@ -334,5 +334,51 @@ check('solids per part: one is quiet, more than one is flagged, silence is not a
   ok(!none.reported && none.over.length === 0, 'an unreported count is not a claim');
 });
 
+/* --------------------------------------------------------------------- S11 --- */
+/* A: the status chips and coloured dots are gone, and every tool that cannot run says why. */
+const whyAt = html.indexOf('function ribWhy(t)'), whyEnd = html.indexOf('\n', whyAt);
+if (whyAt < 0 || whyEnd < 0) throw new Error('ribWhy not found in index.html');
+const ribWhy = new Function('L', html.slice(whyAt, whyEnd) + '\nreturn ribWhy;')(L);
+
+console.log('\nS11 · toolbar labels and the tools that were behind a label');
+check('no Active / Gearbox / Mark 1 / Not yet chips are drawn', () => {
+  ok(!/xr-legend/.test(html), 'legend markup left');
+  ok(!/xr-dot/.test(html), 'coloured dot left');
+});
+check('a grey tool says why in its tooltip', () => {
+  ok(/gearbox/i.test(ribWhy({ st: 'gb' })), 'gb: ' + ribWhy({ st: 'gb' }));
+  ok(/Mark 1/.test(ribWhy({ st: 'mk1' })), 'mk1: ' + ribWhy({ st: 'mk1' }));
+  ok(/IDRIS/.test(ribWhy({ st: 'no' })), 'no: ' + ribWhy({ st: 'no' }));
+  ok(ribWhy({ st: 'on' }) === '', 'on tools need no excuse');
+});
+
+const ribA = html.indexOf('const T = (n, ic, st, en, id, aka, act, alt, ai)'), ribB = html.indexOf('const RIB_ALL = ');
+if (ribA < 0 || ribB < 0) throw new Error('RIBBON not found in index.html');
+const RIBBON = new Function('L', html.slice(ribA, ribB) + '\nreturn RIBBON;')(L);
+const RIB_ALL = RIBBON.flatMap(([tab, en, id, groups]) => groups.flatMap(([g, tools]) => tools.map((t) => ({ ...t, tab, grp: g }))));
+const tool = (n) => RIB_ALL.find((t) => t.n === n);
+
+check('Exit Sketch leaves the sketch instead of opening Extrude', () => ok(tool('Exit Sketch').act === 'sketchExit', String(tool('Exit Sketch').act)));
+check('B7 Revolved Cut is open and runs revolve with op cut', () => {
+  const t = tool('Revolved Cut');
+  ok(t.st === 'on', 'status ' + t.st);
+  ok(t.act && t.act.part === 'revolve' && t.act.p.op === 'cut', JSON.stringify(t.act));
+});
+check('B8 Part Drawing is open', () => ok(tool('Part Drawing').st === 'on' && tool('Part Drawing').act === 'drawing', tool('Part Drawing').st + ' ' + tool('Part Drawing').act));
+check('B3 Measure and Mass Properties are two different actions', () => {
+  ok(tool('Measure').act === 'measureAny', String(tool('Measure').act));
+  ok(tool('Mass Properties').act === 'mass', String(tool('Mass Properties').act));
+  ok(!/typical density/i.test(tool('Mass Properties').en), 'the old "typical density" text is gone');
+});
+check('B9 / B10 / B11 route to the part or the gearbox by what is open', () => {
+  ok(tool('Report').act === 'reportAny', String(tool('Report').act));
+  ok(tool('Section View').act === 'sectionAny', String(tool('Section View').act));
+  ok(tool('Static Stress (FEA)').act === 'stressAny', String(tool('Static Stress (FEA)').act));
+  ok(tool('Modal / Frequency').act === 'modalAny', String(tool('Modal / Frequency').act));
+  ok(tool('Working Drawings (A3)').act === 'drawingAny', String(tool('Working Drawings (A3)').act));
+  ok(tool('Bill of Materials').act === 'asmBom' && tool('Exploded View').act === 'asmExplode', 'assembly tools');
+  ok(tool('Draft Analysis').act === 'dfmDraft', String(tool('Draft Analysis').act));
+});
+
 console.log(`\n${pass} passed, ${fails.length} failed`);
 if (fails.length) { for (const [name, e] of fails) console.log('FAILED: ' + name + ' -> ' + (e && e.message)); process.exit(1); }
