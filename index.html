@@ -6560,7 +6560,9 @@ function renamePart() {
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') ok(); }); inp.focus(); inp.select();
 }
 async function exportPart(kind) {
-  if (!partShape) return; const name = (state.part.name || 'part').replace(/[^\w.-]+/g, '_');
+  /* an assembly can be open with no part, while the shape of the part built before it is still in memory */
+  if (!state.part || !partShape) return say(para(L('Build or open a part first, then export it.', 'Bangun atau buka part dulu, lalu ekspor.'), 'm'));
+  const name = (state.part.name || 'part').replace(/[^\w.-]+/g, '_');
   const blob = kind === 'step' ? partShape.blobSTEP() : partShape.blobSTL({ tolerance: 0.02, angularTolerance: 0.1, binary: true });
   const url = URL.createObjectURL(blob), a = h('a', { href: url, download: `${name}.${kind === 'step' ? 'step' : 'stl'}` }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
   learnMark('shop');
@@ -9003,7 +9005,7 @@ async function pollJob(job) {
     job.events = Array.isArray(b.events) ? b.events : job.events; job.stage = b.stage || job.stage; job.elapsed = b.elapsed_s;
     job.round = Math.max(job.round, ...job.events.map((e) => +e.round || 0));
     const rc = b.cad || b.waiting_cad || b.round_cad || null; if (b.waiting_cad_hash) job.cadHash = b.waiting_cad_hash; if (Array.isArray(b.rounds_data)) job.roundsData = b.rounds_data;
-    if (rc && rc.code && rc.code !== (job.cad && job.cad.code)) { job.ghost = job.mesh || null; job.cad = rc; job.built = null; }
+    if (rc && rc.code && (!job.cad || rc.code !== job.cad.code)) { job.ghost = job.mesh || null; job.cad = rc; job.built = null; }
     if (b.waiting_for && b.waiting_round != null && job.busyRound !== `${b.waiting_round}:${b.waiting_for}` && !job.feeding) { job.waiting = { need: b.waiting_for, round: +b.waiting_round, how: b.how_to_continue || '' }; jobFeedback(job); }
     else if (!b.waiting_for) job.waiting = null;
     if (b.status === 'done') { job.status = 'done'; job.result = b.result || {}; await jobFinish(job); }
@@ -9034,9 +9036,9 @@ function jobShow(job, mesh, partial) {
 async function jobFeedback(job) {
   const w = job.waiting; if (!w || job.busyRound === w.round + ':' + w.need) return; job.busyRound = w.round + ':' + w.need; job.feeding = true;
   try {
-    const cad = job.cad;
+    const cad = job.cad, hash = job.cadHash;   /* the code and its hash are taken together, before a poll can move them */
     if (!cad || !cad.code) { job.note = L('The job waits for the browser, but the solver did not send this round’s code, so Studio cannot build it. The job will stop with a timeout; nothing is marked as passed.', 'Job menunggu browser, tapi solver tidak mengirim kode ronde ini, jadi Studio tidak bisa membangunnya. Job akan berhenti karena batas waktu; tidak ada yang ditandai lolos.'); return; }
-    const body = { round: w.round }; if (job.cadHash) body.cad_hash = job.cadHash;   /* solver 0.39: numbers are tied to the code they were measured on */
+    const body = { round: w.round }; if (hash) body.cad_hash = hash;   /* solver 0.39: numbers are tied to the code they were measured on */
     if (w.need === 'browser_build') {
       let r; try { r = await jobBuild(job, cad); } catch (e) { body.measurements = { built: false, error: String(e.message || e).slice(0, 300) }; }
       if (r) { const sz = [0, 1, 2].map((k) => +(r.bounds[1][k] - r.bounds[0][k]).toFixed(3)), mat = PMAT[cad.material] ? cad.material : null;
@@ -9057,7 +9059,14 @@ async function jobFeedback(job) {
         job.stepNow = ''; }
     }
     const res = await apiJSON(`/design/job/${encodeURIComponent(job.id)}/feedback`, body, 60000);
-    if (res.status === 409 && res.d && res.d.round != null) { job.busyRound = null; job.feeding = false; job.waiting = { ...w, round: +res.d.round }; return jobFeedback(job); }
+    if (res.status === 409 && res.d) { job.busyRound = null; job.retry409 = (job.retry409 || 0) + 1;
+      /* solver 0.38.2: a 409 names the round and the code hash it waits for. Another code → build that one on the next poll;
+         only the round moved → send the same numbers once more. Never more than three times in a row. */
+      if (job.retry409 > 3) { job.note = L('The solver kept refusing this round’s numbers (409); nothing was counted.', 'Solver terus menolak angka ronde ini (409); tidak ada yang dihitung.'); job.waiting = null; }
+      else if (res.d.waiting_cad_hash && res.d.waiting_cad_hash !== hash) { job.cadHash = res.d.waiting_cad_hash; job.cad = null; job.waiting = null; job.note = L('The solver waits for a newer code than the one measured; Studio builds that one.', 'Solver menunggu kode yang lebih baru dari yang diukur; Studio membangun yang itu.'); }
+      else if (res.d.round != null && +res.d.round !== w.round) { job.feeding = false; job.waiting = { ...w, round: +res.d.round }; return jobFeedback(job); }
+      return; }
+    job.retry409 = 0;
     if (!res.ok) job.note = `${L('Feedback was not accepted', 'Feedback tidak diterima')} (HTTP ${res.status}): ${(res.d && res.d.error) || ''}`;
   } finally { job.feeding = false; renderJob(); }
 }
@@ -9749,7 +9758,7 @@ async function shapeStudy(request, count, obj) {
     const msg = `${request}\nDesign this shape family: ${v.name}. Principle: ${v.family.principle}` + (v.family.design_space.length ? `\nParameters and limits: ${v.family.design_space.map((s) => `${s.name} ${s.min}–${s.max} ${s.unit}${s.locked ? ' (locked: the engineer’s size)' : ''}`).join('; ')}` : '');
     const res = await apiJSON('/chat', { message: msg, reply_language: 'en', concept_count: 1, context: { shape_family: shapeFamilyCtx(v) } }, 110000).catch((e) => ({ status: 0, d: { error: e.message } }));
     const dd = res.d || {}, cad = dd.cad || (Array.isArray(dd.concepts) && (dd.concepts.find((c) => c.ok) || {}).cad);
-    if (dd.shape_family) v.familyReply = dd.shape_family;
+    if (dd.shape_family) { v.familyReply = dd.shape_family; if (dd.shape_family.used === false) say(famNote({ ...dd.shape_family, name: dd.shape_family.name || v.name })); }
     if (cad && cad.code) Object.assign(v, { status: 'pending', code: cad.code, params: genParamsFromCad(cad), expect: Array.isArray(cad.expect) ? cad.expect : [], requirements: cad.requirements || null, fidelity: dd.fidelity || null });
     else { v.status = 'failed'; v.err = String(dd.error || dd.answer || `HTTP ${res.status}`).slice(0, 300); if (budgetHit(res.status, dd)) break; }
     savePart(); renderCad();
@@ -10288,8 +10297,15 @@ const shapeFamilyCtx = (v) => { const fm = v && v.family; if (!fm) return undefi
 { const f7 = window.fetch; window.fetch = async function (url, opt) {
     if (typeof url === 'string' && url === API + '/chat' && opt && typeof opt.body === 'string' && !(opt.headers && opt.headers['X-Idris-Concept'])) {
       try { const b = JSON.parse(opt.body), g = state.part && state.part.gen, v = g && g.shapeStudy && g.variants && g.variants[g.active];
-        if (v && v.family && b.context && b.context.current_cad && !b.context.shape_family) { b.context.shape_family = shapeFamilyCtx(v); opt = { ...opt, body: JSON.stringify(b) }; } } catch (e) { /* unchanged */ } }
+        if (v && v.family && b.context && b.context.current_cad && !b.context.shape_family) { b.context.shape_family = shapeFamilyCtx(v); opt = { ...opt, body: JSON.stringify(b) }; window.__famSent = true; } } catch (e) { /* unchanged */ }
+      const r = await f7(url, opt);
+      if (window.__famSent) { window.__famSent = false; try { const j = await r.clone().json(); window.__famReply = j && j.shape_family ? j.shape_family : null; } catch (e) { window.__famReply = null; } }
+      return r; }
     return f7(url, opt); }; }
+/* what the solver did with the family: used (and what is still not checked) or dropped with the reason */
+const famNote = (fr) => fr.used === false ? h('div', { class: 'warnbox' }, L(`The solver did not use the shape family${fr.name ? ' “' + fr.name + '”' : ''}: ${fr.why || 'no reason given'}.`, `Solver tidak memakai keluarga bentuk${fr.name ? ' “' + fr.name + '”' : ''}: ${fr.why || 'tanpa alasan'}.`))
+  : h('p', { class: 'm' }, L(`Shape family “${fr.name || ''}” given to the CAD writer${fr.applied_to ? ' (' + fr.applied_to + ')' : ''}. Not checked: ${[].concat(fr.not_checked || ['that the code stays inside the design space']).join('; ')}.`, `Keluarga bentuk “${fr.name || ''}” diberikan ke penulis CAD${fr.applied_to ? ' (' + fr.applied_to + ')' : ''}. Tidak dicek: ${[].concat(fr.not_checked || ['bahwa kode tetap di dalam ruang desain']).join('; ')}.`));
+{ const ca = chatAI; chatAI = async function () { const r = await ca.apply(this, arguments); const fr = window.__famReply; window.__famReply = null; if (fr) say(famNote(fr)); return r; }; }
 
 /* orientation contract: z = axis, x = x_axis, y = axis × x_axis (all in assembly coordinates) → one rotation */
 function frameRotation(fr) {
@@ -10357,6 +10373,13 @@ const ap242Solids = (body) => { const b = body || {}, spp = b.solids_per_part ||
   const by = spp && typeof spp === 'object' && !Array.isArray(spp) ? spp : null;
   return { reported: !!by, by_part: by || {}, over: by ? Object.keys(by).filter((k) => +by[k] > 1) : [],
     warnings: Array.isArray(b.warnings) ? b.warnings : (Array.isArray((b.stats || {}).warnings) ? b.stats.warnings : []) }; };
+/* a check's detail is data: show it as plain text, never as a Python dict printed into the chat */
+const ap242Detail = (c) => { const d = c && c.detail;
+  if (d == null || d === '') return '';
+  if (typeof d === 'string') return d;
+  if (Array.isArray(d)) return d.map((x) => (x && typeof x === 'object' ? JSON.stringify(x) : String(x))).join('; ');
+  if (typeof d === 'object') return Object.entries(d).map(([k, v]) => `${k}: ${v && typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ');
+  return String(d); };
 /* ---- end S9 helpers */
 
 /* ---------- DFM of any part ---------- */
@@ -10565,7 +10588,7 @@ async function exportAP242(assembly) {
   dlText(d.step, d.filename || title.replace(/\W+/g, '_') + '_AP242.step', 'application/step');
   const bad = (d.checks || []).filter((c) => !c.ok), solids = ap242Solids(d);
   say(h('div', { class: 'metabox' }, para(L(`STEP AP242 downloaded: ${parts.length} part(s), ${(d.stats || {}).faces ?? '?'} faces, with product names, colours, mm units${parts.length > 1 ? ' and one placement per part (rotation + translation from the plan)' : ''}.`, `STEP AP242 terunduh: ${parts.length} part, ${(d.stats || {}).faces ?? '?'} muka, dengan nama produk, warna, satuan mm${parts.length > 1 ? ' dan satu penempatan per part (rotasi + translasi dari rencana)' : ''}.`)),
-    h('ul', { class: 'gen-checks' }, (d.checks || []).map((c) => h('li', null, h('span', { class: 'cdot ' + (c.ok ? 'ok' : 'bad'), 'aria-hidden': 'true' }), h('div', null, h('b', null, c.id), h('span', null, c.detail || ''))))),
+    h('ul', { class: 'gen-checks' }, (d.checks || []).map((c) => h('li', null, h('span', { class: 'cdot ' + (c.ok ? 'ok' : 'bad'), 'aria-hidden': 'true' }), h('div', null, h('b', null, c.id), h('span', null, ' ' + (c.ok ? L('passed', 'lolos') : L('failed', 'gagal'))), ap242Detail(c) ? h('span', { class: 'm' }, ' — ' + ap242Detail(c)) : null)))),
     para(L('Faces are flat facets of the kernel mesh: a bore is a polygon, not an analytic cylinder. For the exact B-rep of one part use Export STEP (AP214, from the kernel).', 'Muka berupa facet datar dari mesh kernel: lubang berupa poligon, bukan silinder analitik. Untuk B-rep eksak satu part pakai Export STEP (AP214, dari kernel).'), 'm'),
     /* S9: the solid count per part, and a red line when one part came out as several bodies */
     solids.reported

@@ -54,6 +54,9 @@ async function audit(stateName, part) {
   await enterCad(part);
   const out = [];
   for (const tab of await tabNames()) {
+    /* the part is made again at every tab: the Assembly tab takes the part away, and every tab after it
+       would otherwise be audited with no part (the UI team's audit does the same) */
+    if (part) await enterCad(part);
     await clickTab(tab);
     const list = await tools();
     for (let i = 0; i < list.length; i++) {
@@ -92,14 +95,46 @@ const B = await audit('B', { name: 'Part1', material: 'steel', features: [
   { id: 'b', type: 'hole', p: { type: 'simple', D: 6.6, depthMode: 'thru', depth: 10, x: 15, y: 0 } },
 ] });
 
-const rows = [...A, ...B];
+/* C  an assembly opened over a built part: no part is open, but that part's shape is still in memory.
+ *    Insert Component must open the assembly, and Manage → Export STEP / Export STL must answer with a
+ *    message instead of throwing on state.part.name. */
+async function auditC() {
+  const out = [];
+  await enterCad({ name: 'Part1', material: 'steel', features: [
+    { id: 'a', type: 'shape', p: { kind: 'box', L: 60, W: 40, H: 20, x: 0, y: 0, z: 0, op: 'add' } },
+  ] });
+  await page.getByRole('button', { name: /Add & build/ }).first().click({ timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(2000);            /* the kernel builds the part asynchronously */
+  await clickTab('Assembly');
+  await page.evaluate(() => { const b = [...document.querySelectorAll('#xrib .xr-t')].find((x) => x.textContent.trim() === 'Insert Component'); if (b) b.click(); });
+  await page.waitForTimeout(1200);
+  const open = await page.evaluate(() => ({ part: !!window.__idris.state.part, assy: !!window.__idris.state.assy2 }));
+  out.push({ state: 'C', tab: 'Assembly', tool: 'Insert Component', grey: false, did: open.assy && !open.part ? 'assembly opened, no part' : 'NOTHING' });
+  await clickTab('Manage');
+  for (const name of ['Export STEP', 'Export STL']) {
+    const before = await snapshot(), errs0 = errors.length;
+    await page.evaluate((n) => { const b = [...document.querySelectorAll('#xrib .xr-t')].find((x) => x.textContent.trim() === n); if (b) b.click(); }, name);
+    await page.waitForTimeout(900);
+    const after = await snapshot();
+    const did = errors.length > errs0 ? 'page error' : after.chat !== before.chat ? 'chat' : 'NOTHING';
+    out.push({ state: 'C', tab: 'Manage', tool: name, grey: false, did });
+    await page.keyboard.press('Escape');
+  }
+  return out;
+}
+
+const C = await auditC();
+
+const rows = [...A, ...B, ...C];
 writeFileSync(new URL('./toolbar-audit.json', import.meta.url), JSON.stringify({ url: BASE_URL, when: new Date().toISOString(), rows }, null, 2));
 for (const r of rows) console.log(`${r.state}  ${r.tab.padEnd(16)} ${r.tool.padEnd(28)} ${r.grey ? 'grey' : 'run '}  ${r.did}`);
 
 const nothing = rows.filter((r) => r.state === 'B' && !r.grey && r.did === 'NOTHING');
-const failed = errors.length || nothing.length;
-console.log(`\n${rows.length} clicks · ${nothing.length} active tools did nothing · ${errors.length} page errors`);
+const nothingC = rows.filter((r) => r.state === 'C' && r.did === 'NOTHING');
+const failed = errors.length || nothing.length || nothingC.length;
+console.log(`\n${rows.length} clicks · ${nothing.length} active tools did nothing · ${nothingC.length} empty-assembly steps did nothing · ${errors.length} page errors`);
 if (nothing.length) console.log('NOTHING: ' + nothing.map((r) => r.tab + ' → ' + r.tool).join('; '));
+if (nothingC.length) console.log('NOTHING (C): ' + nothingC.map((r) => r.tab + ' → ' + r.tool).join('; '));
 if (errors.length) console.log(errors.slice(0, 10).join('\n'));
 await browser.close();
 process.exit(failed ? 1 : 0);
