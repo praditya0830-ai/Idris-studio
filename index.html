@@ -10033,6 +10033,29 @@ function partMeshOrSay() { const m = feaMeshNow(); if (!m || !m.v || !m.v.length
 const sourceLine = (t) => h('p', { class: 'm tool-src' }, t);
 const solverErr = (res, what) => res.status === 404 ? L(`This solver has no ${what} yet (needs solver 0.39).`, `Solver ini belum punya ${what} (perlu solver 0.39).`) : budgetHit(res.status, res.d) ? String((res.d || {}).error || 'Daily AI budget reached') : String(((res.d || {}).errors || []).join('; ') || (res.d || {}).error || (res.d || {}).detail || `HTTP ${res.status}`);
 const verdictDot = (st) => st === 'pass' ? 'ok' : st === 'fail' ? 'bad' : st === 'warn' ? 'warn' : 'muted';
+/* ---- S9 helpers: what the DFM and AP242 answers say about themselves, reduced to data so a test can check
+   them without a browser. Nothing here formats for the screen. */
+const dfmWallNote = (wall) => { const w = wall || {};
+  /* Two solver contracts: X1 sends method_id, main sends method + resolution_mm. Read both. */
+  const method = w.method_id ? String(w.method || w.method_id) : (w.method ? String(w.method) : '');
+  const known = !!method, exact = /exact|ray.?triangle/i.test(w.method_id || w.method || '');
+  return { known, exact, method_id: w.method_id || null, method: w.method || null,
+    resolution_mm: w.resolution_mm == null ? null : +w.resolution_mm, text: method }; };
+const dfmIsCoarse = (finding) => !!finding && finding.status === 'not_checked' && /too coarse/i.test(String(finding.message || ''));
+const dfmDrillRows = (finding) => (finding && Array.isArray(finding.diameters_mm)
+  ? finding.diameters_mm.map((r) => ({ d: +r.d_mm, drill: +r.standard_drill_mm, holes: +r.holes || 1, in_series: r.in_series !== false })) : null);
+/* one value label for every finding: the drill check is a hole count whatever unit the solver sends */
+const dfmFindingValue = (finding) => { const x = finding || {};
+  if (x.id === 'drill_size' && x.value != null) return `${f(x.value, Number.isInteger(+x.value) ? 0 : 3)} ${L('hole(s)', 'lubang')}`;
+  if (x.value == null) return '';
+  if (x.unit === 'fraction') return `${f(100 * x.value, 1)} %`;
+  if (x.unit === 'count') return `${f(x.value, 0)}`;
+  return `${f(x.value, 3)} ${x.unit || ''}`; };
+const ap242Solids = (body) => { const b = body || {}, spp = b.solids_per_part || (b.stats || {}).solids_per_part || null;
+  const by = spp && typeof spp === 'object' && !Array.isArray(spp) ? spp : null;
+  return { reported: !!by, by_part: by || {}, over: by ? Object.keys(by).filter((k) => +by[k] > 1) : [],
+    warnings: Array.isArray(b.warnings) ? b.warnings : (Array.isArray((b.stats || {}).warnings) ? b.stats.warnings : []) }; };
+/* ---- end S9 helpers */
 
 /* ---------- DFM of any part ---------- */
 const DFM_PROC = [['cnc', 'CNC machining'], ['fdm', 'FDM 3D print'], ['sls', 'SLS 3D print'], ['sheet', 'Sheet metal'], ['weld', 'Welded'], ['cast', 'Casting']];
@@ -10053,12 +10076,25 @@ async function dfmPart(focus) {
     out.innerHTML = ''; const d = res.d || {}, o = d.outputs || d;
     if (!res.ok || !o.findings) return out.append(h('div', { class: 'warnbox bad' }, solverErr(res, 'POST /dfm/part')));
     p.dfm = { proc: procSel.value, at: Date.now(), summary: o.summary || null }; savePart();
-    const w = o.wall || {};
+    const w = o.wall || {}, note = dfmWallNote(w);
+    /* coarse when the solver says so, or when its cell is half the measured wall or bigger */
+    const coarse = o.findings.some((x) => x.id === 'min_wall' && dfmIsCoarse(x)) || (note.known && note.resolution_mm != null && w.p5_mm != null && note.resolution_mm >= +w.p5_mm / 2);
     out.append(h('ul', { class: 'gen-checks' }, o.findings.map((x) => h('li', null, h('span', { class: 'cdot ' + verdictDot(x.status), 'aria-hidden': 'true' }),
-      h('div', null, h('b', null, `${x.check}` + (x.id === 'drill_size' && x.value != null ? ` · ${x.value} ${L('hole(s)', 'lubang')}` : x.value != null && x.unit !== 'fraction' ? ` · ${f(x.value, 3)}${x.id === 'min_wall' && o.wall && o.wall.resolution_mm ? ` ± ${f(o.wall.resolution_mm, 2)}` : ''} ${x.unit || ''}` : x.unit === 'fraction' && x.value != null ? ` · ${f(100 * x.value, 1)} %` : '') + (x.limit != null ? ` (${L('limit', 'batas')} ${f(x.limit, 3)} ${x.unit || ''})` : '') + ` · ${x.status === 'not_checked' ? L('not checked', 'tidak dicek') : x.status}`),
+      h('div', null, h('b', null, `${x.check}` + (dfmFindingValue(x) ? ` · ${dfmFindingValue(x)}` : '') + (x.limit != null ? ` (${L('limit', 'batas')} ${f(x.limit, 3)} ${x.unit || ''})` : '') + ` · ${x.status === 'not_checked' ? L('not checked', 'tidak dicek') : x.status}`),
         h('span', null, x.message || ''), x.source ? h('span', { class: 'tool-src' }, `${L('Rule', 'Aturan')}: ${x.source}${x.source_status ? ` [${x.source_status}]` : ''}`) : null)))));
-    if (w.resolution_mm != null && w.p5_mm != null && w.resolution_mm >= 0.5 * w.p5_mm) out.append(h('div', { class: 'warnbox' }, L(`The solver measured on a ${f(w.resolution_mm, 2)} mm grid, which is coarse for walls of about ${f(w.p5_mm, 1)} mm: read the wall numbers as ± one grid step.`, `Solver mengukur di grid ${f(w.resolution_mm, 2)} mm, kasar untuk dinding sekitar ${f(w.p5_mm, 1)} mm: baca angka dinding sebagai ± satu langkah grid.`)));
-    if (w.p5_mm != null) out.append(sourceLine(L(`Wall measured by ray casting through a ${w.resolution_mm} mm voxel grid (±1 voxel): min ${f(w.min_mm, 2)}, 5th percentile ${f(w.p5_mm, 2)}, median ${f(w.median_mm, 2)} mm. Holes declared: ${holes.length ? holes.map((x) => 'Ø' + x.d).join(', ') + ` (${holes[0].source})` : L('none', 'tidak ada')}. Build/pull direction +Z.`, `Dinding diukur dengan ray casting di grid voxel ${w.resolution_mm} mm (±1 voxel): min ${f(w.min_mm, 2)}, persentil ke-5 ${f(w.p5_mm, 2)}, median ${f(w.median_mm, 2)} mm. Lubang yang dinyatakan: ${holes.length ? holes.map((x) => 'Ø' + x.d).join(', ') : 'tidak ada'}. Arah cetak/tarik +Z.`)));
+    /* S9: the method and its resolution are shown next to the number, never hidden behind it */
+    if (coarse) out.append(h('div', { class: 'warnbox' }, L(`The minimum-wall check is NOT CHECKED: the solver measured on a ${note.resolution_mm != null ? f(note.resolution_mm, 2) : 'coarse'} mm grid, which is coarser than the ${w.p5_mm != null ? f(w.p5_mm, 2) : 'measured'} mm wall it is compared with (${note.text || 'method not given'}). The wall numbers below are a measurement ± one cell, not a pass.`, `Cek dinding minimum TIDAK DICEK: solver mengukur di grid ${note.resolution_mm != null ? f(note.resolution_mm, 2) : 'kasar'} mm, lebih kasar daripada dinding ${w.p5_mm != null ? f(w.p5_mm, 2) : 'terukur'} mm yang dibandingkan (${note.text || 'metode tidak disebut'}). Angka dinding di bawah adalah pengukuran ± satu sel, bukan lulus.`)));
+    if (w.p5_mm != null) { const pm = note.resolution_mm != null ? `± ${f(note.resolution_mm, 3)} mm` : '';
+      out.append(sourceLine(note.known
+        ? (note.exact
+          ? L(`Wall measured by the solver with ${note.text} (resolution ${f(note.resolution_mm, 4)} mm): min ${f(w.min_mm, 2)}, 5th percentile ${f(w.p5_mm, 2)}, median ${f(w.median_mm, 2)} mm. Holes declared: ${holes.length ? holes.map((x) => 'Ø' + x.d).join(', ') + ` (${holes[0].source})` : L('none', 'tidak ada')}. Build/pull direction +Z.`, `Dinding diukur solver dengan ${note.text} (resolusi ${f(note.resolution_mm, 4)} mm): min ${f(w.min_mm, 2)}, persentil ke-5 ${f(w.p5_mm, 2)}, median ${f(w.median_mm, 2)} mm. Lubang yang dinyatakan: ${holes.length ? holes.map((x) => 'Ø' + x.d).join(', ') : 'tidak ada'}. Arah cetak/tarik +Z.`)
+          : L(`Wall measured by the solver with ${note.text} (resolution ${note.resolution_mm != null ? f(note.resolution_mm, 3) : 'not given'} mm; each value is ${pm || 'one cell'}): min ${f(w.min_mm, 2)} ${pm}, 5th percentile ${f(w.p5_mm, 2)} ${pm}, median ${f(w.median_mm, 2)} ${pm} mm. Holes declared: ${holes.length ? holes.map((x) => 'Ø' + x.d).join(', ') : L('none', 'tidak ada')}.`, `Dinding diukur solver dengan ${note.text} (resolusi ${note.resolution_mm != null ? f(note.resolution_mm, 3) : 'tidak disebut'} mm; tiap nilai ${pm || 'satu sel'}): min ${f(w.min_mm, 2)} ${pm}, persentil ke-5 ${f(w.p5_mm, 2)} ${pm}, median ${f(w.median_mm, 2)} ${pm} mm. Lubang yang dinyatakan: ${holes.length ? holes.map((x) => 'Ø' + x.d).join(', ') : 'tidak ada'}.`))
+        : L('This solver did not say how it measured the wall, so the method and its resolution are not claimed here.', 'Solver ini tidak menyebut cara mengukur dinding, jadi metode dan resolusinya tidak diklaim di sini.'))); }
+    /* S9: every diameter the drill check looked at, with the drill that makes it */
+    const drillRows = dfmDrillRows(o.findings.find((x) => x.id === 'drill_size'));
+    if (drillRows && drillRows.length) out.append(h('table', { class: 'tool-tab' },
+      h('tr', null, h('th', null, L('Ø (mm)', 'Ø (mm)')), h('th', null, L('hole(s)', 'lubang')), h('th', null, L('nearest standard drill', 'bor standar terdekat')), h('th', null, L('series', 'seri'))),
+      drillRows.map((r) => h('tr', null, h('td', null, f(r.d, 2)), h('td', null, String(r.holes)), h('td', null, `Ø ${f(r.drill, 2)}`), h('td', null, r.in_series ? L('DIN 338', 'DIN 338') : L('not in the series', 'tidak ada di seri'))))));
     out.append(sourceLine(L('Workshop guidelines (wall minimum, overhang, draft) are warnings, never failures; the drill series and the AWS weld leg are standards. No cost, cycle time or tolerance stack-up.', 'Pedoman bengkel (dinding minimum, overhang, draft) hanya peringatan, bukan gagal; seri bor dan kaki las AWS adalah standar. Tanpa biaya, waktu siklus, atau tumpukan toleransi.')));
     const sf = o.surface;
     if (sf && Array.isArray(sf.positions) && Array.isArray(sf.thickness)) out.append(h('div', { class: 'gen-var' }, h('button', { class: 'chip primary', onclick: () => dfmWallMap(mesh, sf) }, L('Show wall thickness on the model', 'Tampilkan tebal dinding di model')), h('button', { class: 'chip', onclick: () => feaHideContour() }, L('Hide', 'Sembunyikan'))));
@@ -10225,10 +10261,16 @@ async function exportAP242(assembly) {
   const d = res.d || {};
   if (!res.ok || !d.success || !d.step) return say(h('div', { class: 'warnbox bad' }, solverErr(res, 'POST /exchange/step-ap242')));
   dlText(d.step, d.filename || title.replace(/\W+/g, '_') + '_AP242.step', 'application/step');
-  const bad = (d.checks || []).filter((c) => !c.ok);
+  const bad = (d.checks || []).filter((c) => !c.ok), solids = ap242Solids(d);
   say(h('div', { class: 'metabox' }, para(L(`STEP AP242 downloaded: ${parts.length} part(s), ${(d.stats || {}).faces ?? '?'} faces, with product names, colours, mm units${parts.length > 1 ? ' and one placement per part (rotation + translation from the plan)' : ''}.`, `STEP AP242 terunduh: ${parts.length} part, ${(d.stats || {}).faces ?? '?'} muka, dengan nama produk, warna, satuan mm${parts.length > 1 ? ' dan satu penempatan per part (rotasi + translasi dari rencana)' : ''}.`)),
     h('ul', { class: 'gen-checks' }, (d.checks || []).map((c) => h('li', null, h('span', { class: 'cdot ' + (c.ok ? 'ok' : 'bad'), 'aria-hidden': 'true' }), h('div', null, h('b', null, c.id), h('span', null, c.detail || ''))))),
     para(L('Faces are flat facets of the kernel mesh: a bore is a polygon, not an analytic cylinder. For the exact B-rep of one part use Export STEP (AP214, from the kernel).', 'Muka berupa facet datar dari mesh kernel: lubang berupa poligon, bukan silinder analitik. Untuk B-rep eksak satu part pakai Export STEP (AP214, dari kernel).'), 'm'),
+    /* S9: the solid count per part, and a red line when one part came out as several bodies */
+    solids.reported
+      ? h('p', { class: 'm' }, L(`Solid(s) per part, as the solver built them: ${Object.entries(solids.by_part).map(([k, v]) => `${k} = ${v}`).join(', ')}.`, `Solid per part, seperti yang dibangun solver: ${Object.entries(solids.by_part).map(([k, v]) => `${k} = ${v}`).join(', ')}.`))
+      : h('p', { class: 'm tool-src' }, L('This solver did not report solids_per_part, so the number of solids in the file is not claimed here.', 'Solver ini tidak melaporkan solids_per_part, jadi jumlah solid dalam file tidak diklaim di sini.')),
+    solids.over.length ? h('div', { class: 'warnbox bad' }, L(`The file has ${solids.over.map((k) => solids.by_part[k]).join(', ')} solid(s) for one part (${solids.over.join(', ')}). Weld the vertices or close the shell before a buyer opens it.`, `File ini punya ${solids.over.map((k) => solids.by_part[k]).join(', ')} solid untuk satu part (${solids.over.join(', ')}). Gabungkan titiknya atau tutup shell-nya sebelum dibuka pembeli.`)) : null,
+    solids.warnings.length ? h('div', { class: 'warnbox' }, solids.warnings.join(' · ')) : null,
     bad.length ? h('div', { class: 'warnbox bad' }, L('A self-check failed: open it in your CAD before using it.', 'Ada self-check gagal: buka di CAD-mu sebelum dipakai.')) : null));
 }
 /* the Studio feature tree → the solver's IDRIS feature graph; anything that would not rebuild the same is sent as
@@ -10315,7 +10357,7 @@ try { renderRibbon(); } catch (e) { /* not drawn yet */ }
   .tool-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin:8px 0} .tool-grid .dr-f[hidden]{display:none}
   .tool-tab{border-collapse:collapse;font-size:12.5px} .tool-tab td,.tool-tab th{padding:3px 10px 3px 0;text-align:left;border-bottom:1px solid var(--line)} .job-chg{font-size:12px;margin:4px 0 0 16px}`; document.head.append(st); }
 
-window.__idris = { state, parseText, viewer, frameFit, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx } };
+window.__idris = { state, parseText, viewer, frameFit, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids } };
 })();
 </script>
 </body>

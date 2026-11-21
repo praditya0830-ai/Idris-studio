@@ -69,7 +69,7 @@ const revCut = await run([F('shape', { kind: 'box', L: 40, W: 40, H: 20, x: 0, y
 const cutVol = vol(revCut.body);
 check('revolved cut removes material', () => ok(revCut.body && cutVol < 32000, `cut ran, ${cutVol.toFixed(1)} mm³ of 32000 left`));
 check('revolved cut leaves no error on any step', () => ok(!errs(revCut.features).length, 'errors: ' + JSON.stringify(revCut.features.map((x) => x.err || null))));
-check('revolved cut removes the amount the geometry gives (13534 mm³)',
+check('revolved cut removes 13000–14000 mm³ (about 13534 mm³)',
   () => ok(32000 - cutVol > 13000 && cutVol > 18000 && cutVol < 19000, `removed ${(32000 - cutVol).toFixed(1)} mm³, ${cutVol.toFixed(1)} left`));
 
 const revBadAngle = await run([SK(), F('revolve', { axis: 'Z', angle: 0, op: 'add' })]);
@@ -235,6 +235,102 @@ check('Mark 1 tools say what works today, active tools carry no such line', () =
   ok(/Mark 1/.test(S10.plannedToolTip('mk1')) && /Circle/.test(S10.plannedToolTip('mk1')), 'mk1 tip');
   ok(S10.plannedToolTip('no').length > 0, 'not-yet tip');
   ok(S10.plannedToolTip('on') === '' && S10.plannedToolTip('gb') === '', 'no tip for working tools');
+
+/* --------------------------------------------------------------------- S9 --- */
+/* the DFM and AP242 answers, lifted from index.html and checked as data */
+const s9Start = html.indexOf('/* ---- S9 helpers'), s9End = html.indexOf('/* ---- end S9 helpers */');
+if (s9Start < 0 || s9End < 0) throw new Error('S9 helpers not found in index.html');
+const S9 = new Function('f', 'L', `${html.slice(s9Start, s9End)}\nreturn { dfmWallNote, dfmIsCoarse, dfmDrillRows, dfmFindingValue, ap242Solids };`)(f, L);
+
+check('an exact wall measurement is named as exact', () => {
+  const n = S9.dfmWallNote({ method_id: 'exact-ray-triangle', resolution_mm: 0.0001, min_mm: 5 });
+  ok(n.known && n.exact, 'the exact cast must be known and exact');
+  eq(n.resolution_mm, 0.0001, 1e-9, 'resolution');
+});
+
+check('a voxel fallback is reported with its cell and never as exact', () => {
+  const n = S9.dfmWallNote({ method_id: 'voxel-fallback', resolution_mm: 0.25 });
+  ok(n.known && !n.exact, 'the fallback must not claim exact');
+  eq(n.resolution_mm, 0.25, 1e-9, 'cell');
+});
+
+check('the solver contract from main (method + resolution_mm) is read too', () => {
+  const n = S9.dfmWallNote({ method: 'ray cast on the mesh, quantised by resolution_mm (±1 voxel)', resolution_mm: 5, min_mm: 7.5, p5_mm: 7.5 });
+  ok(n.known && !n.exact, 'voxel method is known and not exact');
+  eq(n.method_id, null, 0, 'no invented method_id');
+  ok(/ray cast/.test(n.text), 'the solver wording is kept');
+  eq(n.resolution_mm, 5, 1e-9, 'resolution');
+});
+
+check('the wall line shows the cell size next to the values, not only in prose', () => {
+  ok(/\$\{pm\}/.test(html) && /one cell|satu sel/.test(html), 'the values carry ± resolution');
+  ok(/coarser than the/.test(html), 'the coarse warning names the grid and the wall');
+});
+
+check('a solver that does not say how it measured is not credited with a method', () => {
+  const n = S9.dfmWallNote({ min_mm: 5 });
+  ok(!n.known && n.method_id === null && n.resolution_mm === null, 'no method claimed');
+});
+
+check('a coarse measurement is not a pass', () => {
+  ok(S9.dfmIsCoarse({ id: 'min_wall', status: 'not_checked', message: 'measurement too coarse for this wall limit' }), 'coarse should be flagged');
+  ok(!S9.dfmIsCoarse({ id: 'min_wall', status: 'pass', message: 'measured 5 mm >= 3 mm' }), 'a pass is not coarse');
+  ok(!S9.dfmIsCoarse({ id: 'min_wall', status: 'not_checked', message: 'no wall could be measured' }), 'another not_checked is not coarse');
+  ok(!S9.dfmIsCoarse(undefined), 'nothing is not coarse');
+});
+
+check('the drill table names each diameter and the drill that makes it', () => {
+  const rows = S9.dfmDrillRows({ id: 'drill_size', unit: 'count', value: 3, diameters_mm: [
+    { d_mm: 6, standard_drill_mm: 6, in_series: true, holes: 2 },
+    { d_mm: 6.2, standard_drill_mm: 6, in_series: false, holes: 1 }] });
+  eq(rows.length, 2, 0, 'rows');
+  eq(rows[0].d, 6, 0, 'diameter');
+  eq(rows[0].holes, 2, 0, 'holes');
+  ok(rows[0].in_series && !rows[1].in_series, 'the series flags survive');
+  eq(rows[1].drill, 6, 0, 'nearest drill');
+});
+
+check('the drill check shows a hole count whatever unit the solver sends', () => {
+  eq(S9.dfmFindingValue({ id: 'drill_size', unit: 'mm', value: 1 }), '1 hole(s)', 'main solver sends unit mm');
+  eq(S9.dfmFindingValue({ id: 'drill_size', unit: 'count', value: 3 }), '3 hole(s)', 'X1 count contract');
+  eq(S9.dfmFindingValue({ id: 'min_wall', unit: 'mm', value: 7.5 }), '7.500 mm', 'wall keeps its unit');
+  eq(S9.dfmFindingValue({ id: 'draft', unit: 'fraction', value: 0.25 }), '25.0 %', 'fraction stays a percentage');
+});
+
+check('the real POST /dfm/part answer from main is read, not guessed', () => {
+  const fx = JSON.parse(readFileSync(new URL('./fixtures-dfm-main.json', import.meta.url), 'utf8'));
+  const w = fx.wall || (fx.outputs || {}).wall, note = S9.dfmWallNote(w);
+  ok(note.known, 'method is known'); ok(note.exact, 'main solver sends exact-ray-triangle');
+  eq(note.resolution_mm, 0.0001, 1e-9, 'resolution');
+  const findings = fx.findings || (fx.outputs || {}).findings || [];
+  const drill = findings.find((x) => x.id === 'drill_size'), wall = findings.find((x) => x.id === 'min_wall');
+  eq(S9.dfmFindingValue(drill), '1 hole(s)', 'hole count, not a diameter in mm');
+  eq(S9.dfmFindingValue(wall), '40.000 mm', 'wall keeps mm');
+  ok(!S9.dfmIsCoarse(wall), 'an exact measurement with a real pass is not coarse');
+});
+
+check('the review\u2019s coarse voxel answer shows its grid and a hole count, not mm', () => {
+  const w = { method: 'ray cast on the mesh, quantised by resolution_mm (±1 voxel)', resolution_mm: 5, min_mm: 7.5, p5_mm: 7.5, median_mm: 7.5 };
+  const note = S9.dfmWallNote(w);
+  ok(note.known && !note.exact, 'voxel fallback is known and not exact');
+  eq(note.resolution_mm, 5, 0, 'grid');
+  eq(S9.dfmFindingValue({ id: 'drill_size', value: 1, unit: 'mm' }), '1 hole(s)', 'unit mm must still read as a hole count');
+  ok(/coarser than the/.test(html), 'the view warns that the grid is coarser than the wall');
+});
+
+check('a solver without diameters_mm gives no table instead of an invented one', () => {
+  ok(S9.dfmDrillRows({ id: 'drill_size', unit: 'count', value: 1 }) === null, 'no table without the data');
+});
+
+check('solids per part: one is quiet, more than one is flagged, silence is not a claim', () => {
+  const one = S9.ap242Solids({ solids_per_part: { bracket: 1 } });
+  ok(one.reported && one.over.length === 0, 'one solid should not be flagged');
+  const many = S9.ap242Solids({ stats: { solids_per_part: { bracket: 3 } }, warnings: ['part bracket is 3 separate closed bodies'] });
+  eq(many.over.length, 1, 0, 'over count');
+  eq(many.by_part.bracket, 3, 0, 'solid count per part');
+  eq(many.warnings.length, 1, 0, 'warnings are carried');
+  const none = S9.ap242Solids({});
+  ok(!none.reported && none.over.length === 0, 'an unreported count is not a claim');
 });
 
 console.log(`\n${pass} passed, ${fails.length} failed`);
