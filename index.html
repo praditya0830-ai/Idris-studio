@@ -609,7 +609,8 @@ body.cad .xrib{display:block;background:var(--white);border-bottom:1px solid var
 .ribpop .rp-act{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .gen-src{padding:8px 12px;font-size:12.5px} .gen-src p{margin:6px 0 0;line-height:1.45}
 .gen-code{margin:6px 12px;font-size:12px} .gen-code summary{cursor:pointer;color:var(--accent)} .gen-code pre{max-height:240px;overflow:auto;background:var(--white);border:1px solid var(--line);border-radius:8px;padding:8px;font:11px/1.45 var(--mono);white-space:pre}
-.gen-h{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px}
+.gen-h{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px}
+.gen-h .psrc-note{flex-basis:100%;margin-left:0;text-align:left;text-transform:none;letter-spacing:0;font-size:10.5px}
 .gen-checks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px} .gen-checks li{display:flex;gap:8px;align-items:flex-start;font-size:12.5px} .gen-checks li .cdot{margin-top:4px;flex:none} .gen-checks b{display:block} .gen-checks span{color:var(--muted)}
 .gen-var{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0;font-size:12px;color:var(--muted)}
 .gen-bed{display:flex;align-items:center;gap:6px;margin:10px 0;font-size:12px;color:var(--muted)} .gen-bed input{width:64px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--white);color:var(--text)}
@@ -847,6 +848,21 @@ body.focus:not(.focus-tree) .edge-l,body.focus:not(.focus-chat) .edge-r{display:
 .conc-r.ok{color:var(--ok);background:var(--ok-bg)} .conc-r.bad{color:var(--bad);background:var(--bad-bg)}
 .conc-i{font-size:11.5px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .conc-m{font-size:11.5px;color:var(--text)} .conc-m .ok{color:var(--ok)} .conc-m .bad{color:var(--bad)}
+.conc-nofea{color:var(--muted);font-size:11px} .conc-t b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conc-slot{flex:0 0 228px;display:flex;flex-direction:column;gap:4px} .conc-row>.conc-slot>.conc-c{flex:0 0 auto;width:100%}
+.conc-fix{display:flex} .conc-fix .chip{width:100%;justify-content:center;font-size:11.5px}
+.gen-params label{grid-template-columns:minmax(0,1fr);align-items:stretch;gap:3px}
+.gen-params .plab{display:flex;align-items:baseline;gap:6px;font-size:12.5px}
+.gen-params .psrc{font-style:normal;margin-left:auto;font-size:10.5px;line-height:1.5;color:var(--muted);background:var(--lt-bg);border-radius:999px;padding:1px 7px;white-space:nowrap}
+.gen-params .psrc.you{color:var(--accent);background:var(--accent-bg)}
+.psrc-note{font-weight:400;font-size:10.5px;color:var(--muted);margin-left:auto;text-align:right}
+/* S11-ACE-3: when a part is open, the left pane has one scroll area (the tree is never a second one). */
+/* S11-ACE-3: with a generated part open, the tree is its steps (left panel), not "Part · 0 features" + saved parts. */
+.pane-tree:has(#cadLeft .gen-src)>#tree{display:none}
+/* one scroll for the whole left column (steps + parameters), never one scrollbar per panel */
+.pane-tree:has(#cadLeft .gen-src){overflow-y:auto}
+.pane-tree:has(#cadLeft .gen-src)>#cadLeft{flex:none;min-height:0;overflow:visible}
+.pane-tree:has(#cadLeft .gen-src)>.cprops{flex:none;max-height:none;overflow:visible}
 .via .route{color:var(--dim)} .err-d{font-size:11.5px;color:var(--muted);font-family:var(--mono);margin-top:4px;white-space:pre-wrap}
 
 .conc-strip{position:absolute;z-index:7;left:12px;right:12px;bottom:calc(var(--ckH,40px) + 14px);display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--glass);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 28px var(--shadow);max-height:46%;overflow:auto}
@@ -7231,8 +7247,7 @@ function renderGenCad() {
       h('p', { class: 'hint' }, L(kd[2], kd[3]))),
     ...(g.err ? [h('div', { class: 'warnbox bad' }, h('b', null, L('The code did not build', 'Kodenya tidak terbangun')), h('div', null, g.err),
       g.read_by !== 'recipe' ? h('div', { class: 'hint' }, L(`AI fix attempts: ${g.fixAttempt || 0}/2`, `Percobaan perbaikan AI: ${g.fixAttempt || 0}/2`)) : null)] : []),
-    h('ol', { class: 'pft' }, g.params.map((q) => h('li', null, h('div', { class: 'pfn' }, h('span', { class: 'cdot ' + (q.src === 'user' ? 'ok' : 'warn'), 'aria-hidden': 'true', title: q.src === 'user' ? L('given by you', 'dari kamu') : L('IDRIS default — change it if needed', 'bawaan IDRIS — ubah kalau perlu') }),
-      h('b', null, L(q.en, q.id)), h('span', null, `${f(+q.v, Number.isInteger(+q.v) ? 0 : q.unit === '' ? 2 : 1)} ${q.unit}${q.src === 'user' ? '' : L(' · default', ' · bawaan')}`))))),
+    /* S11-ACE-3: sizes live in the Parameters panel on the right, not mixed into this tree. */
     h('details', { class: 'gen-code' }, h('summary', null, L('Show the CAD code', 'Lihat kode CAD')), h('pre', null, g.code)));
   if (g.kind !== 'styling') lf.append(h('div', { class: 'cmat' }, h('span', null, L('Material', 'Material')),
     h('select', { onchange: (e) => { p.material = e.target.value; savePart(); renderCad(); }, 'aria-label': L('Material', 'Material') }, Object.entries(PMAT).map(([k, [n, rho]]) => h('option', { value: k, selected: k === p.material }, `${n} · ${rho} g/cm³`))),
@@ -7244,12 +7259,14 @@ function renderGenCad() {
   const apply = () => { let bad = null; g.params.forEach((q) => { const v = Number(edit[q.k]); if (!isFinite(v) || (q.min != null && v < q.min) || (q.max != null && v > q.max)) bad = bad || q; });
     if (bad) { say(para(L(`${bad.en} must be between ${bad.min} and ${bad.max} ${bad.unit}.`, `${bad.id} harus antara ${bad.min} dan ${bad.max} ${bad.unit}.`), 'm')); return; }
     g.params.forEach((q) => { if (+edit[q.k] !== +q.v) { q.v = +edit[q.k]; q.src = 'user'; } }); if (narrow()) setChat(false); rebuildGen(false); };
-  const form = h('div', { class: 'pform' }, g.params.map((q) => h('label', null, h('span', null, L(q.en, q.id)),
+  const form = h('div', { class: 'pform gen-params' }, g.params.map((q) => h('label', null,
+      h('span', { class: 'plab' }, h('span', null, L(q.en, q.id)), h('em', { class: 'psrc' + (q.src === 'user' ? ' you' : ''), title: q.src === 'user' ? L('you changed this', 'kamu yang mengubah ini') : L('IDRIS default — not from you; change it if needed', 'bawaan IDRIS — bukan dari kamu; ubah kalau perlu') }, q.src === 'user' ? L('you', 'kamu') : L('default', 'bawaan'))),
       q.opts ? h('select', { onchange: (e) => { edit[q.k] = +e.target.value; } }, q.opts.map((o) => h('option', { value: o, selected: +o === +q.v }, `${o} ${q.unit}`)))
         : h('span', { class: 'pnum' }, h('input', { type: 'number', inputmode: 'decimal', value: q.v, step: q.step || 'any', min: q.min, max: q.max, oninput: (e) => { edit[q.k] = e.target.value; } }), q.unit ? h('em', null, q.unit) : null))),
     h('div', { class: 'pact' }, h('button', { class: 'chip primary', disabled: genBusy, onclick: apply }, L('Rebuild', 'Bangun ulang'))));
   form.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); apply(); } });
-  pr.append(h('h2', null, h('span', null, p.name), h('span', { class: 'phd' }, h('small', null, L(kd[0], kd[1])))), form);
+  pr.append(h('h2', null, h('span', null, p.name), h('span', { class: 'phd' }, h('small', null, L(kd[0], kd[1])))),
+    h('h3', { class: 'gen-h' }, L('Parameters', 'Parameter'), h('small', { class: 'psrc-note' }, L('default values are IDRIS\u2019s, not yours', 'nilai bawaan dari IDRIS, bukan dari kamu'))), form);
   const rec = GEN_RECIPES[g.recipe];
   if (r && r.probes.some((x) => !/Cut$/.test(x.name))) pr.append(h('div', { class: 'gen-var' }, h('button', { class: 'chip' + (g.showProbe !== false ? ' primary' : ''), disabled: genBusy, onclick: () => { g.showProbe = g.showProbe === false; savePart(); rebuildGen(false); } },
     (g.showProbe !== false ? L('Hide: ', 'Sembunyikan: ') : L('Show: ', 'Tampilkan: ')) + L(...(g.probeLabel || ['Reference', 'Referensi'])))));
@@ -7785,7 +7802,8 @@ function renderAssyCad() {
     'IDRIS menumpuk part, memutar dan menggesernya supaya lubang sejajar, menambah baut ISO dengan panjang standar, mengecek setiap baut dengan solver (lubang ISO 273, ulir masuk, panjang), dan mencari tabrakan dengan OpenCascade. Kalau ukuran harus berubah, IDRIS bertanya, mis. “lubangnya untuk M5 tapi bautnya M6”.');
   set('Interference Detection', 'on', 'interf', 'Common volume between every pair of components (OpenCascade), or the gearbox assembly review.', 'Volume irisan antar setiap pasang komponen (OpenCascade), atau review assembly gearbox.');
   const rt = renderTree; renderTree = function () { rt.apply(this, arguments);
-    if (gearboxActive()) return; const body = document.querySelector('#tree > details > .tbody'); if (!body) return; const l = loadAssys(); if (!l.length) return;
+    if (gearboxActive()) return; const body = document.querySelector('#tree > details > .tbody'); if (!body) return; const l = loadAssys().filter((x) => x.comps && x.comps.length); if (!l.length) return;
+    /* S11-ACE-3: an assembly with 0 components is not a thing to show in the tree. */
     body.append(tnode('assys', 'asm', L('Assemblies', 'Assembly'), l.map((x) => h('button', { class: 'titem', onclick: () => { if (state.part) { savePart(); state.part = null; } state.assy2 = JSON.parse(JSON.stringify(x)); assySel = null; assyRebuild(true); } },
       h('span', { class: 'two' }, h('span', { class: 'nm' }, x.name), h('span', { class: 'tg' }, L(`${x.comps.length} components`, `${x.comps.length} komponen`))))), l.length)); };
   const sp = startPart; startPart = function () { if (state.assy2) { saveAssy(); state.assy2 = null; } return sp.apply(this, arguments); }; }
@@ -8538,16 +8556,51 @@ function conceptNumbers(p, v, r) {
   const dens = PMAT[p.material] ? PMAT[p.material][1] : null;
   return { vol: r.vol, mass: dens ? r.vol / 1000 * dens : null, size: [0, 1, 2].map((k) => r.bounds[1][k] - r.bounds[0][k]), valid: r.valid, solids: r.solids, ok, n };
 }
-async function conceptFix(p, v, error) {
-  /* ask the solver to fix one concept, outside the chat (the card shows the progress) */
-  const g = p.gen, body = { message: 'Fix the CAD code', reply_language: 'en', context: { concept: v.concept, cad_error: { title: v.name, code: v.code, error: String(error).slice(0, 600),
-    params: v.params.map((q) => ({ k: q.k, value: +q.v, source: q.src === 'user' ? 'user' : q.src || 'default', unit: q.unit })), attempt: v.fixes, request: g.request || '' } } };
+/* S11-ACE-1: concept fixes run one at a time and survive a busy server. The solver allows 12 chat calls a
+ * minute per IP; three concepts fixing together used to look like a network failure ("NetworkError"). */
+let conceptChatQ = Promise.resolve();
+const conceptSleep = (ms) => new Promise((res) => setTimeout(res, ms));
+const conceptBusyText = () => L('the server was busy, retried once — tap Retry fix', 'server sibuk, dicoba sekali lagi — tekan Retry fix');
+async function conceptChatOnce(body) {
   const ctrl = new AbortController(), to = setTimeout(() => ctrl.abort(), 110000);
-  try { const r = await fetch(API + '/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Idris-Concept': '1' }, body: JSON.stringify(body), signal: ctrl.signal });
-    const d = await r.json(); const cad = d && d.cad;
+  try {
+    const r = await fetch(API + '/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Idris-Concept': '1' }, body: JSON.stringify(body), signal: ctrl.signal });
+    const txt = await r.text(); let d = {}; try { d = JSON.parse(txt); } catch (e) { d = {}; }
+    if (r.status === 429) { const e = new Error(L('the chat rate limit was reached', 'batas laju chat tercapai')); e.status = 429; e.retryAfter = +(r.headers.get('Retry-After') || 0); throw e; }
+    if (r.status === 502 || r.status === 503 || r.status === 504) { const e = new Error(`HTTP ${r.status}`); e.status = r.status; throw e; }
+    if (!r.ok) { const e = new Error((d && (d.detail || d.error)) || `HTTP ${r.status}`); e.status = r.status; throw e; }
+    const cad = d && d.cad;
     if (!cad || typeof cad.code !== 'string' || !cad.code.trim()) throw new Error((d && (d.error || d.answer || d.detail)) || L('no code came back', 'tidak ada kode yang kembali'));
-    v.code = cad.code; const ps = genParamsFromCad(cad); if (ps.length) v.params = ps; if (Array.isArray(cad.expect)) v.expect = cad.expect; }
-  finally { clearTimeout(to); }
+    return cad;
+  } finally { clearTimeout(to); }
+}
+async function conceptFix(p, v, error, kernel) {
+  /* ask the solver to fix one concept, outside the chat (the card shows the progress) */
+  const g = p.gen, body = { message: 'Fix the CAD code', reply_language: 'en', context: { concept: v.concept, cad_error: { title: v.name, code: v.code, error: String(error).slice(0, 600), kernel: kernel || null,
+    params: v.params.map((q) => ({ k: q.k, value: +q.v, source: q.src === 'user' ? 'user' : q.src || 'default', unit: q.unit })), attempt: v.fixes, request: g.request || '' } } };
+  const job = async () => {
+    try { return await conceptChatOnce(body); }
+    catch (e) {
+      const retryable = e.status === 429 || e.status === 502 || e.status === 503 || e.status === 504 || !e.status || e.name === 'AbortError';
+      if (!retryable) throw e;
+      const waitMs = e.status === 429 ? Math.min(20000, Math.max(1000, (+e.retryAfter || 2) * 1000)) : 1500;
+      await conceptSleep(waitMs);
+      try { return await conceptChatOnce(body); }
+      catch (e2) { throw new Error(`${conceptBusyText()}${e2 && e2.message ? ` (${String(e2.message).slice(0, 80)})` : ''}`); }
+    }
+  };
+  const run = conceptChatQ.then(job, job); conceptChatQ = run.catch(() => {});
+  const cad = await run;
+  v.code = cad.code; const ps = genParamsFromCad(cad); if (ps.length) v.params = ps; if (Array.isArray(cad.expect)) v.expect = cad.expect;
+}
+/** the kernel's own reason for "built, but not a valid solid", in words an engineer and the fixer can use */
+function conceptBuildReason(r) {
+  if (!r) return L('the kernel returned nothing', 'kernel tidak mengembalikan apa pun');
+  if (r.valid === false && (r.solids == null || r.solids <= 1)) return L('the kernel reports an invalid solid (not closed or self-intersecting)', 'kernel melaporkan solid tidak valid (tidak tertutup atau memotong diri sendiri)');
+  if (r.valid !== false && (r.solids == null || r.solids === 1)) return '';
+  const parts = r.solids != null ? `${r.solids} ${L(r.solids === 1 ? 'solid' : 'separate solids', r.solids === 1 ? 'solid' : 'solid terpisah')}` : L('an invalid solid', 'solid tidak valid');
+  const hint = r.solids > 1 ? L(' — the shapes do not touch, so it is not one body', ' — bentuk-bentuknya tidak bersentuhan, jadi bukan satu body') : L('', '');
+  return `${parts}${hint}`;
 }
 async function conceptPipeline(p) {
   const run = conceptRun = { p }; const g = p.gen, alive = () => conceptRun === run && state.part === p;
@@ -8558,12 +8611,14 @@ async function conceptPipeline(p) {
       for (;;) { await wait(); if (!alive()) return;
         v.status = v.fixes ? 'fixing' : 'building'; renderCad();
         try { await genWorker(); const r = await genCall({ t: 'run', code: v.code, params: Object.fromEntries(v.params.map((q) => [q.k, +q.v])) }, 40000);
-          if (!r || !r.mesh || r.valid === false) throw new Error(L('the code built, but not as a valid solid', 'kode jalan, tapi tidak menjadi solid yang valid'));
+          if (!r || !r.mesh || r.valid === false || (r.solids != null && r.solids > 1)) { const why = r ? conceptBuildReason(r) : L('the kernel returned nothing', 'kernel tidak mengembalikan apa pun');
+            const err = new Error(L(`the code built, but not as a valid solid: ${why}`, `kode jalan, tapi tidak menjadi solid valid: ${why}`)); err.kernel = r ? { valid: r.valid, solids: r.solids, volume_mm3: r.vol, bounds: r.bounds } : null; throw err; }
           v.status = 'built'; v.err = null; v.kres = conceptNumbers(p, v, r); conceptMeshes[conceptKey(p, v)] = r.mesh; break; }
         catch (e) { const msg = String((e && e.message) || e);
+          v.kernel = (e && e.kernel) || null;
           if (v.fixes >= CONC_FIX_MAX || state.chatOff) { v.status = 'failed'; v.err = msg.slice(0, 300); break; }
           v.fixes++; v.status = 'fixing'; renderCad();
-          try { await conceptFix(p, v, msg); } catch (e2) { v.status = 'failed'; v.err = `${msg.slice(0, 200)} · ${L('fix', 'perbaikan')}: ${String(e2.message || e2).slice(0, 120)}`; break; } } }
+          try { await conceptFix(p, v, msg, v.kernel); } catch (e2) { v.status = 'failed'; v.err = `${msg.slice(0, 200)} · ${L('fix', 'perbaikan')}: ${String(e2.message || e2).slice(0, 160)}`; break; } } }
       savePart(); renderCad(); }
     if (!alive()) return;
     /* the worker keeps the last shape it ran (STEP export uses it): run the shown concept again */
@@ -8582,8 +8637,13 @@ async function conceptRank(p, run) {
   for (const v of g.variants.filter((x) => x.concept)) {
     if (!alive()) return;
     const res = { name: v.name, params: Object.fromEntries(v.params.map((q) => [q.k, +q.v])), geometry_ok: v.status === 'built', status: 'not checked', reason: '' };
-    if (v.status !== 'built') { res.reason = v.err || 'did not build'; results.push(res); continue; }
-    if (!conceptHasLoads(v, p)) { res.reason = 'no load in this concept'; results.push(res); continue; }
+    /* S11-ACE-2: a built concept that is not checked by FEA says why, on its own card. */
+    if (v.status !== 'built') { const why = v.err || L('did not build', 'tidak terbangun'); v.fea = { status: 'skipped', reason: why }; res.reason = why; results.push(res); continue; }
+    if (!conceptHasLoads(v, p)) { const rq0 = v.requirements || g.requirements || {};
+      const hasLoad = (rq0.loads || []).some((x) => x && x.where && Array.isArray(x.force_N) && x.force_N.some((n) => Math.abs(+n) > 0));
+      const hasSup = (rq0.supports || []).some((x) => x && x.where);
+      const why = !hasLoad ? L('no load given', 'belum ada beban') : !hasSup ? L('supports not found on this shape: pick faces', 'tumpuan tidak ditemukan di bentuk ini: pilih muka') : L('the load case is incomplete', 'kasus beban belum lengkap');
+      v.fea = { status: 'skipped', reason: why }; res.reason = why; results.push(res); continue; }
     let mesh = conceptMeshes[conceptKey(p, v)];
     try { if (!mesh) { await genWorker(); const r = await genCall({ t: 'run', code: v.code, params: res.params }, 40000); mesh = r.mesh; }
       v.fea = { status: 'running' }; g.conceptRank.stage = L(`Stress check: ${v.name}`, `Cek tegangan: ${v.name}`); renderCad();
@@ -8603,6 +8663,13 @@ async function conceptRank(p, run) {
   savePart();
 }
 /* cards: one per concept, in the design tree card (top), like the gearbox variant list */
+function conceptRetry(p, i) {
+  const g = p.gen, v = g && g.variants && g.variants[i];
+  if (!v || genBusy) return;
+  /* S11-ACE-1: try the same concept again after a busy server, without asking the AI for a new concept. */
+  v.fixes = 0; v.err = null; v.kernel = null; v.fea = null; v.status = 'pending'; savePart(); renderCad();
+  if (i === g.active) rebuildGen(false); else if (!conceptRun || conceptRun.done) conceptPipeline(p);
+}
 function conceptCards(p) {
   const g = p.gen, cr = g.conceptRank || {}, box = h('div', { class: 'gen-src conc' });
   const list = g.variants.map((v, i) => ({ v, i })).sort((a, b) => ((a.v.rank && a.v.rank.rank) || 99) - ((b.v.rank && b.v.rank.rank) || 99) || a.i - b.i);
@@ -8616,11 +8683,17 @@ function conceptCards(p) {
       : st === 'failed' ? L('did not build: ', 'gagal dibangun: ') + (v.err || '') : k ? `${k.mass != null ? f(k.mass, k.mass < 100 ? 1 : 0) + ' g · ' : ''}${k.size.map((x) => f(x, 0)).join(' × ')} mm · ${k.ok}/${k.n} ${L('checks', 'cek')}` : '';
     const sfTxt = fea && fea.status === 'done' && fea.sf != null ? `SF ${f(fea.sf, 2)}` : fea && fea.status === 'running' ? L('FEA…', 'FEA…') : fea && fea.status === 'error' ? L('FEA failed', 'FEA gagal') : '';
     const df = (cr.targets && cr.targets.design_factor) || 2;
-    row.append(h('button', { class: 'conc-c' + (on ? ' on' : '') + (st === 'failed' ? ' bad' : ''), disabled: genBusy || st === 'failed' || st === 'pending' || st === 'building' || st === 'fixing' || st === 'designing', 'aria-pressed': on ? 'true' : 'false',
-      title: v.concept ? v.concept.idea : v.name, onclick: () => genSwitch(i) },
-      h('span', { class: 'conc-t' }, h('b', null, v.name), rk && rk.rank != null ? h('em', { class: 'conc-r' + (rk.status === 'pass' ? ' ok' : rk.status === 'fail' ? ' bad' : '') }, `#${rk.rank}${rk.score != null ? ' · ' + f(+rk.score, 0) : ''}`) : null),
+    const nameTitle = `${v.name}${v.concept && v.concept.idea ? ' — ' + v.concept.idea : ''}`;
+    const noFea = st === 'built' && !(fea && fea.status === 'done') && !(rk && rk.rank != null);
+    const blocked = genBusy || st === 'failed' || st === 'pending' || st === 'building' || st === 'fixing' || st === 'designing';
+    const slot = h('div', { class: 'conc-slot' }); row.append(slot);
+    slot.append(h('div', { class: 'conc-c' + (on ? ' on' : '') + (st === 'failed' ? ' bad' : ''), role: 'button', tabindex: blocked ? '-1' : '0', 'aria-pressed': on ? 'true' : 'false',
+      title: nameTitle, onclick: () => { if (!blocked) genSwitch(i); } }, h('span', { class: 'conc-t' }, h('b', { title: nameTitle }, v.name), rk && rk.rank != null ? h('em', { class: 'conc-r' + (rk.status === 'pass' ? ' ok' : rk.status === 'fail' ? ' bad' : '') }, `#${rk.rank}${rk.score != null ? ' · ' + f(+rk.score, 0) : ''}`) : null),
       v.concept && v.concept.idea ? h('span', { class: 'conc-i' }, v.concept.idea) : null,
-      h('span', { class: 'conc-m' }, line, sfTxt ? h('span', { class: fea.sf != null && fea.sf >= df ? 'ok' : 'bad' }, ` · ${sfTxt}`) : null)));
+      h('span', { class: 'conc-m' }, line, sfTxt ? h('span', { class: fea.sf != null && fea.sf >= df ? 'ok' : 'bad' }, ` · ${sfTxt}`) : null,
+        noFea ? h('span', { class: 'conc-nofea', title: (fea && fea.reason) || L('no FEA has been run on this concept', 'belum ada FEA untuk konsep ini') }, ` · ${L('not ranked: not checked by FEA', 'tidak diperingkat: belum dicek FEA')}`) : null)));
+    if (st === 'failed') slot.append(h('div', { class: 'conc-fix' }, h('button', { class: 'chip', disabled: genBusy, onclick: () => conceptRetry(p, i) }, L('Retry fix', 'Coba perbaiki lagi'))));
+    else if (st === 'built' && !(fea && fea.status === 'done')) slot.append(h('div', { class: 'conc-fix' }, h('button', { class: 'chip', disabled: genBusy, onclick: () => { genSwitch(i); setTimeout(() => ribAct('partFea'), 250); } }, L('Run Part Stress on this concept', 'Jalankan Part Stress untuk konsep ini'))));
   });
   (g.conceptFail || []).forEach((c) => row.append(h('div', { class: 'conc-c bad', role: 'note' }, h('span', { class: 'conc-t' }, h('b', null, c.name)), c.idea ? h('span', { class: 'conc-i' }, c.idea) : null,
     h('span', { class: 'conc-m' }, L('The AI could not write this one: ', 'AI tidak bisa menulis konsep ini: ') + c.error))));
