@@ -754,6 +754,24 @@ body.at-home .learn{display:none}
 @media (min-width:1181px){ body.cad .sknext{left:calc(50% + (var(--ovL) - var(--ovR)) / 2)} }
 .xr-t.s-mk1 .xr-i,.xr-t.s-no .xr-i{opacity:.4;filter:grayscale(1)}
 .pdoc{font-size:12px;color:var(--muted);padding:4px 2px}
+/* v0.40 design brief: the card in the chat panel, editable field by field */
+.briefcard{flex:0 0 auto;max-height:50%;overflow:auto;border-bottom:1px solid var(--line);background:var(--white);padding:8px 12px;display:flex;flex-direction:column;gap:6px}
+.bc-h{display:flex;align-items:center;gap:8px;font-size:12.5px} .bc-h b{font-size:13px}
+.bc-st{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border:1px solid var(--line2);border-radius:999px;padding:1px 7px}
+.bc-h .linkbtn{margin-left:auto}
+.bc-b{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px}
+.bc-r{display:grid;grid-template-columns:62px minmax(0,1fr);gap:5px;align-items:baseline;font-size:11.5px;min-width:0}
+.bc-k{color:var(--muted)} .bc-v{text-align:left;background:none;border:0;padding:1px 2px;font:inherit;color:var(--text);border-bottom:1px dashed transparent;cursor:text;min-width:0;overflow-wrap:anywhere}
+.bc-v:hover{border-bottom-color:var(--line2)} .bc-v.empty{color:var(--dim)}
+.bc-in{width:100%;font:inherit;font-size:12px;padding:2px 4px;border:1px solid var(--accent);border-radius:4px;background:var(--white);color:var(--text)}
+.bc-a,.bc-o{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:11.5px;color:var(--muted);margin-top:2px;grid-column:1/-1}
+.bc-tag{background:var(--accent-bg);color:var(--sel-ink);border-radius:5px;padding:1px 6px}
+.bc-go{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px}
+.bc-go .chip{flex:0 0 auto;min-height:24px;white-space:nowrap}
+.bc-go .chip.primary{flex:1 1 auto;justify-content:center}
+.bchips{display:grid;gap:6px;margin-top:8px}
+.bq b{font-size:12.5px} .bq-o{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.bsg{display:flex;gap:4px;align-items:center;font-size:12px;flex-wrap:wrap}
 .cmat select{width:100%;margin:4px 0;font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--line2);border-radius:6px;background:var(--white);color:var(--text)}
 .tact{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 body.comfy .pform input,body.comfy .pform select{min-height:40px}
@@ -8685,6 +8703,119 @@ const conceptSave = (n) => { try { if (n) localStorage.setItem('idris-concepts',
     if (m && CONC_OPTS.includes(+m[1])) { addUser(text); conceptSave(+m[1]); return say(para(L(`OK: every new design gets ${m[1]} concepts. Type “ask me each time” to be asked again.`, `Oke: setiap desain baru dibuat ${m[1]} konsep. Ketik “ask me each time” supaya ditanya lagi.`))); }
     if (/^(ask me (each|every) time|tanya (aku )?(tiap|setiap) (kali|desain))$/.test(t)) { addUser(text); conceptSave(null); return say(para(L('OK: IDRIS will ask how many concepts for each new design.', 'Oke: IDRIS akan bertanya jumlah konsep untuk setiap desain baru.'))); }
     return ht.apply(this, arguments); }; }
+
+/* ---- v0.40 design brief (solver route `brief`): the questions come as an engineer's conversation, the brief is a
+ * small card in the chat panel, and the engineer's answers are sent back as context.brief every turn. Nothing is
+ * designed while the brief is open; the card's Start button is what sends the explicit start. */
+function briefEmpty(b) { return !b || typeof b !== 'object' || !Object.keys(b).length; }
+/** the fields the card shows, in the order the brief asks for them */
+function briefRows(b) {
+  if (briefEmpty(b)) return [];
+  return [['object', 'Object', 'Benda'], ['purpose', 'For', 'Untuk'], ['key_sizes', 'Sizes', 'Ukuran'], ['envelope', 'Space', 'Ruang'],
+    ['loads', 'Load', 'Beban'], ['material', 'Material', 'Material'], ['process', 'Process', 'Proses']]
+    .map(([k, en, id]) => ({ k, label: L(en, id), value: String(b[k] == null ? '' : b[k]) }));
+}
+/** only the options the solver really sent: a chip is never invented here */
+function briefChipOptions(q) {
+  return (q && Array.isArray(q.options) ? q.options : []).map((o) => ({ label: String((o && o.label) || ''), note: String((o && o.note) || '') })).filter((o) => o.label);
+}
+function briefAssumed(b) { return (!b || !Array.isArray(b.assumptions) ? [] : b.assumptions).filter((a) => a && a.assumed === true); }
+function briefOpen(b) { return (!b || !Array.isArray(b.open) ? [] : b.open).map((x) => (typeof x === 'string' ? x : x && x.text)).filter(Boolean); }
+/** what the Start button sends: the start words plus the concept count the engineer picked */
+function briefStart(b, n) {
+  const kind = b && b.kind === 'assembly' ? 'assembly' : 'part';
+  return { kind, text: kind === 'assembly' ? L('Plan the assembly', 'Rencanakan rakitan') : L('Start design', 'Mulai desain'), concepts: kind === 'part' ? (Number(n) || 3) : null };
+}
+/* ---- end brief helpers */
+
+let chatBrief = null, briefReply = null, briefEditing = false, briefDone = false;
+const BRIEF_KEY = 'idris-brief';
+const loadBrief = () => { try { const b = JSON.parse(localStorage.getItem(BRIEF_KEY) || 'null'); return b && typeof b === 'object' && !Array.isArray(b) ? b : null; } catch (e) { return null; } };
+const saveBrief = (b) => { try { if (b) localStorage.setItem(BRIEF_KEY, JSON.stringify(b)); else localStorage.removeItem(BRIEF_KEY); } catch (e) { /* storage unavailable */ } };
+chatBrief = loadBrief();
+function editBriefField(k, cell) {
+  if (briefEditing || !chatBrief) return;
+  briefEditing = true;
+  const inp = h('input', { class: 'bc-in', value: String(chatBrief[k] || ''), 'aria-label': k });
+  cell.replaceWith(inp); inp.focus(); inp.select();
+  let closed = false;
+  const done = (keep) => { if (closed) return; closed = true; briefEditing = false;
+    if (keep) { const v = inp.value.trim(); if (v) chatBrief[k] = v; else delete chatBrief[k]; saveBrief(chatBrief); }
+    renderBriefCard(); };
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); done(true); } else if (e.key === 'Escape') { e.preventDefault(); done(false); } });
+  inp.addEventListener('blur', () => done(true));
+}
+let briefLearn = null;
+function renderBriefCard() {
+  const el = $('#briefCard'); if (!el) return;
+  const lb = $('#learn');
+  if (briefDone || briefEmpty(chatBrief)) { el.hidden = true; el.innerHTML = '';
+    if (briefLearn) { briefLearn.hidden = false; briefLearn = null; }   // the guide comes back when the brief is done
+    return; }
+  if (lb && !lb.hidden) { lb.hidden = true; briefLearn = lb; }           // the brief is the work now; the first-design guide waits its turn
+  el.hidden = false; el.innerHTML = '';
+  const b = chatBrief, rows = briefRows(b), assumed = briefAssumed(b), open = briefOpen(b);
+  el.append(h('div', { class: 'bc-h' }, h('b', null, L('Design brief', 'Design brief')),
+    h('span', { class: 'bc-st' }, b.ready ? L('ready', 'siap') : L('asking', 'menanyakan')),
+    h('button', { class: 'linkbtn', onclick: () => { chatBrief = null; saveBrief(null); renderBriefCard(); } }, L('Clear', 'Hapus'))));
+  const body = h('div', { class: 'bc-b' });
+  rows.forEach((r) => body.append(h('div', { class: 'bc-r' }, h('span', { class: 'bc-k' }, r.label),
+    h('button', { class: 'bc-v' + (r.value ? '' : ' empty'), title: L('Click to edit', 'Klik untuk ubah'), onclick: (e) => editBriefField(r.k, e.currentTarget) }, r.value || L('not set', 'belum diisi')))));
+  if (assumed.length) body.append(h('div', { class: 'bc-a' }, h('b', null, L('Assumed', 'Asumsi')),
+    ...assumed.map((a) => h('span', { class: 'bc-tag', title: String(a.why || '') }, `${a.what}: ${a.value}`))));
+  if (open.length) body.append(h('div', { class: 'bc-o' }, h('b', null, L('Still open', 'Masih terbuka')), ...open.map((t) => h('span', { class: 'bc-tag' }, t))));
+  el.append(body);
+  if (b.ready) {
+    const st = briefStart(b, 3), go = h('div', { class: 'bc-go' });
+    if (st.kind === 'assembly') go.append(h('button', { class: 'chip primary', onclick: () => { briefHide(); handleText(st.text); } }, st.text));
+    else {
+      go.append(h('span', { class: 'bc-k' }, L('Concepts', 'Konsep')));
+      [3, 5, 7, 10].forEach((n) => go.append(h('button', { class: 'chip', title: L(`${n} concepts`, `${n} konsep`), onclick: () => { conceptNext = n; briefHide(); handleText(st.text); } }, String(n))));
+      go.append(h('button', { class: 'chip primary', onclick: () => { briefHide(); handleText(st.text); } }, st.text));
+    }
+    el.append(go);
+  }
+}
+/** the brief is done being discussed: hide the card but keep it in this session (New design is what clears it) */
+function briefHide() { briefDone = true; const el = $('#briefCard'); if (el) { el.hidden = true; el.innerHTML = ''; } }
+function briefChips(j, box) {
+  const qs = Array.isArray(j.questions) ? j.questions : [], sug = Array.isArray(j.suggestions) ? j.suggestions : [];
+  if (!qs.length && !sug.length) return;
+  const wrap = h('div', { class: 'bchips' });
+  qs.forEach((q) => {
+    const opts = briefChipOptions(q); if (!opts.length) return;
+    wrap.append(h('div', { class: 'bq' }, h('b', null, String(q.text || '')),
+      h('div', { class: 'bq-o' }, opts.map((o) => h('button', { class: 'chip', title: o.note, onclick: () => handleText(o.label) }, o.label))),
+      h('p', { class: 'hint' }, L('…or type your own answer below.', '…atau ketik jawabanmu sendiri di bawah.'))));
+  });
+  sug.forEach((s) => {
+    if (!s || !s.text) return;
+    const row = h('div', { class: 'bsg' }, h('span', null, '+ ' + s.text + (s.why ? ' — ' + s.why : '')),
+      h('button', { class: 'chip', onclick: () => { row.remove(); handleText('add: ' + s.text); } }, L('+ add', '+ tambah')),
+      h('button', { class: 'chip', onclick: () => row.remove() }, L('no thanks', 'tidak')));
+    wrap.append(row);
+  });
+  box.append(wrap);
+}
+{ const pane = document.querySelector('.pane-chat'), card = h('section', { class: 'briefcard', id: 'briefCard', hidden: true, 'aria-label': L('Design brief', 'Design brief') });
+  if (pane && $('#chat')) pane.insertBefore(card, $('#chat')); else if (pane) pane.append(card);
+  renderBriefCard(); }
+{ const f3 = window.fetch; window.fetch = async function (url, opt) {
+    const isChat = typeof url === 'string' && url === API + '/chat' && opt && typeof opt.body === 'string' && !(opt.headers && opt.headers['X-Idris-Brief']);
+    if (isChat && chatBrief) { try { const b = JSON.parse(opt.body); b.context = { ...(b.context || {}), brief: chatBrief }; opt = { ...opt, body: JSON.stringify(b) }; } catch (e) { /* unchanged */ } }
+    const r = await f3(url, opt);
+    if (isChat) { try { const j = await r.clone().json();
+      if (j && j.brief && typeof j.brief === 'object') { chatBrief = j.brief; saveBrief(chatBrief); if (j.route && j.route.route === 'brief') briefDone = false; renderBriefCard(); }
+      else { const rt = j && j.route && j.route.route; if (rt && rt !== 'brief' && rt !== 'chat' && rt !== 'discuss') briefHide(); }
+      briefReply = j && (Array.isArray(j.questions) || (j.route && j.route.route === 'brief')) ? j : null; } catch (e) { briefReply = null; } }
+    return r; }; }
+{ const ca3 = chatAI; chatAI = async function () { const r = await ca3.apply(this, arguments);
+    if (briefReply) { const j = briefReply; briefReply = null;
+      const last = [...document.querySelectorAll('#chat .msg.ai .ai-body')].pop();
+      if (last) briefChips(j, last); else { const box = h('div', { class: 'ai-body' }); briefChips(j, box); say(box); }
+      scrollDown(); }
+    return r; }; }
+{ const ra = resetAll; resetAll = function () { chatBrief = null; briefDone = false; saveBrief(null); renderBriefCard(); return ra.apply(this, arguments); }; }
 
 /* ---- v64: connect solver v0.36 (solver/untuk-ui-sambungkan-solver-v0.36.md), part 1–4 and 8.
  * 1 (G) POST /design/job: timeline from events, feature-by-feature build from cad.steps, the browser half of the

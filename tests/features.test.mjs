@@ -195,6 +195,42 @@ const suppressedShape = await run([F('shape', { kind: 'box', L: 10, W: 10, H: 10
 check('a suppressed step is skipped and the rest still builds', () => eq(vol(suppressedShape.body), 8000, 0.01, 'volume'));
 
 /* ------------------------------------------------------------------------ */
+/* ------------------------------------------------------------- brief (v0.40) --- */
+const bStart = html.indexOf('/* ---- v0.40 design brief'), bEnd = html.indexOf('/* ---- end brief helpers */');
+if (bStart < 0 || bEnd < 0) throw new Error('brief helpers not found in index.html');
+const B = new Function('L', `${html.slice(bStart, bEnd)}\nreturn { briefEmpty, briefRows, briefChipOptions, briefAssumed, briefOpen, briefStart };`)(L);
+
+console.log('\nDesign brief card');
+check('the card shows the brief fields in the order the solver asks for them', () => {
+  const rows = B.briefRows({ object: 'drone', purpose: 'camera', key_sizes: '450 mm', ready: false });
+  eq(rows.length, 7, 0, 'rows');
+  eq(rows[0].k, 'object', 0, 'first'); eq(rows[0].value, 'drone', 0, 'value');
+  eq(rows[1].k, 'purpose', 0, 'second'); eq(rows[2].k, 'key_sizes', 0, 'third');
+  eq(rows[3].value, '', 0, 'a missing field is empty, not invented');
+  ok(B.briefEmpty(null) && B.briefEmpty({}), 'nothing is empty');
+  ok(!B.briefEmpty({ object: 'drone' }), 'one field is not empty');
+});
+
+check('only the options the solver sent become chips', () => {
+  const o = B.briefChipOptions({ options: [{ label: 'FPV 5-inch', note: 'fast' }, { note: 'no label' }, { label: '' }] });
+  eq(o.length, 1, 0, 'chips'); eq(o[0].label, 'FPV 5-inch', 0, 'label'); eq(o[0].note, 'fast', 0, 'note');
+  eq(B.briefChipOptions({}).length, 0, 0, 'no options');
+});
+
+check('assumptions are only the ones marked assumed, and open items survive both shapes', () => {
+  const a = B.briefAssumed({ assumptions: [{ what: 'sizes', value: 'chosen by IDRIS', assumed: true }, { what: 'x', value: 'y' }] });
+  eq(a.length, 1, 0, 'assumed'); eq(a[0].what, 'sizes', 0, 'what');
+  eq(B.briefOpen({ open: ['battery?', { text: 'payload?' }, {}] }).length, 2, 0, 'open');
+  eq(B.briefAssumed({}).length, 0, 0, 'nothing');
+});
+
+check('Start design sends the kind and the concept count, an assembly plans', () => {
+  const p = B.briefStart({ kind: 'part' }, 5), a = B.briefStart({ kind: 'assembly' }, 7);
+  eq(p.kind, 'part', 0, 'kind'); eq(p.concepts, 5, 0, 'count'); eq(p.text, 'Start design', 0, 'text');
+  eq(a.kind, 'assembly', 0, 'kind'); eq(a.concepts, null, 0, 'no concepts for an assembly');
+  eq(B.briefStart({ kind: 'part' }, 0).concepts, 3, 0, 'default');
+});
+
 /* --------------------------------------------------------------------- S10 --- */
 /* the sketch gesture, snapping and tool labels, lifted from index.html */
 const s10Start = html.indexOf('/* ---- S10 helpers'), s10End = html.indexOf('/* ---- end S10 helpers */');
