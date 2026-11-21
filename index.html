@@ -744,7 +744,15 @@ body.at-home .learn{display:none}
 .pform label{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,150px);align-items:center;gap:8px;font-size:12.5px}
 .pform input,.pform select{width:100%;min-width:0;font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line2);border-radius:6px;background:var(--white);color:var(--text)}
 .pform .pnum{display:flex;align-items:center;gap:4px} .pform .pnum em{font-style:normal;color:var(--muted);font-size:11.5px;min-width:22px}
-.pform .pact{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+/* S10: the form's actions stay visible at the bottom of the scrolling properties panel, never under the Checks bar */
+.pform .pact{display:flex;gap:6px;flex-wrap:wrap;margin:0;position:sticky;bottom:0;z-index:3;background:var(--white);border-top:1px solid var(--line);padding:8px 0 6px}
+.sklabel{position:absolute;z-index:9;pointer-events:none;background:var(--accent);color:var(--on-accent);font:600 11.5px/1 var(--sans);padding:4px 7px;border-radius:6px;transform:translate(14px,-28px);white-space:nowrap}
+.sknext{position:absolute;z-index:6;left:50%;transform:translateX(-50%);bottom:calc(var(--ckH,40px) + 14px);display:flex;align-items:center;gap:8px;max-width:calc(100% - 32px);background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:8px 10px;box-shadow:0 8px 24px var(--shadow);font-size:12.5px;color:var(--text)}
+.sknext span{min-width:0}
+.skp{font-size:11.5px;color:var(--muted);align-self:center;margin-right:auto}
+.viewport.sketching #cv{cursor:crosshair}
+@media (min-width:1181px){ body.cad .sknext{left:calc(50% + (var(--ovL) - var(--ovR)) / 2)} }
+.xr-t.s-mk1 .xr-i,.xr-t.s-no .xr-i{opacity:.4;filter:grayscale(1)}
 .pdoc{font-size:12px;color:var(--muted);padding:4px 2px}
 .cmat select{width:100%;margin:4px 0;font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--line2);border-radius:6px;background:var(--white);color:var(--text)}
 .tact{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
@@ -1145,9 +1153,10 @@ class Viewer {
   _bindInput() {
     const c = this.canvas;
     const touch = () => { this.anim = null; this.dirty = true; };
-    c.addEventListener('pointerdown', (e) => { c.setPointerCapture(e.pointerId);
+    c.addEventListener('pointerdown', (e) => { if (this.drawMode) return; c.setPointerCapture(e.pointerId);
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY }); this.pinch = 0; touch(); });
     c.addEventListener('pointermove', (e) => {
+      if (this.drawMode) return;
       const p = this.pointers.get(e.pointerId); if (!p) return;
       if (this.pointers.size === 1) {
         this.yaw -= (e.clientX - p.x) * 0.008;
@@ -1350,6 +1359,15 @@ class Viewer {
     if (parts && !this.ghost && this.center) { this.ghost = parts.map((p) => this._build(this._parseSTL(p.buf.slice(0)), this.center, p)); this._ghostSrc = parts; }
     this.ghostA = alpha; this.dirty = true;
   }
+  /** S10: the sketch being typed, drawn blue and translucent in the same frame as the part. No camera reset, and
+   *  nothing is saved: this is a preview of the same build path, not a feature. */
+  setPreview(parts) {
+    const gl = this.gl;
+    if (this.preview) for (const p of this.preview) for (const k of ['pos', 'nor', 'feat', 'featA', 'wire', 'wireA']) if (p[k]) gl.deleteBuffer(p[k]);
+    this.preview = null;
+    if (parts && parts.length && this.ok) this.preview = parts.map((p) => this._build(this._parseSTL(p.buf.slice(0)), this.center || [0, 0, 0], p));
+    this.dirty = true;
+  }
   setVisible(i, on) { if (this.parts && this.parts.at(i)) { this.parts.at(i).visible = on; this.dirty = true; } }
   setHighlight(i) { this.highlight = i; if (i >= 0 && this.selTri) this.setFaceSel(null, null); else this.dirty = true; }
   setHousingMode(m) { this.housingMode = m; this.dirty = true; }
@@ -1506,7 +1524,7 @@ class Viewer {
       wire: this._buf(new Float32Array(wire)), wireN: wire.length / 3, wireA: this._buf(new Float32Array(wire.length / 3).fill(1)) };
   }
   _free() {
-    const gl = this.gl; this.setGhost(null);
+    const gl = this.gl; this.setGhost(null); this.setPreview(null);
     if (this.selFace) { for (const k of ['pos', 'nor', 'wire', 'wireA']) if (this.selFace[k]) gl.deleteBuffer(this.selFace[k]); }
     this.selFace = null; this.selTri = null;
     for (const p of this.parts || []) for (const k of ['pos', 'nor', 'feat', 'featA', 'wire', 'wireA']) gl.deleteBuffer(p[k]);
@@ -1560,7 +1578,12 @@ class Viewer {
     const view = Viewer.lookAt(eye, T, up);
     if (this.onView) this.onView(view);
     const m = this.model;
-    if (!m) { this._drawEmpty(Viewer.mul(Viewer.perspective(this.fov, W / H, d * 0.02, d * 20), view)); return; }
+    if (!m) { const em = Viewer.mul(Viewer.perspective(this.fov, W / H, d * 0.02, d * 20), view); this._mvp = em; this._drawEmpty(em);
+      if (this.preview) for (const g of this.preview) {
+        this._mesh(g, [0.25, 0.50, 0.95], 0.45, em, view, Viewer.I);
+        gl.useProgram(this.pLine); this._lines(this.pLine, em, g.feat, g.featA, g.featN, [0.12, 0.36, 0.95, 1], true, Viewer.I);
+      }
+      return; }
     const proj = Viewer.perspective(this.fov, W / H, d * 0.05, d * 12);
     const mvp = Viewer.mul(proj, view); this._mvp = mvp;
     const de = document.documentElement, dark = de.dataset.vpdark ? de.dataset.vpdark === '1' : de.dataset.theme === 'dark';
@@ -1616,6 +1639,11 @@ class Viewer {
       gl.useProgram(this.pLine); this._lines(this.pLine, a, p.feat, p.featA, p.featN, edge, true, M);
     });
     drawEnv();
+    /* S10: the sketch being typed */
+    if (this.preview) for (const g of this.preview) {
+      this._mesh(g, [0.25, 0.50, 0.95], 0.42, mvp, view, I);
+      gl.useProgram(this.pLine); this._lines(this.pLine, mvp, g.feat, g.featA, g.featN, [0.12, 0.36, 0.95, 0.95], true, I);
+    }
     if (this.playing && this.markers) { gl.useProgram(this.pLine); gl.lineWidth(2);
       for (const mk of this.markers) { const pp = this.parts.at(mk.i); if (!pp || !shown(pp)) continue; const [a, , M] = PM(mk.i);
         this._lines(this.pLine, a, mk.pos, mk.a, mk.n, [0.96, 0.62, 0.04, 1], true, M); }
@@ -6270,22 +6298,150 @@ function partTool(k, preset, label) {
   if (k === 'revolve' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Revolve needs a sketch: draw the profile first.', 'Revolve butuh sketch: buat profilnya dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'dim' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Smart Dimension drives a sketch size: draw a sketch first.', 'Smart Dimension mengatur ukuran sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   partArm = { type: k, p: { ...defaults(k), ...(preset || {}) }, n: label || null, d: label && typeof RIB_ALL !== 'undefined' ? (RIB_ALL.find((t) => t.n === label) || {}) : null }; partSel = null; cadTab = 'design';
-  if (narrow()) setChat(true);
+  /* S10-A: opening a tool shows the panel that holds its form, scrolls the form into view and focuses its first field */
+  if (narrow() || document.body.classList.contains('hide-chat')) setChat(true);
   renderCad();
-  requestAnimationFrame(() => { const i = document.querySelector('#cadProps .pform input, #cadProps .pform select'); if (i) i.focus(); });
+  requestAnimationFrame(() => {
+    const pr = $('#cadProps'), form = document.querySelector('#cadProps .pform');
+    if (form && form.scrollIntoView) form.scrollIntoView({ block: 'nearest' }); else if (pr) pr.scrollTop = 0;
+    const i = document.querySelector('#cadProps .pform input') || document.querySelector('#cadProps .pform select'); if (i) { i.focus(); if (i.select) i.select(); }
+    if (k === 'sketch') updateSketchGhost(0); else viewer.setPreview(null);
+  });
 }
 /* ---- part UI inside the CAD layout */
 function pform(type, p, onOk, okLabel, onCancel) {
   const box = h('div', { class: 'pform' });
+  /* S10-B: every changed number redraws the ghost through the same build path (debounced in updateSketchGhost) */
+  const ghost = () => { if (typeof partArm !== 'undefined' && partArm && partArm.type === type && typeof updateSketchGhost === 'function') updateSketchGhost(); };
   const draw = () => { box.innerHTML = '';
     FEAT[type].fields.forEach((x) => { if (x.show && !x.show(p)) return; if (x.first === false && !state.part.features.some((f) => f.type === 'shape' || f.type === 'push') && !partSel) return;
       const lab = h('label', null, h('span', null, L(x.en, x.id)));
       if (x.t === 'num') lab.append(h('span', { class: 'pnum' }, h('input', { type: 'number', inputmode: 'decimal', value: p[x.k], step: x.step || 'any', min: x.min ?? 0, 'data-k': x.k,
-        oninput: (e) => { p[x.k] = e.target.value === '' ? '' : Number(e.target.value); } }), x.unit ? h('em', null, x.unit) : null));
-      else lab.append(h('select', { 'data-k': x.k, onchange: (e) => { p[x.k] = e.target.value; draw(); } }, x.opts.map(([v, t]) => h('option', { value: v, selected: v === p[x.k] }, L(...t)))));
+        oninput: (e) => { p[x.k] = e.target.value === '' ? '' : Number(e.target.value); ghost(); } }), x.unit ? h('em', null, x.unit) : null));
+      else lab.append(h('select', { 'data-k': x.k, onchange: (e) => { p[x.k] = e.target.value; draw(); ghost(); } }, x.opts.map(([v, t]) => h('option', { value: v, selected: v === p[x.k] }, L(...t)))));
       box.append(lab); });
-    box.append(h('div', { class: 'pact' }, h('button', { class: 'chip primary', disabled: partBusy, onclick: onOk }, okLabel), onCancel ? h('button', { class: 'chip', onclick: onCancel }, L('Cancel', 'Batal')) : null)); };
-  draw(); box.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); onOk(); } }); return box;
+    box.append(h('div', { class: 'pact' }, h('span', { class: 'skp', id: 'skPrev', hidden: true }),
+      h('button', { class: 'chip primary', disabled: partBusy, onclick: onOk }, okLabel), onCancel ? h('button', { class: 'chip', onclick: onCancel }, L('Cancel', 'Batal')) : null)); };
+  draw(); box.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); onOk(); } else if (e.key === 'Escape') { e.preventDefault(); if (onCancel) onCancel(); } }); return box;
+}
+
+/* ---- S10 helpers: the sketch gesture, its snapping and the tool labels (lifted by tests/features.test.mjs) */
+function snapMM(v, fine) { const step = fine ? 0.1 : 1; return Math.round((+v || 0) / step) * step; }
+/** prof + two points on the sketch plane -> the form values the same build path reads. circle/poly: centre + radius;
+ *  rect/slot: two opposite corners. The engineer's typed value always wins after this. */
+function sketchFromDrag(prof, a, b, base) {
+  const p = { ...(base || {}) }, ax = +a[0], ay = +a[1], bx = +b[0], by = +b[1], dx = bx - ax, dy = by - ay;
+  if (prof === 'circle' || prof === 'poly') { p.u = ax; p.v = ay; p.D = Math.round(2 * Math.hypot(dx, dy) * 10) / 10; return { p, label: 'Ø ' + f(p.D, 1) }; }
+  p.W = Math.round(Math.abs(dx) * 1e6) / 1e6; p.Hh = Math.round(Math.abs(dy) * 1e6) / 1e6;
+  p.u = (ax + bx) / 2; p.v = (ay + by) / 2;
+  return { p, label: f(p.W, 1) + ' × ' + f(p.Hh, 1) };
+}
+/** the one-line next step after a sketch, and where it goes */
+function sketchNextText() { return L('Next: Extrude this sketch (Features → Extruded Boss/Base) or Revolve', 'Berikutnya: Extrude sketch ini (Features → Extruded Boss/Base) atau Revolve'); }
+/** Mark 1 / Not yet tools are grey, and their tooltip says what works today */
+function plannedToolTip(st) { return (st === 'mk1' || st === 'no') ? L('Coming in Mark 1 — use Circle, Corner Rectangle, Slot or Polygon now', 'Akan datang di Mark 1 — pakai Circle, Corner Rectangle, Slot, atau Polygon sekarang') : ''; }
+/* ---- end S10 helpers */
+
+/* ---- S10-C: drawing in the viewport. The click point goes through the camera into the sketch plane, snaps to 1 mm
+ * (Shift 0.1 mm) and to the centre/corners of a sketch already on that plane, then writes the form fields. Nothing is
+ * saved: unconfirmed values are a ghost built by the same buildPart path. */
+let skDrag = null, skGhostT = null, skGhostSeq = 0;
+const sketchTool = () => (typeof partArm !== 'undefined' && partArm && partArm.type === 'sketch') ? partArm : null;
+const sketchDrawable = () => { const a = sketchTool(); return !!a && ['circle', 'rect', 'slot', 'poly'].includes(a.p.prof); };
+const partTopZ = () => (partShape ? partShape.boundingBox.bounds[1][2] : 0);
+const sketchPlaneAt = (p) => (p.plane === 'XY' && p.at !== 'value') ? partTopZ() : (+p.off || 0);
+function planeRay(clientX, clientY) {
+  const vp = $('#viewport'), r = vp.getBoundingClientRect();
+  const nx = (clientX - r.left) / Math.max(1, r.width) * 2 - 1, ny = 1 - (clientY - r.top) / Math.max(1, r.height) * 2 - 1;
+  const d = viewer.dist, cp = Math.cos(viewer.pitch), T = viewer.target || [0, 0, 0];
+  const eye = [T[0] + d * cp * Math.sin(viewer.yaw), T[1] + d * Math.sin(viewer.pitch), T[2] + d * cp * Math.cos(viewer.yaw)];
+  const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+  const f = nrm([T[0] - eye[0], T[1] - eye[1], T[2] - eye[2]]);
+  const upW = Math.abs(viewer.pitch) > 1.5 ? [-Math.sin(viewer.yaw), 0, -Math.cos(viewer.yaw)] : [0, 1, 0];
+  const right = nrm([f[1] * upW[2] - f[2] * upW[1], f[2] * upW[0] - f[0] * upW[2], f[0] * upW[1] - f[1] * upW[0]]);
+  const up = [right[1] * f[2] - right[2] * f[1], right[2] * f[0] - right[0] * f[2], right[0] * f[1] - right[1] * f[0]];
+  const asp = Math.max(1, r.width) / Math.max(1, r.height), hh = Math.tan(viewer.fov / 2), hw = hh * asp;
+  return { eye, dir: nrm([f[0] + right[0] * nx * hw + up[0] * ny * hh, f[1] + right[1] * nx * hw + up[1] * ny * hh, f[2] + right[2] * nx * hw + up[2] * ny * hh]) };
+}
+function planePoint(clientX, clientY, p) {
+  const { eye, dir } = planeRay(clientX, clientY), c = viewer.center || [0, 0, 0], at = sketchPlaneAt(p);
+  const axis = p.plane === 'XY' ? 1 : p.plane === 'XZ' ? 2 : 0;
+  const fixed = axis === 1 ? at - c[1] : axis === 2 ? -at - c[2] : at - c[0];
+  if (Math.abs(dir[axis]) < 1e-9) return null;
+  const t = (fixed - eye[axis]) / dir[axis]; if (!(t > 0)) return null;
+  const w = [eye[0] + dir[0] * t, eye[1] + dir[1] * t, eye[2] + dir[2] * t];
+  return axis === 1 ? [w[0] + c[0], -(w[2] + c[2])] : axis === 2 ? [w[0] + c[0], w[1] + c[1]] : [-(w[2] + c[2]), w[1] + c[1]];
+}
+function snapPoint(pt, fine, p) {
+  for (const ft of (state.part ? state.part.features : [])) {
+    if (ft.type !== 'sketch' || ft.off || ft.p.plane !== p.plane) continue;
+    const q = ft.p, u = +q.u || 0, v = +q.v || 0, pts = [[u, v]];
+    if (q.prof === 'rect' || q.prof === 'slot') pts.push([u - (+q.W || 0) / 2, v - (+q.Hh || 0) / 2], [u + (+q.W || 0) / 2, v + (+q.Hh || 0) / 2]);
+    for (const [tx, ty] of pts) if (Math.hypot(tx - pt[0], ty - pt[1]) < 4) return [tx, ty];
+  }
+  return [snapMM(pt[0], fine), snapMM(pt[1], fine)];
+}
+function showSkLabel(text, cx, cy) {
+  const vp = $('#viewport'); let el = $('#skLabel');
+  if (!el) { el = h('div', { id: 'skLabel', class: 'sklabel' }); vp.append(el); }
+  const r = vp.getBoundingClientRect();
+  el.textContent = text; el.style.left = Math.max(0, cx - r.left) + 'px'; el.style.top = Math.max(0, cy - r.top) + 'px';
+}
+function hideSkLabel() { const el = $('#skLabel'); if (el) el.remove(); }
+function sketchPreviewNote(arm, ok) {
+  const n = document.getElementById('skPrev'); if (!n) return;
+  if (!arm || !ok) { n.hidden = true; n.textContent = ''; return; }
+  const p = arm.p, size = (p.prof === 'circle' || p.prof === 'poly') ? 'Ø ' + f(+p.D || 0, 1) : f(+p.W || 0, 1) + ' × ' + f(+p.Hh || 0, 1);
+  n.hidden = false; n.textContent = L('Preview', 'Pratinjau') + ': ' + size + ' · ' + L('not saved yet', 'belum disimpan');
+}
+async function buildSketchGhost() {
+  const seq = ++skGhostSeq, arm = sketchTool();
+  if (!arm || !state.part) { sketchPreviewNote(null, false); return viewer.setPreview(null); }
+  let out = null;
+  try { out = await buildPart({ ...state.part, features: [...state.part.features, { id: 'ghost', type: 'sketch', p: { ...arm.p } }] }); } catch (e) { out = null; }
+  if (seq !== skGhostSeq) return;
+  const s = out && out.open && out.open[out.open.length - 1];
+  if (!s) { sketchPreviewNote(null, false); return viewer.setPreview(null); }
+  try { const g = out.profile(s.s).sketchOnPlane(s.s.plane, s.at).extrude(0.2);
+    viewer.setPreview([{ buf: meshToSTL(zUp(g.mesh({ tolerance: 0.1, angularTolerance: 0.3 }))), kind: 'sketch', name: 'preview' }]);
+    sketchPreviewNote(arm, true);
+  } catch (e) { sketchPreviewNote(arm, false); viewer.setPreview(null); }
+}
+function updateSketchGhost(delay = 200) { clearTimeout(skGhostT); skGhostT = setTimeout(buildSketchGhost, delay); }
+function applySketchDrag(e) {
+  const a = skDrag.a, b = skDrag.b || skDrag.a, r = sketchFromDrag(partArm.p.prof, a, b, partArm.p);
+  Object.assign(partArm.p, r.p);
+  document.querySelectorAll('#cadProps .pform input[data-k]').forEach((el) => { const k = el.dataset.k; if (k in r.p && !isNaN(+r.p[k])) el.value = Math.round(+r.p[k] * 1000) / 1000; });
+  showSkLabel(r.label, e.clientX, e.clientY);
+  updateSketchGhost(160);
+}
+{ const cv = $('#cv');
+  cv.addEventListener('pointerdown', (e) => {
+    if (!sketchDrawable() || partBusy || e.button > 0) return;
+    const pt = planePoint(e.clientX, e.clientY, partArm.p); if (!pt) return;
+    skDrag = { id: e.pointerId, a: snapPoint(pt, e.shiftKey, partArm.p), b: null };
+    viewer.drawMode = true; try { cv.setPointerCapture(e.pointerId); } catch (err) { /* capture unavailable */ }
+    e.preventDefault(); e.stopPropagation();
+  }, true);
+  cv.addEventListener('pointermove', (e) => {
+    if (!skDrag || e.pointerId !== skDrag.id) return;
+    const pt = planePoint(e.clientX, e.clientY, partArm.p); if (pt) { skDrag.b = snapPoint(pt, e.shiftKey, partArm.p); applySketchDrag(e); }
+    e.preventDefault(); e.stopPropagation();
+  }, true);
+  const end = () => { if (!skDrag) return; skDrag = null; viewer.drawMode = false; hideSkLabel(); updateSketchGhost(0); };
+  cv.addEventListener('pointerup', end, true); cv.addEventListener('pointercancel', end, true);
+}
+/* S10-D: after a sketch, one line says what comes next and opens it */
+function renderSketchNext() {
+  const vp = $('#viewport'); let el = $('#skNext');
+  const feats = state.part ? state.part.features.filter((f) => !f.off) : [];
+  const last = feats[feats.length - 1];
+  if (!state.part || !isCad() || !last || last.type !== 'sketch') { if (el) el.remove(); return; }
+  if (!el) { el = h('div', { id: 'skNext', class: 'sknext', role: 'status' }); vp.append(el); }
+  el.innerHTML = '';
+  el.append(h('span', null, sketchNextText()),
+    h('button', { class: 'chip primary', onclick: () => partTool('push') }, L('Extrude', 'Extrude')),
+    h('button', { class: 'chip', onclick: () => partTool('revolve') }, 'Revolve'));
 }
 function renderPartCad() {
   const p = state.part, cr = $('#cadCrumb'); cr.innerHTML = '';
@@ -6327,8 +6483,8 @@ function renderPartCad() {
   if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
       h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : TOOL_GROUPS.find((g) => g[0] === partArm.type)[2]),
-      pform(partArm.type, partArm.p, () => { p.features.push({ id: Date.now().toString(36), type: partArm.type, p: { ...partArm.p } }); partSel = p.features.length - 1; const fit = p.features.length === 1; partArm = null; if (narrow()) setChat(false); rebuildPart(fit); },
-        L('Add & build', 'Tambah & bangun'), () => { partArm = null; renderCad(); }));
+      pform(partArm.type, partArm.p, () => { p.features.push({ id: Date.now().toString(36), type: partArm.type, p: { ...partArm.p } }); partSel = p.features.length - 1; const fit = p.features.length === 1; partArm = null; viewer.setPreview(null); hideSkLabel(); if (narrow()) setChat(false); rebuildPart(fit); },
+        L('Add & build', 'Tambah & bangun'), () => { partArm = null; viewer.setPreview(null); hideSkLabel(); renderCad(); }));
   } else if (fsel) {
     const edit = { ...fsel.p };
     pr.append(h('h2', null, h('span', null, `${partSel + 1}. ${featName(fsel)}`), h('span', { class: 'phd' }, h('small', null, FEAT[fsel.type].label(fsel.p)))),
@@ -6344,6 +6500,8 @@ function renderPartCad() {
   } else {
     pr.append(h('h2', null, p.name), h('p', { class: 'hint' }, L('Pick a tool in the toolbar above (Sketch, Features, Evaluate…), or click a step in the feature tree to change it. Every change rebuilds the whole part.', 'Pilih alat di toolbar atas (Sketch, Fitur, Evaluasi…), atau klik langkah di pohon fitur untuk mengubahnya. Setiap perubahan membangun ulang seluruh part.')));
   }
+  $('#viewport').classList.toggle('sketching', sketchDrawable());
+  renderSketchNext();
 }
 function renamePart() {
   const pr = $('#cadProps'); pr.innerHTML = ''; const inp = h('input', { type: 'text', value: state.part.name, maxlength: 60, 'aria-label': L('Part name', 'Nama part') });
@@ -6720,7 +6878,7 @@ function renderRibbon() {
   const tools = h('div', { class: 'xr-tools' }, cur[3].map(([g, list]) => h('div', { class: 'xr-g' + (g === 'IDRIS' ? ' idris' : '') },
     h('div', { class: 'xr-row' }, list.map((t) => { const run = ribRunnable(t), armed = typeof partArm !== 'undefined' && partArm && t.act && t.act.part === partArm.type && Object.entries(t.act.p || {}).every(([k, v]) => partArm.p[k] === v);
       return h('button', { class: 'xr-t s-' + t.st + (run ? ' run' : '') + (armed ? ' on' : '') + (t.ai ? ' ai' : ''), disabled: busy && t.st === 'on' && !!(t.act && t.act.part),
-        title: `${t.n} · ${L(RIB_ST[t.st][0], RIB_ST[t.st][1])}${t.st === 'gb' && !run ? L(' (open a gearbox design to use it)', ' (buka desain gearbox untuk memakainya)') : ''}\n${L(t.en, t.id)}`,
+        title: `${t.n} · ${L(RIB_ST[t.st][0], RIB_ST[t.st][1])}${t.st === 'gb' && !run ? L(' (open a gearbox design to use it)', ' (buka desain gearbox untuk memakainya)') : ''}${plannedToolTip(t.st) ? '\n' + plannedToolTip(t.st) : ''}\n${L(t.en, t.id)}`,
         'aria-label': `${t.n}, ${L(RIB_ST[t.st][0], RIB_ST[t.st][1])}`, onclick: (e) => ribClick(t, e.currentTarget) },
         h('span', { class: 'xr-i' }, ribIcon(t.ic), t.st !== 'on' ? h('i', { class: 'xr-dot ' + t.st, 'aria-hidden': 'true' }) : null), h('span', { class: 'xr-n' }, t.n)); })),
     h('div', { class: 'xr-gl' }, g))));

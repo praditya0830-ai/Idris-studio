@@ -195,6 +195,46 @@ const suppressedShape = await run([F('shape', { kind: 'box', L: 10, W: 10, H: 10
 check('a suppressed step is skipped and the rest still builds', () => eq(vol(suppressedShape.body), 8000, 0.01, 'volume'));
 
 /* ------------------------------------------------------------------------ */
+/* --------------------------------------------------------------------- S10 --- */
+/* the sketch gesture, snapping and tool labels, lifted from index.html */
+const s10Start = html.indexOf('/* ---- S10 helpers'), s10End = html.indexOf('/* ---- end S10 helpers */');
+if (s10Start < 0 || s10End < 0) throw new Error('S10 helpers not found in index.html');
+const S10 = new Function('L', 'f', `${html.slice(s10Start, s10End)}\nreturn { snapMM, sketchFromDrag, sketchNextText, plannedToolTip };`)(L, f);
+
+console.log('\nS10 · sketch drawn in the viewport');
+const dragC = S10.sketchFromDrag('circle', [10, 5], [22, 5], { prof: 'circle', D: 20, u: 0, v: 0, plane: 'XY', at: 'value', off: 0, n: 6 });
+check('a circle dragged from (10, 5) to (22, 5) is Ø 24 at (10, 5)', () => {
+  eq(dragC.p.D, 24, 1e-9, 'D'); eq(dragC.p.u, 10, 1e-9, 'u'); eq(dragC.p.v, 5, 1e-9, 'v');
+  ok(/24/.test(dragC.label), 'label: ' + dragC.label);
+});
+
+const dragR = S10.sketchFromDrag('rect', [0, 0], [30, 20], { prof: 'rect', W: 30, Hh: 20, u: 15, v: 10, plane: 'XY', at: 'value', off: 0 });
+check('a rectangle dragged corner to corner is W × H at its centre', () => {
+  eq(dragR.p.W, 30, 1e-9, 'W'); eq(dragR.p.Hh, 20, 1e-9, 'Hh'); eq(dragR.p.u, 15, 1e-9, 'u'); eq(dragR.p.v, 10, 1e-9, 'v');
+  ok(/30/.test(dragR.label) && /20/.test(dragR.label), 'label: ' + dragR.label);
+});
+
+check('a drag snaps to 1 mm, and to 0.1 mm with Shift', () => {
+  eq(S10.snapMM(12.4, false), 12, 1e-9, '1 mm');
+  eq(S10.snapMM(12.43, true), 12.4, 1e-9, '0.1 mm');
+  eq(S10.snapMM(-3.6, false), -4, 1e-9, 'negative');
+});
+
+const drawn = await run([F('sketch', { ...dragC.p, plane: 'XY', at: 'value', off: 0 }), F('push', { dist: 10, op: 'add', both: 'one' })]);
+check('the dragged Ø 24 sketch extruded 10 is 4523.9 mm³ (π·12²·10)', () => {
+  eq(vol(drawn.body), Math.PI * 144 * 10, Math.PI * 144 * 10 * 0.001, 'volume');
+});
+check('the dragged sketch has no error and the extrude uses it', () => ok(!errs(drawn.features).length, 'errors: ' + JSON.stringify(drawn.features.map((x) => x.err || null))));
+
+check('the next-step line names Extrude and Revolve', () => {
+  const t = S10.sketchNextText();
+  ok(/Extrude/.test(t) && /Revolve/.test(t), t);
+});
+
+check('Mark 1 tools say what works today, active tools carry no such line', () => {
+  ok(/Mark 1/.test(S10.plannedToolTip('mk1')) && /Circle/.test(S10.plannedToolTip('mk1')), 'mk1 tip');
+  ok(S10.plannedToolTip('no').length > 0, 'not-yet tip');
+  ok(S10.plannedToolTip('on') === '' && S10.plannedToolTip('gb') === '', 'no tip for working tools');
 
 /* --------------------------------------------------------------------- S9 --- */
 /* the DFM and AP242 answers, lifted from index.html and checked as data */
