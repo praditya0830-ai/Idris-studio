@@ -200,7 +200,7 @@ check('a suppressed step is skipped and the rest still builds', () => eq(vol(sup
 /* the DFM and AP242 answers, lifted from index.html and checked as data */
 const s9Start = html.indexOf('/* ---- S9 helpers'), s9End = html.indexOf('/* ---- end S9 helpers */');
 if (s9Start < 0 || s9End < 0) throw new Error('S9 helpers not found in index.html');
-const S9 = new Function('f', `${html.slice(s9Start, s9End)}\nreturn { dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids };`)(f);
+const S9 = new Function('f', 'L', `${html.slice(s9Start, s9End)}\nreturn { dfmWallNote, dfmIsCoarse, dfmDrillRows, dfmFindingValue, ap242Solids };`)(f, L);
 
 check('an exact wall measurement is named as exact', () => {
   const n = S9.dfmWallNote({ method_id: 'exact-ray-triangle', resolution_mm: 0.0001, min_mm: 5 });
@@ -212,6 +212,19 @@ check('a voxel fallback is reported with its cell and never as exact', () => {
   const n = S9.dfmWallNote({ method_id: 'voxel-fallback', resolution_mm: 0.25 });
   ok(n.known && !n.exact, 'the fallback must not claim exact');
   eq(n.resolution_mm, 0.25, 1e-9, 'cell');
+});
+
+check('the solver contract from main (method + resolution_mm) is read too', () => {
+  const n = S9.dfmWallNote({ method: 'ray cast on the mesh, quantised by resolution_mm (±1 voxel)', resolution_mm: 5, min_mm: 7.5, p5_mm: 7.5 });
+  ok(n.known && !n.exact, 'voxel method is known and not exact');
+  eq(n.method_id, null, 0, 'no invented method_id');
+  ok(/ray cast/.test(n.text), 'the solver wording is kept');
+  eq(n.resolution_mm, 5, 1e-9, 'resolution');
+});
+
+check('the wall line shows the cell size next to the values, not only in prose', () => {
+  ok(/\$\{pm\}/.test(html) && /one cell|satu sel/.test(html), 'the values carry ± resolution');
+  ok(/coarser than the/.test(html), 'the coarse warning names the grid and the wall');
 });
 
 check('a solver that does not say how it measured is not credited with a method', () => {
@@ -235,6 +248,34 @@ check('the drill table names each diameter and the drill that makes it', () => {
   eq(rows[0].holes, 2, 0, 'holes');
   ok(rows[0].in_series && !rows[1].in_series, 'the series flags survive');
   eq(rows[1].drill, 6, 0, 'nearest drill');
+});
+
+check('the drill check shows a hole count whatever unit the solver sends', () => {
+  eq(S9.dfmFindingValue({ id: 'drill_size', unit: 'mm', value: 1 }), '1 hole(s)', 'main solver sends unit mm');
+  eq(S9.dfmFindingValue({ id: 'drill_size', unit: 'count', value: 3 }), '3 hole(s)', 'X1 count contract');
+  eq(S9.dfmFindingValue({ id: 'min_wall', unit: 'mm', value: 7.5 }), '7.500 mm', 'wall keeps its unit');
+  eq(S9.dfmFindingValue({ id: 'draft', unit: 'fraction', value: 0.25 }), '25.0 %', 'fraction stays a percentage');
+});
+
+check('the real POST /dfm/part answer from main is read, not guessed', () => {
+  const fx = JSON.parse(readFileSync(new URL('./fixtures-dfm-main.json', import.meta.url), 'utf8'));
+  const w = fx.wall || (fx.outputs || {}).wall, note = S9.dfmWallNote(w);
+  ok(note.known, 'method is known'); ok(note.exact, 'main solver sends exact-ray-triangle');
+  eq(note.resolution_mm, 0.0001, 1e-9, 'resolution');
+  const findings = fx.findings || (fx.outputs || {}).findings || [];
+  const drill = findings.find((x) => x.id === 'drill_size'), wall = findings.find((x) => x.id === 'min_wall');
+  eq(S9.dfmFindingValue(drill), '1 hole(s)', 'hole count, not a diameter in mm');
+  eq(S9.dfmFindingValue(wall), '40.000 mm', 'wall keeps mm');
+  ok(!S9.dfmIsCoarse(wall), 'an exact measurement with a real pass is not coarse');
+});
+
+check('the review\u2019s coarse voxel answer shows its grid and a hole count, not mm', () => {
+  const w = { method: 'ray cast on the mesh, quantised by resolution_mm (±1 voxel)', resolution_mm: 5, min_mm: 7.5, p5_mm: 7.5, median_mm: 7.5 };
+  const note = S9.dfmWallNote(w);
+  ok(note.known && !note.exact, 'voxel fallback is known and not exact');
+  eq(note.resolution_mm, 5, 0, 'grid');
+  eq(S9.dfmFindingValue({ id: 'drill_size', value: 1, unit: 'mm' }), '1 hole(s)', 'unit mm must still read as a hole count');
+  ok(/coarser than the/.test(html), 'the view warns that the grid is coarser than the wall');
 });
 
 check('a solver without diameters_mm gives no table instead of an invented one', () => {
