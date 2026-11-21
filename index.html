@@ -78,6 +78,9 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 
 .main{position:relative;display:grid;grid-template-columns:var(--treeW,264px) minmax(0,1fr) var(--chatW,380px);min-height:0;transition:grid-template-columns .18s ease}
 body.hide-tree{--treeW:0px} body.hide-chat{--chatW:0px} body.hide-tree .pane-tree,body.hide-chat .pane-chat{overflow:hidden;border:0}
+/* while a sketch session is open the session panel owns the left column; the design tree comes back on Save/Cancel */
+body.sketching .pane-tree #tree,body.sketching .pane-tree #cadLeft{display:none}
+body.sketching .pane-tree>.cprops{flex:1;min-height:0;max-height:none}
 .edge{position:absolute;z-index:6;display:none;align-items:center;gap:6px;border:1px solid var(--line2);background:var(--panel);color:var(--text);font:inherit;font-size:11.5px;font-weight:600;padding:6px 8px;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.12)}
 .edge:hover{background:var(--chrome2)} .edge .i{width:15px;height:15px}
 .edge-l{left:0;top:50%;transform:translateY(-50%);border-left:0;border-radius:0 6px 6px 0;writing-mode:vertical-rl;padding:10px 5px}
@@ -753,6 +756,28 @@ body.at-home .learn{display:none}
 .sklabel{position:absolute;z-index:9;pointer-events:none;background:var(--accent);color:var(--on-accent);font:600 11.5px/1 var(--sans);padding:4px 7px;border-radius:6px;transform:translate(14px,-28px);white-space:nowrap}
 .sknext{position:absolute;z-index:6;left:50%;transform:translateX(-50%);bottom:calc(var(--ckH,40px) + 14px);display:flex;align-items:center;gap:8px;max-width:calc(100% - 32px);background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:8px 10px;box-shadow:0 8px 24px var(--shadow);font-size:12.5px;color:var(--text)}
 .sknext span{min-width:0}
+/* P1a: the sketch overlay and its panel */
+.sksvg{position:absolute;inset:0;width:100%;height:100%;z-index:7;pointer-events:none;overflow:visible}
+.sksvg .skent{fill:none;stroke:var(--accent);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.sksvg .skent.con{stroke-dasharray:5 4;stroke:var(--dim)}
+.sksvg .skent.sel{stroke:var(--warn);stroke-width:2.6}
+.sksvg .skpt{fill:var(--accent)}
+.sksvg .skpt.con{fill:var(--dim)}
+.sksvg .skpen{fill:none;stroke:var(--accent);stroke-width:1.4;stroke-dasharray:4 4;opacity:.85}
+.sktools{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px}
+.skform{display:grid;gap:6px;margin:6px 0 8px}
+.skrow{display:grid;grid-template-columns:1fr 96px;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.skrow input,.skrow select{min-width:0;width:100%}
+.sklist{list-style:none;margin:4px 0 8px;padding:0;display:grid;gap:2px;max-height:180px;overflow:auto}
+.sklist li{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 6px;border-radius:5px;cursor:pointer;color:var(--text)}
+.sklist li:hover{background:var(--hover)}
+.sklist li.on{background:var(--accent-bg);color:var(--sel-ink)}
+.sklist li.pempty{color:var(--dim);cursor:default}
+.skstat{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:11.5px;margin:0 0 8px}
+.skstat.under{border-color:var(--warn);color:var(--warn)}
+.skstat.fully{border-color:var(--ok);color:var(--ok)}
+.skstat.over{border-color:var(--bad);color:var(--bad)}
+.skstat span{color:var(--muted)}
 .skp{font-size:11.5px;color:var(--muted);align-self:center;margin-right:auto}
 .viewport.sketching #cv{cursor:crosshair}
 @media (min-width:1181px){ body.cad .sknext{left:calc(50% + (var(--ovL) - var(--ovR)) / 2)} }
@@ -6108,12 +6133,12 @@ const FEAT = {
       N('H', 'Height Z', 'Tinggi Z', 'mm', 20, { show: (p) => p.kind !== 'sphere' }),
       N('x', 'Centre X', 'Pusat X', 'mm', 0), N('y', 'Centre Y', 'Pusat Y', 'mm', 0), N('z', 'Base Z', 'Dasar Z', 'mm', 0), S('op', 'With the body', 'Terhadap body', OPS, 'add', { first: false })],
     label: (p) => ({ box: `${L('Box', 'Balok')} ${p.L}×${p.W}×${p.H}`, cyl: `${L('Cylinder', 'Silinder')} Ø${p.D}×${p.H}`, tube: `${L('Tube', 'Tabung')} Ø${p.D}/Ø${p.Di}×${p.H}`, sphere: `${L('Sphere', 'Bola')} Ø${p.D}` }[p.kind]) },
-  sketch: { en: 'Sketch', id: 'Sketch', fields: [S('prof', 'Profile', 'Profil', [['rect', ['Rectangle', 'Persegi panjang']], ['circle', ['Circle', 'Lingkaran']], ['slot', ['Slot', 'Slot']], ['poly', ['Polygon', 'Poligon']]], 'rect'),
+  sketch: { en: 'Sketch', id: 'Sketch', fields: [S('prof', 'Profile', 'Profil', [['rect', ['Rectangle', 'Persegi panjang']], ['circle', ['Circle', 'Lingkaran']], ['slot', ['Slot', 'Slot']], ['poly', ['Polygon', 'Poligon']], ['ents', ['Lines & arcs (interactive)', 'Garis & busur (interaktif)']]], 'rect'),
       N('W', 'Width', 'Lebar', 'mm', 30, { show: (p) => p.prof === 'rect' || p.prof === 'slot' }), N('Hh', 'Height', 'Tinggi', 'mm', 20, { show: (p) => p.prof === 'rect' || p.prof === 'slot' }),
       N('D', 'Diameter', 'Diameter', 'mm', 20, { show: (p) => p.prof === 'circle' || p.prof === 'poly' }), N('n', 'Sides', 'Jumlah sisi', '', 6, { show: (p) => p.prof === 'poly', step: 1, min: 3 }),
       S('plane', 'Plane', 'Bidang', PLANES, 'XY'), S('at', 'Place on', 'Letakkan di', [['top', ['Top of the body', 'Atas body']], ['value', ['Offset value', 'Nilai offset']]], 'top', { show: (p) => p.plane === 'XY' }),
       N('off', 'Offset along the normal', 'Offset searah normal', 'mm', 0, { show: (p) => p.plane !== 'XY' || p.at === 'value' }), N('u', 'Centre (1st axis)', 'Pusat (sumbu 1)', 'mm', 0), N('v', 'Centre (2nd axis)', 'Pusat (sumbu 2)', 'mm', 0)],
-    label: (p) => `${{ rect: `${L('Rectangle', 'Persegi')} ${p.W}×${p.Hh}`, circle: `${L('Circle', 'Lingkaran')} Ø${p.D}`, slot: `Slot ${p.W}×${p.Hh}`, poly: `${p.n}-${L('gon', 'gon')} Ø${p.D}` }[p.prof]} · ${p.plane}` },
+    label: (p) => p.prof === 'ents' ? `${(p.ents || []).length} ${L('entities', 'entitas')} · ${p.plane}` : `${{ rect: `${L('Rectangle', 'Persegi')} ${p.W}×${p.Hh}`, circle: `${L('Circle', 'Lingkaran')} Ø${p.D}`, slot: `Slot ${p.W}×${p.Hh}`, poly: `${p.n}-${L('gon', 'gon')} Ø${p.D}` }[p.prof]} · ${p.plane}` },
   push: { en: 'Push/Pull', id: 'Push/Pull', fields: [N('dist', 'Distance (negative = other side)', 'Jarak (negatif = arah sebaliknya)', 'mm', 10, { min: -2000 }), S('op', 'Result', 'Hasil', OPS, 'add'), S('both', 'Direction', 'Arah', [['one', ['One side', 'Satu sisi']], ['both', ['Both sides (symmetric)', 'Dua sisi (simetris)']]], 'one')],
     label: (p) => `${p.op === 'cut' ? L('Cut', 'Potong') : L('Extrude', 'Tarik')} ${p.dist} mm${p.both === 'both' ? ' ⇅' : ''}` },
   hole: { en: 'Hole', id: 'Hole', fields: [S('type', 'Type', 'Jenis', [['simple', ['Simple', 'Biasa']], ['clear', ['Clearance for a bolt (ISO 273)', 'Lubang baut (ISO 273)']], ['cbore', ['Counterbore', 'Counterbore']], ['tap', ['Tapped ISO M', 'Ulir ISO M']]], 'simple'),
@@ -6171,7 +6196,13 @@ async function buildPart(pArg) {
   const bb = () => body ? body.boundingBox.bounds : [[0, 0, 0], [0, 0, 0]];
   const apply = (tool, op) => { if (!body) { if (op === 'cut') throw new Error(L('Nothing to cut yet: start with Shape.', 'Belum ada yang bisa dipotong: mulai dengan Shape.')); body = tool.clone(); }
     else body = op === 'cut' ? body.cut(tool.clone()) : body.fuse(tool.clone()); lastTool = tool; lastOp = op; };
-  const profile = (s) => { const d = s.prof === 'rect' ? R.drawRectangle(+s.W, +s.Hh) : s.prof === 'circle' ? R.drawCircle(+s.D / 2) : s.prof === 'slot' ? R.drawRoundedRectangle(+s.W, +s.Hh, Math.min(+s.W, +s.Hh) / 2 - 1e-6) : R.drawPolysides(+s.D / 2, Math.max(3, Math.round(+s.n)));
+  const profile = (s) => {
+    /* P1a: a sketch drawn from lines and arcs. The kernel gets real lines and real three-point arcs, not a
+       polygon, so a bore drawn as an arc stays round in STEP; only the largest closed loop is extruded. */
+    if (s.prof === 'ents') { const d = p1Drawing(R, s.ents || []);
+      if (!d) throw new Error(L('This sketch has no closed loop yet. Lines and arcs must meet end to end; centre lines and points do not count.', 'Sketch ini belum punya rangkaian tertutup. Garis dan busur harus bertemu ujung ke ujung; centerline dan titik tidak dihitung.'));
+      return d; }
+    const d = s.prof === 'rect' ? R.drawRectangle(+s.W, +s.Hh) : s.prof === 'circle' ? R.drawCircle(+s.D / 2) : s.prof === 'slot' ? R.drawRoundedRectangle(+s.W, +s.Hh, Math.min(+s.W, +s.Hh) / 2 - 1e-6) : R.drawPolysides(+s.D / 2, Math.max(3, Math.round(+s.n)));
     return d.translate(+s.u || 0, +s.v || 0); };
   const sketchAt = (s) => s.plane === 'XY' && s.at !== 'value' ? (body ? bb()[1][2] : 0) : (+s.off || 0);
   /* Smart Dimension: a dimension step drives one size of the sketch it points at, so the sketch is built with that value.
@@ -6364,6 +6395,380 @@ function pform(type, p, onOk, okLabel, onCancel) {
   draw(); box.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); onOk(); } else if (e.key === 'Escape') { e.preventDefault(); if (onCancel) onCancel(); } }); return box;
 }
 
+/* ---- P1a: a real 2D sketch made of lines, arcs, centre lines and points. Pure maths, no DOM: index.html's build
+ * path and the sketch session both use these, and tests/p1a.test.mjs lifts this block and runs it in Node. An
+ * entity is { id, t: 'line', a, b, c } / { id, t: 'arc', s, e, m, c } / { id, t: 'point', p, c }, c = 1 when it is
+ * construction geometry (centre line), which is drawn but never part of a profile. */
+const P1TOL = 1e-6, P1JOIN = 0.01;
+const p1NormA = (x) => { const t = 2 * Math.PI; return ((x % t) + t) % t; };
+const p1Sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+const p1Add = (a, b) => [a[0] + b[0], a[1] + b[1]];
+const p1Mul = (a, k) => [a[0] * k, a[1] * k];
+const p1Len = (a) => Math.hypot(a[0], a[1]);
+const p1Unit = (a) => { const l = p1Len(a) || 1; return [a[0] / l, a[1] / l]; };
+const p1Rot90 = (a) => [-a[1], a[0]];
+const p1Same = (a, b, tol = P1JOIN) => !!a && !!b && Math.hypot(a[0] - b[0], a[1] - b[1]) <= tol;
+/** the circle through three points; null when they are (almost) on one line */
+function p1ArcFrom3(s, m, e) {
+  const [ax, ay] = s, [bx, by] = m, [cx, cy] = e;
+  const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+  if (Math.abs(d) < 1e-9) return null;
+  const sa = ax * ax + ay * ay, sb = bx * bx + by * by, sc = cx * cx + cy * cy;
+  const ux = (sa * (by - cy) + sb * (cy - ay) + sc * (ay - by)) / d;
+  const uy = (sa * (cx - bx) + sb * (ax - cx) + sc * (bx - ax)) / d;
+  const r = Math.hypot(ax - ux, ay - uy);
+  const a = (p) => Math.atan2(p[1] - uy, p[0] - ux);
+  const a0 = a(s), a1 = a(e), am = a(m);
+  const ccwSweep = p1NormA(a1 - a0);
+  const ccw = p1NormA(am - a0) <= ccwSweep + 1e-9;
+  const sweep = ccw ? ccwSweep : -(2 * Math.PI - ccwSweep);
+  return { c: [ux, uy], r, a0, sweep, ccw };
+}
+function p1ArcPoint(g, t) { const a = g.a0 + g.sweep * t; return [g.c[0] + g.r * Math.cos(a), g.c[1] + g.r * Math.sin(a)]; }
+function p1ArcOn(g, p, tol = 0.05) {
+  if (Math.hypot(p[0] - g.c[0], p[1] - g.c[1]) > tol) return false;
+  const a = p1NormA(Math.atan2(p[1] - g.c[1], p[0] - g.c[0]) - g.a0), sw = g.sweep;
+  return sw >= 0 ? a <= sw + 1e-6 : a >= sw - 1e-6;
+}
+const p1Start = (e) => e.t === 'arc' ? e.s : e.t === 'line' ? e.a : (e.p || null);
+const p1End = (e) => e.t === 'arc' ? e.e : e.t === 'line' ? e.b : (e.p || null);
+/** the entity as a short polyline (arcs flattened), for hit tests, area and the overlay */
+function p1Points(e) {
+  if (e.t === 'line') return [e.a, e.b];
+  if (e.t === 'point') return [e.p];
+  const g = p1ArcFrom3(e.s, e.m, e.e);
+  if (!g) return [e.s, e.e];
+  const n = Math.max(4, Math.ceil(Math.abs(g.sweep) / 0.08));
+  return Array.from({ length: n + 1 }, (_, i) => p1ArcPoint(g, i / n));
+}
+const p1Length = (e) => {
+  if (e.t === 'line') return p1Len(p1Sub(e.b, e.a));
+  if (e.t === 'point') return 0;
+  const g = p1ArcFrom3(e.s, e.m, e.e); return g ? Math.abs(g.sweep) * g.r : 0;
+};
+const p1Radius = (e) => { const g = e.t === 'arc' ? p1ArcFrom3(e.s, e.m, e.e) : null; return g ? g.r : 0; };
+/** signed area of a closed loop, with arcs counted by their own segments */
+function p1AreaLoop(ents) {
+  let a = 0;
+  for (const e of ents) {
+    const p = p1Points(e);
+    for (let i = 0; i < p.length - 1; i++) a += p[i][0] * p[i + 1][1] - p[i + 1][0] * p[i][1];
+  }
+  return a / 2;
+}
+const p1Reverse = (e) => e.t === 'line' ? { ...e, a: e.b, b: e.a } : e.t === 'arc' ? { ...e, s: e.e, e: e.s } : e;
+/** chain entities end to end: [{ ids, closed, ents }]. Each entity comes back facing the walk, so an area or a
+ *  profile can be read in one direction without caring which way the engineer drew it. */
+function p1Loops(ents) {
+  const use = ents.filter((e) => e.t !== 'point');
+  const seen = new Set(), out = [];
+  for (const first of use) {
+    if (seen.has(first.id)) continue;
+    const chain = [first], ids = [first.id]; seen.add(first.id);
+    const firstStart = p1Start(first), firstEnd = p1End(first);
+    let at = firstEnd, closed = false;
+    if (p1Same(firstStart, firstEnd)) closed = true;               // a full arc that closes on itself
+    for (let guard = 0; guard < use.length + 1 && !closed; guard++) {
+      const nxt = use.find((e) => !seen.has(e.id) && (p1Same(p1Start(e), at) || p1Same(p1End(e), at)));
+      if (!nxt) break;
+      seen.add(nxt.id);
+      const o = p1Same(p1Start(nxt), at) ? { ...nxt } : p1Reverse(nxt);
+      chain.push(o); ids.push(o.id); at = p1End(o);
+      if (p1Same(at, firstStart)) closed = chain.length > 1;
+    }
+    out.push({ ids, closed, ents: chain });
+  }
+  return out;
+}
+/** the loop a profile is built from: the largest closed one, construction geometry left out */
+function p1OuterLoop(ents) {
+  const real = (ents || []).filter((e) => !e.c && e.t !== 'point');
+  const loops = p1Loops(real).filter((l) => l.closed);
+  if (!loops.length) return null;
+  return loops.sort((a, b) => Math.abs(p1AreaLoop(b.ents)) - Math.abs(p1AreaLoop(a.ents)))[0];
+}
+/** every sketch point a new click may snap to: endpoints, arc centres, bare points */
+function p1SnapPoints(ents) {
+  const out = [];
+  for (const e of ents || []) {
+    if (e.t === 'point') out.push(e.p);
+    else { out.push(p1Start(e), p1End(e));
+      if (e.t === 'arc') { const g = p1ArcFrom3(e.s, e.m, e.e); if (g) out.push(g.c); } }
+  }
+  return out;
+}
+function p1DistToEnt(p, e) {
+  if (e.t === 'point') return Math.hypot(p[0] - e.p[0], p[1] - e.p[1]);
+  if (e.t === 'arc') {
+    const g = p1ArcFrom3(e.s, e.m, e.e); if (!g) return Infinity;
+    const d = Math.hypot(p[0] - g.c[0], p[1] - g.c[1]);
+    const a = p1NormA(Math.atan2(p[1] - g.c[1], p[0] - g.c[0]) - g.a0), sw = g.sweep;
+    const on = sw >= 0 ? a <= sw : a >= sw;
+    return on ? Math.abs(d - g.r) : Math.min(Math.hypot(p[0] - e.s[0], p[1] - e.s[1]), Math.hypot(p[0] - e.e[0], p[1] - e.e[1]));
+  }
+  const ab = p1Sub(e.b, e.a), t = Math.max(0, Math.min(1, ((p[0] - e.a[0]) * ab[0] + (p[1] - e.a[1]) * ab[1]) / (p1Len(ab) ** 2 || 1)));
+  return Math.hypot(p[0] - (e.a[0] + ab[0] * t), p[1] - (e.a[1] + ab[1] * t));
+}
+const p1Hit = (p, ents, tol = 1.2) => (ents || []).map((e) => [e, p1DistToEnt(p, e)])
+  .filter((x) => x[1] <= tol).sort((a, b) => a[1] - b[1]).map((x) => x[0])[0] || null;
+/* line-line, line-arc and arc-arc crossings, filtered to the real pieces (not the infinite carriers) */
+function p1Cross(a, b) {
+  const out = [];
+  const line = (e) => e.t === 'line';
+  const arc = (e) => e.t === 'arc'; const g = (e) => p1ArcFrom3(e.s, e.m, e.e);
+  if (line(a) && line(b)) {
+    const r = p1Sub(a.b, a.a), s = p1Sub(b.b, b.a), d = r[0] * s[1] - r[1] * s[0];
+    if (Math.abs(d) < P1TOL) return out;
+    const t = ((b.a[0] - a.a[0]) * s[1] - (b.a[1] - a.a[1]) * s[0]) / d;
+    const u = ((b.a[0] - a.a[0]) * r[1] - (b.a[1] - a.a[1]) * r[0]) / d;
+    if (t >= -1e-9 && t <= 1 + 1e-9 && u >= -1e-9 && u <= 1 + 1e-9) out.push([a.a[0] + r[0] * t, a.a[1] + r[1] * t]);
+    return out;
+  }
+  if (line(a) !== line(b)) {          // one line, one arc
+    const L2 = line(a) ? a : b, A2 = arc(a) ? a : b, gg = g(A2); if (!gg) return out;
+    const d = p1Sub(L2.b, L2.a), f = p1Sub(L2.a, gg.c);
+    const A = d[0] * d[0] + d[1] * d[1], B = 2 * (f[0] * d[0] + f[1] * d[1]), C = f[0] * f[0] + f[1] * f[1] - gg.r * gg.r;
+    const disc = B * B - 4 * A * C; if (disc < 0) return out;
+    for (const k of disc === 0 ? [-B / (2 * A)] : [(-B - Math.sqrt(disc)) / (2 * A), (-B + Math.sqrt(disc)) / (2 * A)]) {
+      if (k < -1e-9 || k > 1 + 1e-9) continue;
+      const p = [L2.a[0] + d[0] * k, L2.a[1] + d[1] * k];
+      if (p1ArcOn(gg, p)) out.push(p);
+    }
+    return out;
+  }
+  const ga = g(a), gb = g(b); if (!ga || !gb) return out;
+  const d = p1Len(p1Sub(gb.c, ga.c));
+  if (d < P1TOL || d > ga.r + gb.r || d < Math.abs(ga.r - gb.r)) return out;
+  const x = (d * d + ga.r * ga.r - gb.r * gb.r) / (2 * d), h = Math.sqrt(Math.max(0, ga.r * ga.r - x * x));
+  const ex = p1Unit(p1Sub(gb.c, ga.c)), base = p1Add(ga.c, p1Mul(ex, x)), off = p1Mul(p1Rot90(ex), h);
+  for (const p of h === 0 ? [base] : [p1Add(base, off), p1Sub(base, off)]) if (p1ArcOn(ga, p) && p1ArcOn(gb, p)) out.push(p);
+  return out;
+}
+/** where along an entity a point sits, 0 at its start, 1 at its end */
+function p1Param(e, p) {
+  if (e.t === 'line') { const ab = p1Sub(e.b, e.a), l2 = p1Len(ab) ** 2 || 1; return Math.max(0, Math.min(1, ((p[0] - e.a[0]) * ab[0] + (p[1] - e.a[1]) * ab[1]) / l2)); }
+  if (e.t === 'arc') { const g = p1ArcFrom3(e.s, e.m, e.e); if (!g) return 0; const a = p1NormA(Math.atan2(p[1] - g.c[1], p[0] - g.c[0]) - g.a0); return Math.abs(g.sweep) < 1e-12 ? 0 : Math.max(0, Math.min(1, (g.sweep >= 0 ? a : a - 2 * Math.PI) / g.sweep)); }
+  return 0;
+}
+function p1Slice(e, t0, t1) {
+  if (e.t === 'line') return { ...e, id: e.id, a: p1ParamPoint(e, t0), b: p1ParamPoint(e, t1) };
+  if (e.t === 'arc') { const s = p1ParamPoint(e, t0), en = p1ParamPoint(e, t1), m = p1ParamPoint(e, (t0 + t1) / 2); return { ...e, id: e.id, s, e: en, m }; }
+  return e;
+}
+function p1ParamPoint(e, t) {
+  if (e.t === 'line') return [e.a[0] + (e.b[0] - e.a[0]) * t, e.a[1] + (e.b[1] - e.a[1]) * t];
+  const g = p1ArcFrom3(e.s, e.m, e.e); return g ? p1ArcPoint(g, t) : e.s;
+}
+/** Trim: delete the piece of `e` the click is on, between its nearest crossings. -> new entity list or null */
+function p1Trim(ents, id, at) {
+  const e = (ents || []).find((x) => x.id === id); if (!e || e.t === 'point') return null;
+  const cuts = [];
+  for (const o of ents) if (o.id !== id && o.t !== 'point') cuts.push(...p1Cross(e, o).map((p) => p1Param(e, p)));
+  const ps = [...new Set(cuts.map((x) => Math.round(x * 1e6) / 1e6))].sort((a, b) => a - b);
+  if (!ps.length) return null;
+  const t = p1Param(e, at), bounds = [0, ...ps, 1];
+  let piece = -1;
+  for (let i = 0; i < bounds.length - 1; i++) if (t >= bounds[i] - 1e-9 && t <= bounds[i + 1] + 1e-9) { piece = i; break; }
+  if (piece < 0) return null;
+  const keep = [];
+  for (let i = 0; i < bounds.length - 1; i++) if (i !== piece && bounds[i + 1] - bounds[i] > 1e-6) keep.push(p1Slice(e, bounds[i], bounds[i + 1]));
+  return [...ents.filter((x) => x.id !== id), ...keep.map((x, i) => ({ ...x, id: id + 't' + i }))];
+}
+/** crossings with an entity's infinite carrier (full line / full circle), ignoring where the drawn piece ends */
+function p1CarrierCross(a, b) {
+  const out = [];
+  const gg = (e) => e.t === 'arc' ? p1ArcFrom3(e.s, e.m, e.e) : null;
+  if (a.t === 'line' && b.t === 'line') {
+    const r = p1Sub(a.b, a.a), s = p1Sub(b.b, b.a), d = r[0] * s[1] - r[1] * s[0];
+    if (Math.abs(d) < P1TOL) return out;
+    const t = ((b.a[0] - a.a[0]) * s[1] - (b.a[1] - a.a[1]) * s[0]) / d;
+    out.push([a.a[0] + r[0] * t, a.a[1] + r[1] * t]); return out;
+  }
+  if (a.t === 'line' || b.t === 'line') {
+    const L2 = a.t === 'line' ? a : b, A2 = a.t === 'arc' ? a : b, g = gg(A2); if (!g) return out;
+    const d = p1Sub(L2.b, L2.a), f = p1Sub(L2.a, g.c);
+    const A = d[0] * d[0] + d[1] * d[1], B = 2 * (f[0] * d[0] + f[1] * d[1]), C = f[0] * f[0] + f[1] * f[1] - g.r * g.r;
+    const disc = B * B - 4 * A * C; if (disc < 0) return out;
+    for (const k of disc === 0 ? [-B / (2 * A)] : [(-B - Math.sqrt(disc)) / (2 * A), (-B + Math.sqrt(disc)) / (2 * A)]) out.push([L2.a[0] + d[0] * k, L2.a[1] + d[1] * k]);
+    return out;
+  }
+  const ga = gg(a), gb = gg(b); if (!ga || !gb) return out;
+  const d = p1Len(p1Sub(gb.c, ga.c));
+  if (d < P1TOL || d > ga.r + gb.r || d < Math.abs(ga.r - gb.r)) return out;
+  const x = (d * d + ga.r * ga.r - gb.r * gb.r) / (2 * d), h = Math.sqrt(Math.max(0, ga.r * ga.r - x * x));
+  const ex = p1Unit(p1Sub(gb.c, ga.c)), base = p1Add(ga.c, p1Mul(ex, x)), off = p1Mul(p1Rot90(ex), h);
+  for (const p of h === 0 ? [base] : [p1Add(base, off), p1Sub(base, off)]) out.push(p);
+  return out;
+}
+/** Extend: move the end of `e` nearest the click out to its first crossing with the other entities */
+function p1Extend(ents, id, at) {
+  const e = (ents || []).find((x) => x.id === id); if (!e || e.t === 'point') return null;
+  const endSide = p1Len(p1Sub(at, p1End(e))) <= p1Len(p1Sub(at, p1Start(e))) ? 'e' : 's';
+  const carrier = e.t === 'line'
+    ? { ...e, a: p1Start(e), b: p1Add(p1Start(e), p1Mul(p1Unit(p1Sub(e.b, e.a)), Math.max(p1Length(e) * 6, 1000))) }
+    : { ...e };
+  const hits = [];
+  for (const o of ents) if (o.id !== id && o.t !== 'point') hits.push(...p1CarrierCross(carrier, o));
+  if (!hits.length) return null;
+  if (e.t === 'line') {
+    const cur = endSide === 'e' ? p1End(e) : p1Start(e), fixed = endSide === 'e' ? p1Start(e) : p1End(e);
+    const far = hits.filter((p) => p1Len(p1Sub(p, fixed)) > p1Len(p1Sub(cur, fixed)) + 1e-6)
+      .sort((a, b) => p1Len(p1Sub(a, fixed)) - p1Len(p1Sub(b, fixed)));
+    if (!far.length) return null;
+    const p = far[0];
+    return ents.map((x) => x.id !== id ? x : (endSide === 'e' ? { ...x, b: p } : { ...x, a: p }));
+  }
+  const g = p1ArcFrom3(e.s, e.m, e.e); if (!g) return null;
+  const dir = Math.sign(g.sweep) || 1, aEnd = Math.atan2(p1End(e)[1] - g.c[1], p1End(e)[0] - g.c[0]);
+  const aStart = Math.atan2(p1Start(e)[1] - g.c[1], p1Start(e)[0] - g.c[0]);
+  const cand = hits.map((p) => {
+    const a = Math.atan2(p[1] - g.c[1], p[0] - g.c[0]);
+    const q = p1Add(g.c, p1Mul([Math.cos(a), Math.sin(a)], g.r));
+    const dist = endSide === 'e' ? p1NormA((a - aEnd) * dir) : p1NormA((aStart - a) * dir);
+    return [q, dist * g.r];
+  }).filter((x) => x[1] > 1e-6).sort((x, y) => x[1] - y[1]);
+  if (!cand.length) return null;
+  const np = cand[0][0];
+  const aNew = Math.atan2(np[1] - g.c[1], np[0] - g.c[0]);
+  const sweepNew = (endSide === 'e' ? p1NormA((aNew - aStart) * dir) : p1NormA((aEnd - aNew) * dir)) * -1;
+  const midAng = (endSide === 'e' ? aStart : aNew) + sweepNew / 2;
+  const mid = p1Add(g.c, [g.r * Math.cos(midAng), g.r * Math.sin(midAng)]);
+  return ents.map((x) => x.id !== id ? x : (endSide === 'e' ? { ...x, e: np, m: mid } : { ...x, s: np, m: mid }));
+}
+/** Sketch Fillet: round the corner two lines share, radius r, in place. -> new entity list or null */
+function p1Fillet(ents, idA, idB, r) {
+  const a = (ents || []).find((x) => x.id === idA), b = (ents || []).find((x) => x.id === idB);
+  if (!a || !b || a.t !== 'line' || b.t !== 'line' || !(r > 0)) return null;
+  const pairs = [[p1End(a), p1Start(a)], [p1Start(a), p1End(a)]];
+  let corner = null, ua = null, ub = null;
+  for (const [p, q] of pairs) for (const [p2, q2] of [[p1Start(b), p1End(b)], [p1End(b), p1Start(b)]]) {
+    if (!corner && p1Same(p, p2, 0.05)) { corner = p; ua = p1Unit(p1Sub(q, p)); ub = p1Unit(p1Sub(q2, p2)); }
+  }
+  if (!corner) { const x = p1Cross(a, b); if (x.length !== 1) return null; corner = x[0];
+    ua = p1Unit(p1Sub(p1Len(p1Sub(p1End(a), corner)) < p1Len(p1Sub(p1Start(a), corner)) ? p1Start(a) : p1End(a), corner));
+    ub = p1Unit(p1Sub(p1Len(p1Sub(p1End(b), corner)) < p1Len(p1Sub(p1Start(b), corner)) ? p1Start(b) : p1End(b), corner)); }
+  const cosT = Math.max(-1, Math.min(1, ua[0] * ub[0] + ua[1] * ub[1])), th = Math.acos(cosT);
+  if (th < 1e-3 || Math.PI - th < 1e-3) return null;
+  const tan = r / Math.tan(th / 2);
+  if (tan > p1Length(a) || tan > p1Length(b)) return null;
+  const ta = p1Add(corner, p1Mul(ua, tan)), tb = p1Add(corner, p1Mul(ub, tan));
+  const bis = p1Unit(p1Add(ua, ub)), center = p1Add(corner, p1Mul(bis, r / Math.sin(th / 2)));
+  const mid = p1Add(center, p1Mul(p1Unit(p1Sub(corner, center)), r));
+  const arc = { id: 'fil' + a.id + b.id, t: 'arc', s: ta, e: tb, m: mid, c: 0 };
+  const fix = (e, t) => (p1Same(p1End(e), corner, 0.05) ? { ...e, b: t } : { ...e, a: t });
+  return [...ents.map((x) => x.id === idA ? fix(x, ta) : x.id === idB ? fix(x, tb) : x), arc];
+}
+/** Offset a closed loop outward (positive) or inward (negative). Arcs keep their centre and change radius. */
+function p1Offset(ents, dist) {
+  const loop = p1OuterLoop(ents); if (!loop || !dist) return null;
+  const out = Math.sign(p1AreaLoop(loop.ents)) >= 0 ? dist : -dist;    // CCW loop: right side is outward
+  const moved = loop.ents.map((e) => {
+    if (e.t === 'line') { const d = p1Sub(e.b, e.a), n = p1Unit([d[1], -d[0]]); return { ...e, a: p1Add(e.a, p1Mul(n, out)), b: p1Add(e.b, p1Mul(n, out)) }; }
+    const g = p1ArcFrom3(e.s, e.m, e.e), nr = g.r + (g.sweep >= 0 ? out : -out);
+    if (!(nr > 0)) return null;
+    const s = p1Add(g.c, p1Mul(p1Unit(p1Sub(e.s, g.c)), nr)), en = p1Add(g.c, p1Mul(p1Unit(p1Sub(e.e, g.c)), nr));
+    return { ...e, s, e: en, m: p1Add(g.c, p1Mul(p1Unit(p1Sub(e.m, g.c)), nr)) };
+  });
+  if (moved.some((x) => !x)) return null;
+  const fixed = moved.map((e, i) => {
+    const prev = moved[(i - 1 + moved.length) % moved.length], next = moved[(i + 1) % moved.length];
+    const before = p1CarrierCross(prev, e);
+    const after = p1CarrierCross(e, next);
+    const s = before.length ? before.sort((p, q) => p1Len(p1Sub(p, e.t === 'arc' ? e.s : e.a)) - p1Len(p1Sub(q, e.t === 'arc' ? e.s : e.a)))[0] : null;
+    const en = after.length ? after.sort((p, q) => p1Len(p1Sub(p, e.t === 'arc' ? e.e : e.b)) - p1Len(p1Sub(q, e.t === 'arc' ? e.e : e.b)))[0] : null;
+    if (!s && !en) return e;
+    if (e.t === 'line') return { ...e, a: s || e.a, b: en || e.b };
+    return { ...e, s: s || e.s, e: en || e.e };
+  });
+  return fixed.map((e, i) => ({ ...e, id: 'off' + i }));
+}
+/** An arc that leaves `p` along `dir` and ends at `q` (tangent arc, used after a line). */
+function p1TangentArc(p, dir, q, r = null) {
+  const d = p1Unit(dir), n = p1Rot90(d);
+  const chord = p1Sub(q, p), side = chord[0] * n[0] + chord[1] * n[1];
+  if (Math.abs(side) < 1e-9) return { s: p, e: q, m: p1Add(p, p1Mul(chord, 0.5)) };
+  /* the circle that leaves p along d and still reaches q: R = |chord|² / (2·(chord·n)) */
+  const need = (chord[0] * chord[0] + chord[1] * chord[1]) / (2 * Math.abs(side));
+  const rad = r && r > 0 && r >= need ? r : need;
+  const center = p1Add(p, p1Mul(n, side >= 0 ? rad : -rad));
+  const pt = (a) => p1Add(center, [rad * Math.cos(a), rad * Math.sin(a)]);
+  const a0 = Math.atan2(p[1] - center[1], p[0] - center[0]), a1 = Math.atan2(q[1] - center[1], q[0] - center[0]);
+  const midAng = Math.atan2((p[1] + q[1]) / 2 - center[1], (p[0] + q[0]) / 2 - center[0]);
+  const ccwSweep = p1NormA(a1 - a0), ccw = p1NormA(midAng - a0) <= ccwSweep;
+  const mid = pt(a0 + (ccw ? ccwSweep : -(2 * Math.PI - ccwSweep)) / 2);
+  return { s: p, e: q, m: mid };
+}
+/* ---- relations, dimensions and the under / fully / over-defined status ---- */
+const P1_REL_DOF = { coincident: 2, horizontal: 1, vertical: 1, parallel: 1, perpendicular: 1, equal: 1, tangent: 1, fix: 2, point: 2 };
+/** free parameters left: entity parameters minus relations, dimensions and the 3 the sketch itself uses */
+function p1DOF(ents, rels = [], dims = []) {
+  let n = 0;
+  for (const e of ents || []) n += e.t === 'line' ? 4 : e.t === 'arc' ? 5 : 2;
+  let c = 0;
+  for (const r of rels || []) c += P1_REL_DOF[r.t] || 0;
+  c += (dims || []).length;
+  /* the 3 values that place a rigid body in the plane are only taken once there is geometry; an empty sketch is
+   * not "over-defined", and a single point keeps its own two parameters */
+  const dof = n >= 3 ? n - c - 3 : n - c;
+  return { dof, status: n === 0 ? 'under' : dof > 0 ? 'under' : dof === 0 ? 'fully' : 'over' };
+}
+/** Apply the stored relations as rules, then the dimensions. Never invents a number: a dimension is the engineer's. */
+function p1Solve(ents, rels = [], dims = []) {
+  const out = (ents || []).map((e) => ({ ...e, a: e.a && [...e.a], b: e.b && [...e.b], s: e.s && [...e.s], e: e.e && [...e.e], m: e.m && [...e.m], p: e.p && [...e.p] }));
+  const byId = Object.fromEntries(out.map((e) => [e.id, e]));
+  for (const r of rels || []) {
+    const a = byId[(r.e || [])[0]], b = byId[(r.e || [])[1]];
+    if (!a) continue;
+    if (r.t === 'horizontal' && a.t === 'line') a.b[1] = a.a[1];
+    else if (r.t === 'vertical' && a.t === 'line') a.b[0] = a.a[0];
+    else if (r.t === 'fix') { if (a.t === 'arc') { /* already where it is */ } }
+    else if (b && r.t === 'coincident') {
+      const pa = r.which === 1 ? p1End(a) : p1Start(a), pb = r.other === 1 ? p1End(b) : p1Start(b);
+      if (pa && pb && a.t === 'line') { if (r.which === 1) a.b = [...pb]; else a.a = [...pb]; }
+      else if (pa && pb && b.t === 'line') { if (r.other === 1) b.b = [...pa]; else b.a = [...pa]; }
+    } else if (b && r.t === 'equal') {
+      if (a.t === 'line' && b.t === 'line') { const d = p1Unit(p1Sub(b.b, b.a)); b.b = p1Add(b.a, p1Mul(d, p1Length(a))); }
+      else if (a.t === 'arc' && b.t === 'arc') { const ga = p1ArcFrom3(a.s, a.m, a.e), gb = p1ArcFrom3(b.s, b.m, b.e);
+        if (ga && gb) { const k = ga.r / gb.r; b.s = p1Add(gb.c, p1Mul(p1Sub(b.s, gb.c), k)); b.e = p1Add(gb.c, p1Mul(p1Sub(b.e, gb.c), k)); b.m = p1Add(gb.c, p1Mul(p1Sub(b.m, gb.c), k)); } }
+    } else if (b && r.t === 'parallel' && a.t === 'line' && b.t === 'line') {
+      b.b = p1Add(b.a, p1Mul(p1Unit(p1Sub(a.b, a.a)), p1Length(b)));
+    } else if (b && r.t === 'perpendicular' && a.t === 'line' && b.t === 'line') {
+      b.b = p1Add(b.a, p1Mul(p1Rot90(p1Unit(p1Sub(a.b, a.a))), p1Length(b)));
+    } else if (b && r.t === 'tangent' && a.t === 'line') {
+      /* the arc that starts where the line ends leaves along the line's own direction */
+      const g = b.t === 'arc' ? p1ArcFrom3(b.s, b.m, b.e) : null;
+      if (g) { const t = p1TangentArc(b.s, p1Sub(a.b, a.a), b.e, g.r); b.m = t.m; }
+    }
+  }
+  for (const d of dims || []) {
+    const e = byId[(d.e || [])[0]];
+    if (!e || !(d.value > 0)) continue;
+    if (d.t === 'length' && e.t === 'line') { const dir = p1Unit(p1Sub(e.b, e.a)); e.b = p1Add(e.a, p1Mul(dir, d.value)); }
+    else if ((d.t === 'radius' || d.t === 'diameter') && e.t === 'arc') {
+      const g = p1ArcFrom3(e.s, e.m, e.e); if (!g) continue;
+      const want = d.t === 'diameter' ? d.value / 2 : d.value, k = want / g.r;
+      e.s = p1Add(g.c, p1Mul(p1Sub(e.s, g.c), k)); e.e = p1Add(g.c, p1Mul(p1Sub(e.e, g.c), k)); e.m = p1Add(g.c, p1Mul(p1Sub(e.m, g.c), k));
+    }
+  }
+  return out;
+}
+/** The kernel drawing for a sketch of entities: the outer closed loop, arcs kept as real arcs. */
+function p1Drawing(R, ents) {
+  const loop = p1OuterLoop(ents);
+  if (!loop) return null;
+  const walk = loop.ents, first = p1Start(walk[0]);
+  let pen = R.draw().movePointerTo([first[0], first[1]]);
+  for (const e of walk) {
+    /* replicad's threePointsArcTo takes (end, a point on the arc) */
+    if (e.t === 'arc') { if (!p1ArcFrom3(e.s, e.m, e.e)) return null; pen = pen.threePointsArcTo([e.e[0], e.e[1]], [e.m[0], e.m[1]]); }
+    else pen = pen.lineTo([e.b[0], e.b[1]]);
+  }
+  /* replicad: close() closes the wire and hands back the Drawing; a build that also has done() is used as well */
+  const out = pen.close();
+  return out && typeof out.done === 'function' ? out.done() : out;
+}
+/* ---- end P1a helpers */
+
 /* ---- S10 helpers: the sketch gesture, its snapping and the tool labels (lifted by tests/features.test.mjs) */
 function snapMM(v, fine) { const step = fine ? 0.1 : 1; return Math.round((+v || 0) / step) * step; }
 /** prof + two points on the sketch plane -> the form values the same build path reads. circle/poly: centre + radius;
@@ -6378,7 +6783,7 @@ function sketchFromDrag(prof, a, b, base) {
 /** the one-line next step after a sketch, and where it goes */
 function sketchNextText() { return L('Next: Extrude this sketch (Features → Extruded Boss/Base) or Revolve', 'Berikutnya: Extrude sketch ini (Features → Extruded Boss/Base) atau Revolve'); }
 /** Mark 1 / Not yet tools are grey, and their tooltip says what works today */
-function plannedToolTip(st) { return (st === 'mk1' || st === 'no') ? L('Coming in Mark 1 — use Circle, Corner Rectangle, Slot or Polygon now', 'Akan datang di Mark 1 — pakai Circle, Corner Rectangle, Slot, atau Polygon sekarang') : ''; }
+function plannedToolTip(st) { return (st === 'mk1' || st === 'no') ? L('Coming in Mark 1 — use Line, Arc, Circle, Corner Rectangle, Slot or Polygon now', 'Akan datang di Mark 1 — pakai Line, Arc, Circle, Corner Rectangle, Slot, atau Polygon sekarang') : ''; }
 /* ---- end S10 helpers */
 
 /* ---- S10-C: drawing in the viewport. The click point goes through the camera into the sketch plane, snaps to 1 mm
@@ -6391,7 +6796,9 @@ const partTopZ = () => (partShape ? partShape.boundingBox.bounds[1][2] : 0);
 const sketchPlaneAt = (p) => (p.plane === 'XY' && p.at !== 'value') ? partTopZ() : (+p.off || 0);
 function planeRay(clientX, clientY) {
   const vp = $('#viewport'), r = vp.getBoundingClientRect();
-  const nx = (clientX - r.left) / Math.max(1, r.width) * 2 - 1, ny = 1 - (clientY - r.top) / Math.max(1, r.height) * 2 - 1;
+  /* NDC: -1 at the left/top edge, +1 at the right/bottom. The old line collapsed to -2·y, so every click landed
+   * about half a viewport below the pointer (found while drawing P1a with a real mouse). */
+  const nx = (clientX - r.left) / Math.max(1, r.width) * 2 - 1, ny = 1 - 2 * (clientY - r.top) / Math.max(1, r.height);
   const d = viewer.dist, cp = Math.cos(viewer.pitch), T = viewer.target || [0, 0, 0];
   const eye = [T[0] + d * cp * Math.sin(viewer.yaw), T[1] + d * Math.sin(viewer.pitch), T[2] + d * cp * Math.cos(viewer.yaw)];
   const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
@@ -6412,6 +6819,9 @@ function planePoint(clientX, clientY, p) {
   return axis === 1 ? [w[0] + c[0], -(w[2] + c[2])] : axis === 2 ? [w[0] + c[0], w[1] + c[1]] : [-(w[2] + c[2]), w[1] + c[1]];
 }
 function snapPoint(pt, fine, p) {
+  /* P1a: the entities of the sketch being drawn snap first (endpoints, arc centres, bare points) */
+  const live = (typeof partArm !== 'undefined' && partArm && partArm.p && partArm.p.prof === 'ents') ? p1SnapPoints(partArm.p.ents || []) : [];
+  for (const [tx, ty] of live) if (Math.hypot(tx - pt[0], ty - pt[1]) < 4) return [tx, ty];
   for (const ft of (state.part ? state.part.features : [])) {
     if (ft.type !== 'sketch' || ft.off || ft.p.plane !== p.plane) continue;
     const q = ft.p, u = +q.u || 0, v = +q.v || 0, pts = [[u, v]];
@@ -6470,6 +6880,218 @@ function applySketchDrag(e) {
   const end = () => { if (!skDrag) return; skDrag = null; viewer.drawMode = false; hideSkLabel(); updateSketchGhost(0); };
   cv.addEventListener('pointerup', end, true); cv.addEventListener('pointercancel', end, true);
 }
+/* ---- P1a: the sketch session. Every draw tool works on the plane under the pointer, the same way for a mouse,
+ * a pen and a finger (pointer events, 1 mm snap, Shift 0.1 mm). Nothing is saved until Save sketch. */
+const skSession = () => (partArm && partArm.type === 'sketch' && partArm.p && partArm.p.prof === 'ents') ? partArm : null;
+let skPtr = null, skSel = [];
+const skEnts = () => (skSession() ? (skSession().p.ents || []) : []);
+const skNextId = () => 'e' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+function skPlaneWorld(uv, p) {
+  const at = sketchPlaneAt(p), c = viewer.center || [0, 0, 0], axis = p.plane === 'XY' ? 1 : p.plane === 'XZ' ? 2 : 0;
+  return axis === 1 ? [uv[0] - c[0], at, -uv[1] - c[2]] : axis === 2 ? [uv[0] - c[0], uv[1] - c[1], -at] : [at, uv[1] - c[1], -uv[0] - c[2]];
+}
+function skSvg() {
+  const vp = $('#viewport'); let s = document.getElementById('skSvg');
+  if (!s) { s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.id = 'skSvg'; s.setAttribute('class', 'sksvg'); s.setAttribute('aria-hidden', 'true'); vp.append(s); }
+  return s;
+}
+function skDrawPath(svg, pts, cls, p) {
+  const d = pts.map((q, i) => { const w = viewer.project(skPlaneWorld(q, p)); if (!w) return null;
+    return (i ? 'L' : 'M') + w[0].toFixed(1) + ' ' + w[1].toFixed(1); }).filter(Boolean).join(' ');
+  if (!d) return; const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  el.setAttribute('d', d); el.setAttribute('class', cls); svg.append(el);
+}
+function skOverlay() {
+  const a = skSession(); if (!a || !isCad()) { const old = document.getElementById('skSvg'); if (old) old.remove(); return; }
+  const svg = skSvg(); svg.innerHTML = ''; const p = a.p;
+  for (const e of (p.ents || [])) {
+    if (e.t === 'point') { const w = viewer.project(skPlaneWorld(e.p, p)); if (!w) continue;
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); c.setAttribute('cx', w[0]); c.setAttribute('cy', w[1]); c.setAttribute('r', '3.2');
+      c.setAttribute('class', 'skpt' + (e.c ? ' con' : '')); svg.append(c); continue; }
+    skDrawPath(svg, p1Points(e), 'skent' + (e.c ? ' con' : '') + (skSel.includes(e.id) ? ' sel' : ''), p);
+  }
+  const pen = a.pen || [];                      // the chain being drawn
+  if (pen.length && skPtr) skDrawPath(svg, [...pen, skPtr], 'skpen', p);
+  if (a.tool === 'arc3' && (a.pend || []).length === 2 && skPtr) skDrawPath(svg, [...(a.pend || []), skPtr], 'skpen', p);
+  if (a.tool === 'arcCenter' && (a.pend || []).length === 2 && skPtr) {
+    const [c, s] = a.pend, r = Math.hypot(s[0] - c[0], s[1] - c[1]);
+    if (r > 0) { const pts = Array.from({ length: 33 }, (_, i) => { const ang = Math.atan2(skPtr[1] - c[1], skPtr[0] - c[0]) * i / 32; return [c[0] + r * Math.cos(ang), c[1] + r * Math.sin(ang)]; }); skDrawPath(svg, pts, 'skpen', p); }
+  }
+}
+function openSketchSession(tool, editId) {
+  if (!state.part) startPart();
+  const base = editId ? (state.part.features.find((f) => f.id === editId) || {}).p : null;
+  const p = base ? JSON.parse(JSON.stringify(base)) : { prof: 'ents', plane: 'XY', at: 'top', off: 0, ents: [], rels: [], dims: [], u: 0, v: 0 };
+  p.prof = 'ents'; p.ents = p.ents || []; p.rels = p.rels || []; p.dims = p.dims || [];
+  partArm = { type: 'sketch', p, n: L('Sketch (lines & arcs)', 'Sketch (garis & busur)'), editId: editId || null, tool: tool || 'line', pend: [], pen: [], rad: 5, dist: 5, val: 30 };
+  partSel = null; skSel = []; skPtr = null; cadTab = 'design';
+  /* on a wide screen the session panel takes the left column; on a phone/tablet the tree stays a drawer */
+  if (!narrow()) document.body.classList.add('sketching');
+  if (narrow() || document.body.classList.contains('hide-chat')) setChat(true);
+  renderCad(); requestAnimationFrame(() => { skOverlay();
+    /* the tool list starts at the top: no focus scroll, and the pane is reset after the render */
+    const pane = document.querySelector('#cadProps'); if (pane) pane.scrollTop = 0;
+    const i = document.querySelector('#cadProps .skform input'); if (i && narrow()) i.focus({ preventScroll: true }); });
+}
+function skCommit(list, note) {
+  const a = skSession(); if (!a) return; a.p.ents = list; a.pend = []; a.pen = [];
+  if (note) a.note = note;
+  a.p.ents = p1Solve(a.p.ents, a.p.rels, a.p.dims);
+  renderCad(); requestAnimationFrame(skOverlay);
+}
+function skFinishChain() { const a = skSession(); if (!a) return; a.pen = []; a.pend = []; a.tool = a.tool === 'cline' ? 'cline' : 'line'; renderCad(); requestAnimationFrame(skOverlay); }
+/** one click, by tool. `pt` is already snapped to the sketch plane. */
+function skClick(pt) {
+  const a = skSession(); if (!a) return; const p = a.p;
+  const ents = p.ents || [];
+  const add = (ent, extra) => { a.p.ents = [...ents, ent]; if (extra) a.p.rels = [...(p.rels || []), extra]; a.p.ents = p1Solve(a.p.ents, a.p.rels, a.p.dims); renderCad(); requestAnimationFrame(skOverlay); };
+  if (a.tool === 'line' || a.tool === 'cline') {
+    const con = a.tool === 'cline' ? 1 : 0;
+    if (!a.pen || !a.pen.length) { a.pen = [pt]; renderCad(); requestAnimationFrame(skOverlay); return; }
+    const prev = a.pen[a.pen.length - 1];
+    if (Math.hypot(pt[0] - prev[0], pt[1] - prev[1]) < 1e-6) return;
+    const ent = { id: skNextId(), t: 'line', a: prev, b: pt, c: con };
+    const rel = { t: 'coincident', e: [ents.length ? ents[ents.length - 1].id : ent.id, ent.id], which: 1, other: 0 };
+    a.p.ents = [...ents, ent]; if (!con) a.p.rels = [...(p.rels || []), ...(ents.length ? [rel] : [])];
+    a.pen = [pt]; renderCad(); requestAnimationFrame(skOverlay); return;
+  }
+  if (a.tool === 'point') return add({ id: skNextId(), t: 'point', p: pt, c: 0 });
+  if (a.tool === 'arc3') {
+    if (!a.pend || !a.pend.length) { a.pend = [pt]; renderCad(); requestAnimationFrame(skOverlay); return; }
+    if (a.pend.length === 1) { a.pend = [...a.pend, pt]; renderCad(); requestAnimationFrame(skOverlay); return; }
+    const [s, e] = a.pend; if (!p1ArcFrom3(s, pt, e)) { a.note = L('Those three points are on one line: no arc. Pick a point off the line.', 'Ketiga titik itu segaris: tidak ada busur. Pilih titik di luar garis.'); a.pend = []; renderCad(); return; }
+    a.pend = []; return add({ id: skNextId(), t: 'arc', s, e, m: pt, c: 0 });
+  }
+  if (a.tool === 'arcCenter') {
+    if (!a.pend || !a.pend.length) { a.pend = [pt]; renderCad(); requestAnimationFrame(skOverlay); return; }
+    if (a.pend.length === 1) { a.pend = [...a.pend, pt]; renderCad(); requestAnimationFrame(skOverlay); return; }
+    const [c, s] = a.pend, r = Math.hypot(s[0] - c[0], s[1] - c[1]);
+    if (!(r > 1e-6)) { a.note = L('Start and centre are the same point: give the arc a radius.', 'Titik awal dan pusat sama: beri busur jari-jari.'); a.pend = []; renderCad(); return; }
+    const ang = Math.atan2(pt[1] - c[1], pt[0] - c[0]), e = [c[0] + r * Math.cos(ang), c[1] + r * Math.sin(ang)];
+    const midAng = Math.atan2(s[1] - c[1], s[0] - c[0]) + ((ang - Math.atan2(s[1] - c[1], s[0] - c[0]) + 2 * Math.PI * 2) % (2 * Math.PI)) / 2;
+    a.pend = []; return add({ id: skNextId(), t: 'arc', s, e, m: [c[0] + r * Math.cos(midAng), c[1] + r * Math.sin(midAng)], c: 0 });
+  }
+  if (a.tool === 'arcTangent') {
+    const last = ents.filter((e) => !e.c && e.t !== 'point').slice(-1)[0];
+    if (!last) { a.note = L('A tangent arc continues a line or an arc: draw one first, then click where the arc ends.', 'Busur tangen melanjutkan garis atau busur: buat satu dulu, lalu klik ujung busurnya.'); renderCad(); return; }
+    const at = p1End(last), dir = last.t === 'line' ? p1Sub(last.b, last.a) : (() => { const g = p1ArcFrom3(last.s, last.m, last.e); return g ? p1Rot90(p1Sub(at, g.c)) : null; })();
+    if (!dir) return; const t = p1TangentArc(at, dir, pt); return add({ id: skNextId(), t: 'arc', s: at, e: pt, m: t.m, c: 0 });
+  }
+  if (a.tool === 'trim') {
+    const hit = p1Hit(pt, ents, 2.5); if (!hit) { a.note = L('Trim: click the piece of a line or arc you want to remove (it must cross another line).', 'Trim: klik bagian garis atau busur yang mau dibuang (harus berpotongan dengan garis lain).'); renderCad(); return; }
+    const out = p1Trim(ents, hit.id, pt); a.note = out ? null : L('That piece has no crossing to trim at. Trim cuts where two lines cross.', 'Bagian itu tidak punya persilangan untuk dipotong. Trim memotong di titik persilangan dua garis.');
+    return skCommit(out || ents);
+  }
+  if (a.tool === 'extend') {
+    const hit = p1Hit(pt, ents, 2.5); if (!hit) { a.note = L('Extend: click a line near the end that should reach the next line.', 'Extend: klik garis dekat ujung yang harus mencapai garis berikutnya.'); renderCad(); return; }
+    const out = p1Extend(ents, hit.id, pt); a.note = out ? null : L('Nothing to extend to: add another line that this one can reach.', 'Tidak ada tujuan perpanjangan: tambah garis lain yang bisa dicapai.');
+    return skCommit(out || ents);
+  }
+  if (a.tool === 'fillet') {
+    if (!a.pend || !a.pend.length) { const hit = p1Hit(pt, ents, 2.5); if (!hit || hit.t !== 'line') { a.note = L('Sketch Fillet rounds a corner between two lines: click the first line.', 'Sketch Fillet membulatkan sudut antara dua garis: klik garis pertama.'); renderCad(); return; } a.pend = [hit.id]; return renderCad(); }
+    const hit = p1Hit(pt, ents, 2.5); if (!hit || hit.t !== 'line' || hit.id === a.pend[0]) { a.note = L('Click the second line (a different one) to round the corner between them.', 'Klik garis kedua (berbeda) untuk membulatkan sudut di antaranya.'); renderCad(); return; }
+    const out = p1Fillet(ents, a.pend[0], hit.id, +a.rad || 0); a.pend = [];
+    a.note = out ? null : L('The two lines do not meet at a corner, or the radius is larger than a line. Pick two lines that touch and a smaller radius.', 'Kedua garis tidak bertemu di satu sudut, atau jari-jarinya lebih panjang dari garisnya. Pilih dua garis yang bersentuhan dan radius lebih kecil.');
+    return skCommit(out || ents);
+  }
+  if (a.tool === 'offset') {
+    const hit = p1Hit(pt, ents, 2.5); if (!hit) { a.note = L('Offset: click a closed profile (a loop of lines/arcs) to copy it at a distance.', 'Offset: klik profil tertutup (rangkaian garis/busur) untuk menyalinnya pada jarak tertentu.'); renderCad(); return; }
+    const out = p1Offset(ents, +a.dist || 0); a.note = out ? null : L('Offset needs one closed loop and a distance smaller than the profile.', 'Offset butuh satu rangkaian tertutup dan jarak yang lebih kecil dari profilnya.');
+    return skCommit(out ? [...ents, ...out] : ents);
+  }
+  if (a.tool === 'dim') {
+    const hit = p1Hit(pt, ents, 2.5); if (!hit || hit.t === 'point') { a.note = L('Smart Dimension: click a line (length) or an arc (radius).', 'Smart Dimension: klik garis (panjang) atau busur (jari-jari).'); renderCad(); return; }
+    const v = +a.val; if (!(v > 0)) { a.note = L('Give the dimension a value above 0.', 'Beri dimensi nilai di atas 0.'); renderCad(); return; }
+    a.p.dims = [...(p.dims || []), { id: skNextId(), t: hit.t === 'arc' ? 'radius' : 'length', e: [hit.id], value: v }];
+    a.note = null; return skCommit(ents);
+  }
+  if (a.tool === 'rel') {
+    const hit = p1Hit(pt, ents, 2.5); if (!hit) { a.note = L('Add Relation: click one or two lines/arcs, then pick the relation.', 'Add Relation: klik satu atau dua garis/busur, lalu pilih relasinya.'); renderCad(); return; }
+    skSel = skSel.includes(hit.id) ? skSel.filter((x) => x !== hit.id) : [...skSel, hit.id].slice(-2);
+    return renderCad();
+  }
+}
+function skRelation(kind) {
+  const a = skSession(); if (!a) return; const ents = a.p.ents || [];
+  if (!skSel.length) { a.note = L('Pick a line or arc first (click it in the viewport).', 'Pilih garis atau busur dulu (klik di viewport).'); return renderCad(); }
+  const rel = { t: kind, e: [...skSel] };
+  if (kind === 'coincident' && skSel.length === 2) { rel.which = 1; rel.other = 0; }
+  if (['equal', 'parallel', 'perpendicular', 'tangent', 'coincident'].includes(kind) && skSel.length < 2) { a.note = L('That relation needs two entities: select both (click one, then the other).', 'Relasi itu butuh dua entitas: pilih keduanya (klik satu, lalu yang lain).'); return renderCad(); }
+  a.p.rels = [...(a.p.rels || []), rel]; a.p.ents = p1Solve(ents, a.p.rels, a.p.dims); a.note = null;
+  skSel = []; renderCad(); requestAnimationFrame(skOverlay);
+}
+function skSave() {
+  const a = skSession(); if (!a) return;
+  const ents = p1Solve(a.p.ents || [], a.p.rels || [], a.p.dims || []);
+  const p = { ...a.p, prof: 'ents', ents, plane: a.p.plane || 'XY', at: a.p.at || 'top', off: +(a.p.off || 0), u: 0, v: 0 };
+  delete p.pend; delete p.pen;
+  if (a.editId) { const f = state.part.features.find((x) => x.id === a.editId); if (f) f.p = p; }
+  else state.part.features.push({ id: Date.now().toString(36), type: 'sketch', p });
+  partArm = null; skSel = []; skPtr = null; viewer.setPreview(null); hideSkLabel(); document.body.classList.remove('sketching');
+  const old = document.getElementById('skSvg'); if (old) old.remove();
+  rebuildPart(state.part.features.length === 1);
+}
+function skCancel() {
+  partArm = null; skSel = []; skPtr = null; document.body.classList.remove('sketching'); const old = document.getElementById('skSvg'); if (old) old.remove(); renderCad();
+}
+function renderSketchPanel(pr) {
+  const a = skSession(), p = a.p, ents = p.ents || [], dof = p1DOF(ents, p.rels || [], p.dims || []), loop = p1OuterLoop(ents);
+  const tools = [['line', L('Line', 'Garis')], ['cline', L('Centerline', 'Centerline')], ['arc3', L('Arc 3-point', 'Busur 3 titik')],
+    ['arcCenter', L('Arc centre', 'Busur pusat')], ['arcTangent', L('Tangent arc', 'Busur tangen')], ['point', L('Point', 'Titik')],
+    ['fillet', L('Sketch Fillet', 'Fillet sketch')], ['offset', L('Offset', 'Offset')], ['trim', L('Trim', 'Trim')], ['extend', L('Extend', 'Extend')],
+    ['dim', L('Smart Dimension', 'Smart Dimension')], ['rel', L('Add Relation', 'Tambah relasi')]];
+  pr.append(h('h2', null, h('span', null, a.n || L('Sketch', 'Sketch')), h('span', { class: 'phd' }, h('small', null, 'P1a'))));
+  pr.append(h('div', { class: 'sktools', role: 'toolbar', 'aria-label': L('Sketch tools', 'Alat sketch') },
+    tools.map(([k, label]) => h('button', { class: 'chip' + (a.tool === k ? ' primary' : ''), 'aria-pressed': a.tool === k ? 'true' : 'false', onclick: () => { a.tool = k; a.pend = []; a.pen = []; skSel = []; a.note = null; renderCad(); requestAnimationFrame(skOverlay); } }, label))));
+  const row = (label, input) => h('label', { class: 'skrow' }, h('span', null, label), input);
+  const plane = h('select', { onchange: (e) => { p.plane = e.target.value; renderCad(); requestAnimationFrame(skOverlay); } },
+    [['XY', 'XY'], ['XZ', 'XZ'], ['YZ', 'YZ']].map(([v, t]) => h('option', { value: v, selected: p.plane === v }, t)));
+  const off = h('input', { type: 'number', step: 'any', value: p.off || 0, oninput: (e) => { p.off = e.target.value; requestAnimationFrame(skOverlay); } });
+  pr.append(h('div', { class: 'skform' }, row(L('Plane', 'Bidang'), plane), row(L('Offset (mm)', 'Offset (mm)'), off),
+    row(L('Fillet radius (mm)', 'Radius fillet (mm)'), h('input', { type: 'number', min: 0.1, step: 'any', value: a.rad, oninput: (e) => { a.rad = e.target.value; } })),
+    row(L('Offset distance (mm)', 'Jarak offset (mm)'), h('input', { type: 'number', step: 'any', value: a.dist, oninput: (e) => { a.dist = e.target.value; } })),
+    row(L('Dimension value', 'Nilai dimensi'), h('input', { type: 'number', min: 0.1, step: 'any', value: a.val, oninput: (e) => { a.val = e.target.value; } }))));
+  if (a.tool === 'rel') pr.append(h('div', { class: 'sktools' }, ['horizontal', 'vertical', 'coincident', 'equal', 'parallel', 'perpendicular', 'tangent', 'fix']
+    .map((k) => h('button', { class: 'chip', onclick: () => skRelation(k) }, k))));
+  pr.append(        h('p', { class: 'hint' }, L(`Click in the viewport to draw. Line and Centerline chain until you double-click or press Esc. ${skSel.length ? skSel.length + ' selected.' : ''}`, `Klik di viewport untuk menggambar. Line dan Centerline menyambung sampai kamu dobel-klik atau tekan Esc. ${skSel.length ? skSel.length + ' terpilih.' : ''}`)));
+  if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
+  pr.append(ents.length ? h('div', { class: 'skstat ' + dof.status }, h('b', null, dof.status === 'fully' ? L('Fully defined', 'Fully defined') : dof.status === 'over' ? L('Over-defined', 'Over-defined') : L('Under-defined', 'Under-defined')),
+    h('span', null, dof.status === 'under' ? L(`${dof.dof} free parameter(s)`, `${dof.dof} parameter bebas`) : dof.status === 'over' ? L(`${-dof.dof} redundant relation(s)`, `${-dof.dof} relasi berlebih`) : L('every parameter is fixed', 'semua parameter terkunci')),
+    h('span', null, loop ? L('closed profile', 'profil tertutup') : L('no closed loop yet', 'belum ada rangkaian tertutup')))
+    : h('div', { class: 'skstat' }, h('b', null, L('Empty sketch', 'Sketch kosong')), h('span', null, L('draw a line, arc or point to see the free parameters', 'gambar garis, busur atau titik untuk melihat parameter bebas'))));
+  pr.append(h('h3', null, L('Sketch entities', 'Entitas sketch')));
+  const skItem = (e) => {
+    const kind = e.t === 'line' ? (e.c ? L('Centerline', 'Centerline') : L('Line', 'Garis')) : e.t === 'arc' ? L('Arc', 'Busur') : L('Point', 'Titik');
+    const size = e.t === 'point' ? `${f(e.p[0], 1)}, ${f(e.p[1], 1)}` : `${f(p1Length(e), 1)} mm${e.t === 'arc' ? ' · R' + f(p1Radius(e), 1) : ''}`;
+    return h('li', { class: skSel.includes(e.id) ? 'on' : '', onclick: () => { skSel = skSel.includes(e.id) ? skSel.filter((x) => x !== e.id) : [...skSel, e.id].slice(-2); renderCad(); requestAnimationFrame(skOverlay); } },
+      h('b', null, kind), h('span', null, size));
+  };
+  pr.append(h('ol', { class: 'sklist' }, ...(ents.length ? ents.map(skItem) : [h('li', { class: 'pempty' }, L('Nothing yet: pick Line and click two points.', 'Belum ada: pilih Line lalu klik dua titik.'))])));
+  if ((p.dims || []).length) pr.append(h('p', { class: 'hint' }, L('Dimensions: ', 'Dimensi: ') + p.dims.map((d) => `${d.t} ${d.value}`).join(' · ')));
+  if ((p.rels || []).length) pr.append(h('p', { class: 'hint' }, L('Relations: ', 'Relasi: ') + [...new Set((p.rels || []).map((r) => r.t))].join(' · ')));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', onclick: skSave }, L('Save sketch', 'Simpan sketch')), h('button', { class: 'chip', onclick: skCancel }, L('Cancel', 'Batal')),
+    h('button', { class: 'chip', onclick: skFinishChain }, L('End chain', 'Akhiri rangkaian'))));
+}
+{ const cv = $('#cv');
+  cv.addEventListener('pointerdown', (e) => {
+    const a = skSession(); if (!a || partBusy || e.button > 0) return;
+    const pt = planePoint(e.clientX, e.clientY, a.p); if (!pt) return;
+    e.preventDefault(); e.stopPropagation();
+    skPtr = snapPoint(pt, e.shiftKey, a.p);
+    if (e.detail >= 2) return skFinishChain();
+    skClick(skPtr);
+  }, true);
+  cv.addEventListener('pointermove', (e) => {
+    const a = skSession(); if (!a) return;
+    const pt = planePoint(e.clientX, e.clientY, a.p);
+    if (pt) { skPtr = snapPoint(pt, e.shiftKey, a.p); skOverlay(); }
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (!skSession()) return;
+    if (e.key === 'Escape') { e.preventDefault(); skFinishChain(); }
+    if (e.key === 'Enter' && e.target && e.target.tagName !== 'INPUT') { e.preventDefault(); skFinishChain(); }
+  });
+}
 /* S10-D: after a sketch, one line says what comes next and opens it */
 function renderSketchNext() {
   const vp = $('#viewport'); let el = $('#skNext');
@@ -6519,11 +7141,20 @@ function renderPartCad() {
     h('button', { class: 'linkbtn', onclick: () => leavePart() }, L('Close part', 'Tutup part'))));
   /* right: properties */
   const pr = $('#cadProps'); pr.innerHTML = '';
-  if (partArm) {
+  if (partArm && partArm.p && partArm.p.prof === 'ents') { renderSketchPanel(pr); }
+  else if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
       h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : TOOL_GROUPS.find((g) => g[0] === partArm.type)[2]),
       pform(partArm.type, partArm.p, () => { p.features.push({ id: Date.now().toString(36), type: partArm.type, p: { ...partArm.p } }); partSel = p.features.length - 1; const fit = p.features.length === 1; partArm = null; viewer.setPreview(null); hideSkLabel(); if (narrow()) setChat(false); rebuildPart(fit); },
         L('Add & build', 'Tambah & bangun'), () => { partArm = null; viewer.setPreview(null); hideSkLabel(); renderCad(); }));
+  } else if (fsel && fsel.type === 'sketch' && fsel.p.prof === 'ents') {
+    /* P1a: a lines-and-arcs sketch keeps its entities: show them, and reopen the session to change them */
+    const ents = fsel.p.ents || [], dof = p1DOF(ents, fsel.p.rels || [], fsel.p.dims || []), loop = p1OuterLoop(ents);
+    pr.append(h('h2', null, h('span', null, `${partSel + 1}. ${featName(fsel)}`), h('span', { class: 'phd' }, h('small', null, FEAT[fsel.type].label(fsel.p)))),
+      h('p', { class: 'hint' }, L(`${ents.length} entities, ${loop ? 'one closed profile' : 'no closed loop yet'}. ${dof.status === 'fully' ? 'Fully defined' : dof.status === 'over' ? 'Over-defined' : `Under-defined (${dof.dof} free)`}.`, `${ents.length} entitas, ${loop ? 'satu profil tertutup' : 'belum ada rangkaian tertutup'}. ${dof.status === 'fully' ? 'Fully defined' : dof.status === 'over' ? 'Over-defined' : `Under-defined (${dof.dof} bebas)`}.`)),
+      h('ol', { class: 'sklist' }, ents.map((e) => h('li', null, h('b', null, e.t === 'line' ? (e.c ? L('Centerline', 'Centerline') : L('Line', 'Garis')) : e.t === 'arc' ? L('Arc', 'Busur') : L('Point', 'Titik')),
+        h('span', null, e.t === 'point' ? `${f(e.p[0], 1)}, ${f(e.p[1], 1)}` : `${f(p1Length(e), 1)} mm${e.t === 'arc' ? ` · R${f(p1Radius(e), 1)}` : ''}`)))),
+      h('div', { class: 'sktools' }, h('button', { class: 'chip primary', onclick: () => openSketchSession('line', fsel.id) }, L('Edit sketch', 'Ubah sketch'))));
   } else if (fsel) {
     const edit = { ...fsel.p };
     pr.append(h('h2', null, h('span', null, `${partSel + 1}. ${featName(fsel)}`), h('span', { class: 'phd' }, h('small', null, FEAT[fsel.type].label(fsel.p)))),
@@ -6552,6 +7183,7 @@ function renderPartCad() {
   }
   $('#viewport').classList.toggle('sketching', sketchDrawable());
   renderSketchNext();
+  if (typeof skOverlay === 'function') requestAnimationFrame(skOverlay);
 }
 function renamePart() {
   const pr = $('#cadProps'); pr.innerHTML = ''; const inp = h('input', { type: 'text', value: state.part.name, maxlength: 60, 'aria-label': L('Part name', 'Nama part') });
@@ -6734,26 +7366,26 @@ const RIBBON = [
   ['sketch', 'Sketch', 'Sketch', [
     ['Sketch', [T('Sketch', 'rect', 'on', 'Start a 2D sketch on XY, XZ or YZ (or on top of the body), then extrude it.', 'Mulai sketch 2D di XY, XZ, atau YZ (atau di atas body), lalu tarik.', 'Create Sketch, 2D Sketch', P('sketch')),
       T('Exit Sketch', 'check', 'on', 'Close the sketch form without saving anything, go back to the Features tab and extrude the sketch when you are ready.', 'Tutup formulir sketch tanpa menyimpan apa pun, kembali ke tab Fitur dan tarik sketch saat siap.', 'Finish Sketch', 'sketchExit')]],
-    ['Draw', [T('Line', 'line', 'mk1', 'Free lines and polylines, snapped to points. Comes with Sketch Correction.', 'Garis bebas dan polyline, menempel ke titik. Datang bersama Sketch Correction.', 'Polyline', null, ALT_SK),
+    ['Draw', [T('Line', 'line', 'on', 'Free lines and polylines: click each point, double-click or Esc to end the chain. Snaps to 1 mm (Shift 0.1 mm) and to points already drawn.', 'Garis bebas dan polyline: klik tiap titik, dobel-klik atau Esc untuk mengakhiri. Menempel ke 1 mm (Shift 0,1 mm) dan ke titik yang sudah ada.', 'Polyline', { sk: 'line' }),
       T('Corner Rectangle', 'rect', 'on', 'Rectangle by width and height, centred where you place it.', 'Persegi panjang dengan lebar dan tinggi, berpusat di titik yang kamu tentukan.', 'Center Rectangle, 2-Point Rectangle', P('sketch', { prof: 'rect' })),
       T('Circle', 'circle', 'on', 'Circle by centre and diameter.', 'Lingkaran dengan pusat dan diameter.', 'Center Diameter Circle', P('sketch', { prof: 'circle' })),
-      T('Arc', 'arc', 'mk1', 'Centre-point, 3-point and tangent arcs.', 'Busur titik-pusat, 3 titik, dan tangen.', 'Centerpoint Arc, 3 Point Arc, Tangent Arc', null, ALT_SK),
+      T('Arc', 'arc', 'on', '3-point arc: click start, end, then a point the arc passes through. Centre-point and tangent arcs are in the sketch panel.', 'Busur 3 titik: klik awal, akhir, lalu satu titik yang dilewati busur. Busur titik-pusat dan tangen ada di panel sketch.', 'Centerpoint Arc, 3 Point Arc, Tangent Arc', { sk: 'arc3' }),
       T('Slot', 'slot', 'on', 'Straight slot by length and width.', 'Slot lurus dengan panjang dan lebar.', 'Straight Slot, Center Point Slot', P('sketch', { prof: 'slot' })),
       T('Polygon', 'poly', 'on', 'Regular polygon by sides and circumscribed diameter.', 'Poligon beraturan dengan jumlah sisi dan diameter luar.', 'Inscribed / Circumscribed Polygon', P('sketch', { prof: 'poly' })),
       T('Spline', 'spline', 'no', 'Smooth curve through points.', 'Kurva halus melalui titik-titik.', 'Fit Point Spline, Control Point Spline'),
       T('Ellipse', 'ellipse', 'no', 'Ellipse and partial ellipse.', 'Elips dan elips sebagian.', 'Conic'),
-      T('Point', 'point', 'mk1', 'Sketch point for holes and references.', 'Titik sketch untuk lubang dan referensi.', 'Sketch Point'),
-      T('Centerline', 'cline', 'mk1', 'Construction line for mirrors and revolves.', 'Garis konstruksi untuk cermin dan revolve.', 'Construction Line'),
+      T('Point', 'point', 'on', 'Sketch point, for references and for a hole position later.', 'Titik sketch, untuk referensi dan posisi lubang nanti.', 'Sketch Point', { sk: 'point' }),
+      T('Centerline', 'cline', 'on', 'Construction line: drawn, never part of the profile. Use it as a mirror line or a revolve axis.', 'Garis konstruksi: digambar, tidak pernah menjadi bagian profil. Pakai sebagai garis cermin atau sumbu revolve.', 'Construction Line', { sk: 'cline' }),
       T('Text', 'text', 'no', 'Text in a sketch, to emboss or cut.', 'Teks di sketch, untuk timbul atau potong.', 'Sketch Text')]],
-    ['Modify', [T('Sketch Fillet', 'sfil', 'mk1', 'Round a sketch corner.', 'Bulatkan sudut sketch.', 'Sketch Chamfer'),
-      T('Offset Entities', 'offset', 'mk1', 'Copy a profile at a distance.', 'Salin profil pada jarak tertentu.', 'Offset Curve'),
+    ['Modify', [T('Sketch Fillet', 'sfil', 'on', 'Round the corner between two lines: click both lines, with the radius in the sketch panel.', 'Bulatkan sudut antara dua garis: klik kedua garis, radiusnya di panel sketch.', 'Sketch Chamfer', { sk: 'fillet' }),
+      T('Offset Entities', 'offset', 'on', 'Copy a closed profile at a distance: click the profile, with the distance in the sketch panel.', 'Salin profil tertutup pada jarak tertentu: klik profilnya, jaraknya di panel sketch.', 'Offset Curve', { sk: 'offset' }),
       T('Convert Entities', 'proj', 'no', 'Project model edges into the sketch.', 'Proyeksikan tepi model ke sketch.', 'Project, Include, Use Edge'),
-      T('Trim', 'trim', 'mk1', 'Cut a line where it crosses another.', 'Potong garis di titik persilangan.', 'Power Trim'),
-      T('Extend', 'extend', 'mk1', 'Lengthen a line to the next one.', 'Perpanjang garis ke garis berikutnya.', ''),
+      T('Trim', 'trim', 'on', 'Cut the clicked piece of a line or arc where it crosses another.', 'Potong bagian garis atau busur yang diklik di titik persilangan.', 'Power Trim', { sk: 'trim' }),
+      T('Extend', 'extend', 'on', 'Lengthen the clicked end of a line or arc to the next entity.', 'Perpanjang ujung garis atau busur yang diklik sampai entitas berikutnya.', '', { sk: 'extend' }),
       T('Mirror Entities', 'smir', 'mk1', 'Mirror sketch lines about a centerline.', 'Cerminkan garis sketch terhadap centerline.', 'Sketch Mirror'),
       T('Sketch Pattern', 'spat', 'mk1', 'Linear or circular pattern inside the sketch.', 'Pola linear atau melingkar di dalam sketch.', 'Linear / Circular Sketch Pattern')]],
     ['Constrain', [T('Smart Dimension', 'dim', 'on', 'Drive one size of a sketch. The dimension becomes a step in the tree: change it and the whole part rebuilds.', 'Mengatur satu ukuran sketch. Dimensi menjadi langkah di pohon: ubah nilainya dan seluruh part dibangun ulang.', 'Sketch Dimension', P('dim')),
-      T('Add Relation', 'rel', 'mk1', 'Coincident, horizontal, vertical, parallel, perpendicular, tangent, equal, fix.', 'Coincident, horizontal, vertikal, sejajar, tegak lurus, tangen, sama, fix.', 'Constraints, Geometric Constraints')]],
+      T('Add Relation', 'rel', 'on', 'Coincident, horizontal, vertical, parallel, perpendicular, tangent, equal, fix — click the lines/arcs, then the relation.', 'Coincident, horizontal, vertikal, sejajar, tegak lurus, tangen, sama, fix — klik garis/busurnya, lalu relasinya.', 'Constraints, Geometric Constraints', { sk: 'rel' })]],
     ['IDRIS', [T('Sketch Correction', 'fix', 'mk1', 'IDRIS finds lines that do not meet, overlap, hang loose or are almost horizontal/vertical, shows each fix and applies it after you confirm. Built together with the free-line sketcher.', 'IDRIS menemukan garis yang tidak menyambung, bertumpuk, menggantung, atau hampir horizontal/vertikal, menunjukkan perbaikannya, dan menerapkannya setelah kamu setujui. Dibangun bersama sketcher garis bebas.', 'Repair Sketch, Check Sketch for Feature', null, ALT_SK, true)]]]],
   ['feat', 'Features', 'Fitur', [
     ['Boss / Base', [T('Extruded Boss/Base', 'ext', 'on', 'Extrude the last sketch and add it to the body, one side or both.', 'Tarik sketch terakhir dan tambahkan ke body, satu sisi atau dua sisi.', 'Extrude, Pad', P('push', { op: 'add' })),
@@ -6885,6 +7517,7 @@ function gbRunner(k) {
 }
 function ribAct(a, name) {
   if (!a) return;
+  if (typeof a === 'object' && a.sk) return openSketchSession(a.sk, a.editId);
   if (typeof a === 'object' && a.part) return partTool(a.part, a.p, name);
   if (a === 'library') return openLibrary();
   if (a === 'measure') return !state.part && state.variants.length ? cadTabGo('check') : partTool('measure');
