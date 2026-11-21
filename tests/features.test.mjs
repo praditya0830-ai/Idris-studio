@@ -60,9 +60,17 @@ check('revolve 360° outer size 30 mm', () => eq(revOk.body.boundingBox.bounds[1
 const revHalf = await run([SK(), F('revolve', { axis: 'Z', angle: 180, op: 'add' })]);
 check('revolve 180° volume is half', () => eq(vol(revHalf.body), 18849.6 / 2, 2, 'volume'));
 
+/* S0: the volume is locked on both sides of the cut, not just "less than the box" */
+const cutBox = await run([F('shape', { kind: 'box', L: 40, W: 40, H: 20, x: 0, y: 0, z: 0, op: 'add' })]);
+check('the box before the revolved cut is 32000 mm³', () => eq(vol(cutBox.body), 32000, 0.01, 'volume'));
+
 const revCut = await run([F('shape', { kind: 'box', L: 40, W: 40, H: 20, x: 0, y: 0, z: 0, op: 'add' }),
   SK({ plane: 'XY', at: 'value', off: 10, u: 15, v: 0 }), F('revolve', { axis: 'Y', angle: 360, op: 'cut' })]);
-check('revolved cut removes material', () => ok(revCut.body && vol(revCut.body) < 40 * 40 * 20 && !errs(revCut.features).length, 'cut ran'));
+const cutVol = vol(revCut.body);
+check('revolved cut removes material', () => ok(revCut.body && cutVol < 32000, `cut ran, ${cutVol.toFixed(1)} mm³ of 32000 left`));
+check('revolved cut leaves no error on any step', () => ok(!errs(revCut.features).length, 'errors: ' + JSON.stringify(revCut.features.map((x) => x.err || null))));
+check('revolved cut removes the amount the geometry gives (13534 mm³)',
+  () => ok(32000 - cutVol > 13000 && cutVol > 18000 && cutVol < 19000, `removed ${(32000 - cutVol).toFixed(1)} mm³, ${cutVol.toFixed(1)} left`));
 
 const revBadAngle = await run([SK(), F('revolve', { axis: 'Z', angle: 0, op: 'add' })]);
 check('revolve rejects 0°', () => ok(/angle must be above 0/.test(revBadAngle.features[1].err), 'got: ' + revBadAngle.features[1].err));
@@ -121,6 +129,10 @@ const dim = (target, param, value, extra) => F('dim', { step: target.id, param, 
 
 const plain = await run([sk(), push10()]);
 check('sketch 30×20 extruded 10 = 6000 mm³', () => eq(vol(plain.body), 6000, 1, 'volume'));
+/* S0: buildPart runs here in a bare function scope, the way it runs on a page without the Studio's other
+   globals. A step that records something in an outer variable fails here instead of in production. */
+check('a sketch step never fails on bookkeeping outside buildPart',
+  () => ok(!errs(plain.features).length, 'errors: ' + JSON.stringify(plain.features.map((x) => x.err || null))));
 
 const driven = (() => { const s = sk(); return [s, push10(), dim(s, 'W', 50)]; })();
 const r1 = await run(driven);

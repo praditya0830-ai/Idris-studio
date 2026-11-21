@@ -6137,7 +6137,10 @@ async function buildPart(pArg) {
         apply(t, body ? (q.op || 'add') : 'add');
       } else if (ft.type === 'sketch') {
         const driven = { ...q, ...(dims[ft.id] || {}) };
-        sketch = { s: driven, at: sketchAt(driven) }; sketches.push(sketch); SW_AT.set(ft, { s: driven, at: sketch.at });   /* v67: for the SolidWorks macro */
+        sketch = { s: driven, at: sketchAt(driven) }; sketches.push(sketch);
+        /* v67: for the SolidWorks macro. Guarded so buildPart also runs where SW_AT does not exist (the tests
+           lift this function out of the page), instead of failing the sketch step with "SW_AT is not defined". */
+        if (typeof SW_AT !== 'undefined') SW_AT.set(ft, { s: driven, at: sketch.at });
       } else if (ft.type === 'push') {
         if (!sketch) throw new Error(L('Push/Pull needs a Sketch before it.', 'Push/Pull butuh Sketch sebelumnya.'));
         const dist = +q.dist; if (!dist) throw new Error(L('Distance cannot be 0.', 'Jarak tidak boleh 0.'));
