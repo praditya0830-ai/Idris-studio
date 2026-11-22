@@ -11554,6 +11554,193 @@ async function asmExplode() {
     if (a === 'asmExplode') return asmExplode();
     return ra.apply(this, arguments); }; }
 
+/* ---- v0.41 colleague layer (solver `colleague.py`): the studio sends the session history and the open project
+ * with every message, and shows what came back as a conversation — the stage above the reply, the next steps as
+ * buttons, the questions as chips with the recommended one marked, the reference cards of stage 2, and the
+ * assumptions panel. Nothing is computed here: the labels and numbers are the solver's. */
+const COLLEAGUE_HISTORY_MAX = 20;
+let colleagueLast = null, refsFetched = '';
+{ const st = document.createElement('style');
+  st.textContent = `
+ .sug-row{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
+ .sug-btn,.q-chip{font:inherit;font-size:11.5px;padding:5px 9px;border-radius:14px;border:1px solid #2f4d63;
+   background:#101c25;color:#d7ecf8;cursor:pointer;text-align:left}
+ .sug-btn:hover,.q-chip:hover{border-color:#4ea6d8;background:#132533}
+ .q-wrap{display:flex;flex-direction:column;gap:8px;margin:8px 0 2px}
+ .q-card{border:1px solid #263c4c;border-radius:8px;padding:7px 9px;background:#0d1720}
+ .q-t{margin:0 0 6px;font-size:12px;color:#e7f3fa}
+ .q-opts{display:flex;flex-wrap:wrap;gap:6px}
+ .q-chip.rec{border-color:#3f9c72;box-shadow:inset 0 0 0 1px #3f9c72}
+ .rec-badge{margin-left:6px;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#8fe0b5}
+ .q-otherrow{display:flex;gap:6px;margin-top:6px}
+ .q-other{flex:1;min-width:0;background:#0a141c;border:1px solid #2b4252;color:#dcecf5;border-radius:6px;padding:5px 7px;font-size:11.5px}
+ .q-send{font:inherit;font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid #2f4d63;background:#132533;color:#d7ecf8;cursor:pointer}
+ .ref-list{display:flex;flex-direction:column;gap:7px;margin:8px 0 2px}
+ .ref-live{font-size:11px;color:#8fb6cc}
+ .ref-card{border:1px solid #263c4c;border-radius:8px;padding:7px;background:#0d1720;display:flex;flex-direction:column;gap:4px}
+ .ref-thumb{width:100%;max-height:72px;object-fit:cover;border-radius:5px}
+ .ref-t{color:#7fd6ff;font-size:12px;text-decoration:none;font-weight:600}
+ .ref-num{font-size:10.5px;color:#cbd9a0}
+ .asm-panel{border:1px solid #2b4252;border-radius:8px;padding:7px 9px;margin:6px 0 2px;background:#0b151d}
+ .asm-panel b{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#9fc2d6}
+ .asm-row{display:flex;align-items:center;gap:6px;margin:5px 0}
+ .asm-w{flex:0 0 42%;font-size:11.5px;color:#cfe2ee}
+ .asm-in{flex:1;min-width:0;background:#0a141c;border:1px solid #2b4252;color:#dcecf5;border-radius:5px;padding:4px 6px;font-size:11.5px}
+ .asm-x{background:none;border:0;color:#7f9dad;cursor:pointer;font-size:12px}
+ .ai-body .hint{font-size:10.5px;color:#82a3b8}
+ `;
+  document.head.append(st); }
+function colleagueHistory() {
+  const rows = [];
+  chatEl.querySelectorAll('.msg').forEach((m) => {
+    if (m.classList.contains('user')) { const b = m.querySelector('.bub'); if (b) rows.push({ role: 'user', text: b.textContent.slice(0, 600) }); }
+    else if (m.classList.contains('ai')) {
+      const ps = [...m.querySelectorAll('.ai-body p.ans')].map((p) => p.textContent.trim()).filter(Boolean);
+      if (ps.length) rows.push({ role: 'assistant', text: ps.join(' ').slice(0, 900) });
+    }
+  });
+  return rows.slice(-COLLEAGUE_HISTORY_MAX);
+}
+function colleagueProjectId() {
+  const p = state && state.part;
+  if (!p) return null;
+  return String(p.savedId || p.id || p.title || 'part');
+}
+function colleagueStageLabel(j) {
+  if (!j || !j.stage) return null;
+  return L(`Stage ${j.stage} · ${j.stage_name || ''}`, `Tahap ${j.stage} · ${j.stage_name || ''}`).replace(/ ·\s*$/, '');
+}
+function colleagueSuggestionRow(j) {
+  const list = Array.isArray(j.suggestions) ? j.suggestions : [];
+  if (!list.length) return null;
+  const box = h('div', { class: 'sug-row' });
+  list.forEach((s) => {
+    const label = String((s && (s.label || s.text)) || '').trim();
+    if (!label) return;
+    box.append(h('button', { class: 'sug-btn', title: L('Send this as your next message', 'Kirim ini sebagai pesan berikutnya'),
+      onclick: () => handleText(label) }, label));
+  });
+  return box.childNodes.length ? box : null;
+}
+function colleagueQuestions(j) {
+  const list = Array.isArray(j.questions) ? j.questions : [];
+  if (!list.length) return null;
+  const wrap = h('div', { class: 'q-wrap' });
+  list.forEach((q) => {
+    const card = h('div', { class: 'q-card' }, h('p', { class: 'q-t' }, String(q.text || '')));
+    const opts = h('div', { class: 'q-opts' });
+    (Array.isArray(q.options) ? q.options : []).forEach((o) => {
+      const label = String((o && o.label) || '').trim();
+      if (!label) return;
+      const btn = h('button', { class: 'q-chip' + (o.recommended ? ' rec' : ''), onclick: () => handleText(label) }, label);
+      if (o.recommended) btn.append(h('span', { class: 'rec-badge' }, L('Recommended', 'Rekomendasi')));
+      if (o.note) btn.title = String(o.note);
+      if (o.source) btn.title = (btn.title ? btn.title + ' · ' : '') + String(o.source);
+      opts.append(btn);
+    });
+    card.append(opts);
+    if (q.allow_other !== false) {
+      const inp2 = h('input', { class: 'q-other', type: 'text', placeholder: L('Type another answer…', 'Ketik jawaban lain…') });
+      const go = () => { const v = inp2.value.trim(); if (v) handleText(v); };
+      inp2.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      card.append(h('div', { class: 'q-otherrow' }, inp2, h('button', { class: 'q-send', onclick: go }, L('Send', 'Kirim'))));
+    }
+    wrap.append(card);
+  });
+  return wrap;
+}
+function colleagueRefCard(c) {
+  const card = h('div', { class: 'ref-card' });
+  if (c.thumbnail_url) card.append(h('img', { class: 'ref-thumb', src: String(c.thumbnail_url), alt: '', loading: 'lazy' }));
+  card.append(h('a', { class: 'ref-t', href: String(c.source_url || '#'), target: '_blank', rel: 'noopener' }, String(c.title || c.source_url || '')));
+  if (c.what_it_is) card.append(para(String(c.what_it_is), 'm'));
+  if (Array.isArray(c.key_features) && c.key_features.length) card.append(para(String(c.key_features.join(' · ')), 'm'));
+  (Array.isArray(c.numbers_found) ? c.numbers_found : []).slice(0, 4).forEach((n) => {
+    card.append(h('div', { class: 'ref-num' }, `${n.value} ${n.unit || ''} · ${String(n.label || 'web — not verified')}`));
+  });
+  return card;
+}
+async function colleagueReferences(j, bodyEl) {
+  const brief = typeof chatBrief !== 'undefined' ? chatBrief : null;
+  const title = state && state.part && (state.part.title || '');
+  const b = (brief && brief.object) ? brief : (title ? { object: String(title) } : null);
+  if (!b || !j || Number(j.stage) !== 2) return;
+  const key = JSON.stringify(b);
+  if (refsFetched === key) return;
+  refsFetched = key;
+  const box = h('div', { class: 'ref-list' }, h('div', { class: 'ref-live' }, L('Searching for design references…', 'Mencari referensi desain…')));
+  if (bodyEl) bodyEl.append(box);
+  try {
+    const r = await fetch(API + '/references/design', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brief: b, project_id: colleagueProjectId() }) });
+    const d = await r.json();
+    const live = box.querySelector('.ref-live');
+    if (live) live.textContent = (d.steps || []).slice(-1)[0] || '';
+    if (!d || !d.ok || !(d.cards || []).length) {
+      if (live) live.textContent = (d && d.error) || L('Web search is not available; using the solver references.', 'Pencarian web tidak tersedia; memakai referensi solver.');
+      return;
+    }
+    (d.cards || []).slice(0, 6).forEach((c) => box.append(colleagueRefCard(c)));
+    if (Array.isArray(d.patterns) && d.patterns.length) box.append(para(L('Patterns: ', 'Pola: ') + d.patterns.join('; '), 'm'));
+    if (d.proposal) box.append(para(String(d.proposal), 'm'));
+  } catch (e) {
+    const live = box.querySelector('.ref-live');
+    if (live) live.textContent = L('Web search is not available right now.', 'Pencarian web tidak tersedia saat ini.');
+  }
+}
+function colleagueAssumptions(j) {
+  const b = typeof chatBrief !== 'undefined' ? chatBrief : null;
+  const list = b && Array.isArray(b.assumptions) ? b.assumptions : [];
+  if (!list.length) return null;
+  const box = h('div', { class: 'asm-panel' }, h('b', null, L('Assumptions', 'Asumsi')));
+  const setA = (rows) => {
+    try { const nb = { ...(chatBrief || {}) }; nb.assumptions = rows; chatBrief = nb; saveBrief(chatBrief); renderBriefCard(); }
+    catch (err) { /* in memory only */ }
+  };
+  list.forEach((a, i) => {
+    const what = typeof a === 'object' ? (a.what || a.text || '') : String(a);
+    const value = typeof a === 'object' ? (a.value || '') : '';
+    const inp3 = h('input', { class: 'asm-in', type: 'text', value: String(value) });
+    inp3.addEventListener('change', () => setA(list.map((x, k) => (k === i ? { ...(typeof x === 'object' ? x : { what: x }), value: inp3.value } : x))));
+    const del = h('button', { 'class': 'asm-x', 'aria-label': L('Remove', 'Hapus') }, '\u2715');
+    del.addEventListener('click', (e) => {
+      setA(list.filter((_, k) => k !== i));
+      const row = e.currentTarget.parentNode;
+      if (row && row.parentNode) row.parentNode.removeChild(row);
+    });
+    box.append(h('div', { class: 'asm-row' }, h('span', { class: 'asm-w' }, String(what || '')), inp3, del));
+  });
+  box.append(h('p', { class: 'hint' }, L('Changing an assumption recalculates the stage it belongs to.', 'Mengubah asumsi menghitung ulang tahap terkait.')));
+  return box;
+}
+
+function renderColleague(j) {
+  if (!j || (!j.stage && !(j.suggestions || []).length && !(j.questions || []).length)) return;
+  const msg = [...chatEl.querySelectorAll('.msg.ai')].pop();
+  const bodyEl = msg && msg.querySelector('.ai-body');
+  if (!bodyEl) return;
+  const viaEl = msg.querySelector('.via');
+  const lab = colleagueStageLabel(j);
+  if (lab && viaEl) viaEl.textContent = lab;
+  [colleagueAssumptions(j), colleagueSuggestionRow(j), colleagueQuestions(j)].forEach((el) => { if (el) bodyEl.append(el); });
+  colleagueReferences(j, bodyEl).catch(() => {});
+  scrollDown();
+}
+{ const f3 = window.fetch; window.fetch = function (url, opt) {
+    if (typeof url === 'string' && url === API + '/chat' && opt && typeof opt.body === 'string' && !(opt.headers && (opt.headers['X-Idris-Concept'] || opt.headers['X-Idris-Brief']))) {
+      try {
+        const b = JSON.parse(opt.body);
+        b.history = colleagueHistory();                 // B1: the session travels with every message
+        const pid = colleagueProjectId(); if (pid && !b.project_id) b.project_id = pid;
+        opt = { ...opt, body: JSON.stringify(b) };
+      } catch (e) { /* unchanged */ }
+    }
+    return f3(url, opt); }; }
+{ const ca2 = chatAI; chatAI = async function (text) {
+    const r = await ca2.apply(this, arguments);
+    colleagueLast = (state.lastChat && state.lastChat.response) || null;
+    try { renderColleague(colleagueLast); } catch (e) { /* UI only */ }
+    return r; }; }
+
 window.__idris = { state, parseText, viewer, frameFit, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids } };
 })();
 </script>
