@@ -939,13 +939,6 @@ body.focus:not(.focus-tree) .edge-l,body.focus:not(.focus-chat) .edge-r{display:
 .pane-tree:has(#cadLeft .gen-src)>.cprops{flex:none;max-height:none;overflow:visible}
 .via .route{color:var(--dim)} .err-d{font-size:11.5px;color:var(--muted);font-family:var(--mono);margin-top:4px;white-space:pre-wrap}
 
-.conc-strip{position:absolute;z-index:7;left:12px;right:12px;bottom:calc(var(--ckH,40px) + 14px);display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--glass);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 28px var(--shadow);max-height:46%;overflow:auto}
-.conc-strip .conc-h{flex-wrap:wrap} .conc-strip .conc-src{margin-left:auto;font-size:11px;color:var(--dim)}
-.conc-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin}
-.conc-row .conc-c{flex:0 0 228px;width:228px}
-.conc-strip>p{margin:0;font-size:12px;color:var(--muted)} .conc-strip .gen-var{margin:0}
-.via{flex-wrap:wrap} .via .route{flex-basis:100%}
-@media (min-width:1181px){ body.cad .conc-strip{left:var(--ovL);right:var(--ovR);bottom:calc(var(--ckH,40px) + 22px)} }
 .conc-ask{margin-top:8px;display:flex;flex-direction:column;gap:6px} .conc-rem{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px} .conc-ask .hint{margin:0;font-size:11.5px;color:var(--dim)}
 
 /* v64: design job panel, trust badges, references */
@@ -981,6 +974,54 @@ body.focus:not(.focus-tree) .edge-l,body.focus:not(.focus-chat) .edge-r{display:
 .asm-parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px} .asm-parts li{display:flex;gap:6px;align-items:center} .asm-parts li>div{flex:1;min-width:0} .asm-parts small{color:var(--muted)}
 .goalbox{margin-top:8px;display:flex;flex-direction:column;gap:6px;padding:8px 10px;border:1px solid var(--line);border-radius:9px}
 .more-tools>summary{cursor:pointer;font-size:12px;color:var(--muted);margin-top:4px}
+
+/* ---- S14 compact ribbon (tim UI 21 Nov 2026): the same tools, 63 px instead of 80.
+ * Every label stays at 9,5 px or more and every target is at least 40 × 38 px for a finger. */
+.xr-tabs button{font-size:11.5px;padding:5px 8px 4px}
+.xr-t{width:auto;min-width:40px;max-width:58px;min-height:38px;padding:4px 4px 2px;gap:2px;font-size:9.5px;line-height:1.1}
+.xr-n{max-width:56px}
+.xr-i,.xr-i svg{width:16px;height:16px}
+.xr-g{padding:0 3px}
+.xr-row{gap:0}
+.xr-gl{font-size:9px;padding:0 0 2px}
+@media (max-width:700px){.xr-t{width:auto;min-width:40px;min-height:38px;padding:4px 4px 2px;font-size:9.5px} .xr-n{max-width:56px} .xr-gl{font-size:9px}}
+
+/* ---- S14 left panel: four pages on one horizontal track (Tree · Variants · Edit · Library).
+ * Pages are the same nodes as before, moved; the track slides with a transform. */
+.lptabs{display:none}
+body.cad .lptabs{display:flex;align-items:stretch;border-bottom:1px solid var(--line);background:var(--white);flex:none}
+body.cad.sketching .lptabs{display:none}
+.lptabs button{flex:1 1 0;min-width:0;border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);font:inherit;font-size:11.5px;font-weight:500;padding:7px 4px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lptabs button:hover{color:var(--text)}
+.lptabs button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--accent);font-weight:600}
+.lptabs .lpdot{display:none;width:5px;height:5px;border-radius:50%;background:var(--accent);margin-left:4px;vertical-align:2px}
+.lptabs button.busy .lpdot{display:inline-block}
+.lp-track{display:block}
+body.cad .lps{overflow:hidden}
+body.cad .pane-tree #cadProps{max-height:none;overflow:visible;border:0;flex:none}
+body.cad .lp-track{display:flex;height:100%;width:100%;transition:transform .3s ease;touch-action:pan-y}
+body.cad .lppage{flex:0 0 100%;width:100%;min-width:0;height:100%;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
+body.cad .lppage>*{max-width:100%}
+@media (prefers-reduced-motion:reduce){body.cad .lp-track{transition:none}}
+body.sketching .lp-track{display:block;transform:none!important;height:auto;min-height:0}
+body.sketching .lppage{display:none}
+body.sketching #lppEdit{display:block;height:100%;overflow-y:auto}
+#lppVar .conc-row{flex-direction:column;overflow:visible;gap:6px;padding:0}
+#lppVar .conc-slot{flex:none;width:100%}
+#lppVar .conc-row .conc-c{flex:none;width:100%}
+#lppVar{padding-bottom:12px}
+#lppVar .conc-h{padding:10px 12px 0}
+#lppVar .conc-src{padding:0 12px}
+
+/* ---- S14 E: the bottom box sits between the left panel and the chat, whatever the panel width is */
+@media (min-width:1181px){
+  body.cad .viewport{--ovL:calc(var(--treeW,280px) + 24px)}
+  body.cad.hide-tree .viewport,body.cad.focus:not(.focus-tree) .viewport{--ovL:12px}
+  body.cad.focus.focus-tree .viewport{--ovL:calc(var(--treeW,280px) + 24px)}
+  body.cad .pane-tree,body.cad .main:has(.center:not(.dock-hidden):not(.dock-closed)) .pane-tree{bottom:12px}
+  body.cad .cchecks{left:var(--ovL);right:calc(var(--ovR) + 96px);max-width:none}
+  body.cad.hide-tree .cchecks{left:12px}
+}
 </style>
 <script>/* apply saved appearance before first paint (full logic: applyAppearance) */
 try{var a=JSON.parse(localStorage.getItem("idris-appearance")||"null")||{},t=a.mode||localStorage.getItem("idris-theme")||"system";
@@ -1101,9 +1142,23 @@ if(t==="system")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"lig
         </button>
         <button class="x" id="treeClose" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
       </div>
+      <div class="lptabs" id="lpTabs" role="tablist" aria-label="Design panel">
+        <button role="tab" id="lpTabTree" data-lptab="tree" aria-controls="lppTree" aria-selected="true">Tree</button>
+        <button role="tab" id="lpTabVar" data-lptab="var" aria-controls="lppVar" aria-selected="false" hidden><span class="lplab">Variants</span><span class="lpdot" aria-hidden="true"></span></button>
+        <button role="tab" id="lpTabEdit" data-lptab="edit" aria-controls="lppEdit" aria-selected="false">Edit</button>
+        <button role="tab" id="lpTabLib" data-lptab="lib" aria-controls="lppLib" aria-selected="false">Library</button>
+      </div>
       <div class="lps" id="lpScroll">
-        <div class="cad-only cleft" id="cadLeft"></div>
-        <div class="tree" id="tree"></div>
+        <div class="lp-track" id="lpTrack">
+          <section class="lppage" id="lppTree" role="tabpanel" aria-labelledby="lpTabTree">
+            <div class="cad-only cleft" id="cadLeft"></div>
+          </section>
+          <section class="lppage" id="lppVar" role="tabpanel" aria-labelledby="lpTabVar" aria-hidden="true"></section>
+          <section class="lppage" id="lppEdit" role="tabpanel" aria-labelledby="lpTabEdit" aria-hidden="true"></section>
+          <section class="lppage" id="lppLib" role="tabpanel" aria-labelledby="lpTabLib" aria-hidden="true">
+            <div class="tree" id="tree"></div>
+          </section>
+        </div>
       </div>
       <div class="lpgrip" id="lpGrip" role="separator" aria-orientation="vertical" aria-label="Resize the design panel" title="Drag to resize · double-click to reset"></div>
     </aside>
@@ -2390,12 +2445,13 @@ async function chatAI(text) {
   if (typeof genPending !== 'undefined' && genPending && genPending.ai) ctx.pending_cad = { title: genPending.title, missing: genPending.missing, request: genPending.request || '' };
   if (typeof genFix !== 'undefined' && genFix) { ctx.cad_error = genFix; genFix = null; }
   if (Object.keys(ctx).length) body.context = ctx;
-  let d = null, netErr = null;
+  let d = null, netErr = null, httpStatus = 0;
   const ctrl = new AbortController(), to = setTimeout(() => ctrl.abort(), 110000);
   const slow = setTimeout(() => { via.lastChild.textContent = 'IDRIS is reading your message… (the engine may be waking up)'; }, 8000);
   const slow2 = setTimeout(() => { via.lastChild.textContent = 'IDRIS is designing… (a new part can take up to 90 s)'; }, 15000);
   try {
     const r = await fetch(API + '/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctrl.signal });
+    httpStatus = r.status;
     if (r.status === 404) { state.chatOff = true; netErr = 'not available on this engine'; }
     else { try { d = await r.json(); } catch (e) { d = null; } if (!d) netErr = 'HTTP ' + r.status;
       else if (r.status >= 500 && d.success !== true) d = { ...d, success: false, fallback: true, error: `${d.error || d.answer || 'chat failed'} (HTTP ${r.status})` }; }
@@ -2406,7 +2462,11 @@ async function chatAI(text) {
   if (netErr || (d && d.success === false && d.fallback)) {
     box.closest('.msg').remove();
     /* v61 (solver finding 14 Nov): show the solver's own words, never build something else from the sentence */
+    const down = httpStatus === 502 || httpStatus === 503 || httpStatus === 504;
+    const open = (state.sel != null && state.variants[state.sel]) || state.part;
     const detail = netErr ? (netErr === 'timed out' ? L('The engine did not answer within 110 s.', 'Mesin tidak menjawab dalam 110 detik.') : `AI chat ${netErr}.`)
+      : down ? L(`IDRIS AI is not available right now (HTTP ${httpStatus}). ` + (open ? 'The variant is open; its numbers come from the solver.' : 'Nothing was changed.'),
+        `IDRIS AI tidak tersedia sekarang (HTTP ${httpStatus}). ` + (open ? 'Variannya tetap terbuka; angkanya dari solver.' : 'Tidak ada yang diubah.'))
       : String(d.answer || d.error || 'AI chat unavailable') + (d && d.detail ? `\n${typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail)}` : '');
     return chatFallback(text, detail, d);
   }
@@ -3002,7 +3062,11 @@ async function selectVariant(i) {
       ...others.map((j) => ({ label: `Compare with ${state.variants[j].name}`, fn: () => compare(i, j) })), { label: 'Download STL', fn: downloadSTL }]));
     setAdvice(null); askEnvBasis(v, state.envCheck);
   } catch (e) {
-    box.innerHTML = ''; box.append(h('div', { class: 'err' }, e.message), chips([{ label: 'Retry', fn: () => selectVariant(i) }]));
+    /* S14 D: a 503/502/empty /chat answer must never surface as a raw TypeError ("… reading 'length'"). */
+    const raw = String((e && e.message) || e);
+    const msg = /Cannot read propert/.test(raw) ? L('IDRIS AI is not available right now (HTTP 503). The variant is open; its numbers come from the solver.',
+      'IDRIS AI tidak tersedia sekarang (HTTP 503). Variannya tetap terbuka; angkanya dari solver.') : raw;
+    box.innerHTML = ''; box.append(h('div', { class: 'err' }, msg), chips([{ label: 'Retry', fn: () => selectVariant(i) }]));
     openChatIfNarrow();
   } finally { clearTimeout(coldGeo); $('#vload').classList.remove('on'); state.busy = false; setBusy(false); updateStatus(); scrollDown(); }
 }
@@ -5463,8 +5527,6 @@ function renderCad() {
   lf.append(h('div', { class: 'lphdrow' }, h('span', null, L('Feature tree', 'Pohon fitur')), h('small', null, v ? v.name : '')));
   lf.append(h('div', { class: 'cpend', style: 'padding:0 12px 4px' }, L('Feature steps (Sketch → Extrude → Hole → Fillet) appear here once the solver sends the feature tree. Today a design is built from its parameters: change them on the right or ask IDRIS.',
     'Langkah fitur (Sketch → Extrude → Hole → Fillet) muncul di sini setelah solver mengirim pohon fitur. Untuk sekarang desain dibangun dari parameternya: ubah di kanan atau minta IDRIS.')));
-  if (state.variants.length) lf.append(h('div', { class: 'hd' }, h('span', null, L('Variants', 'Varian'))), h('div', { class: 'cvars' }, state.variants.map((x, i) => h('button', { class: i === state.sel ? 'on' : '', 'aria-pressed': i === state.sel ? 'true' : 'false', title: x.tag || '', onclick: () => selectVariant(i) },
-    h('span', null, vLetter(x)), h('span', { class: 'm' }, x.mass_kg && isFinite(x.mass_kg.total) ? f(x.mass_kg.total, 2) + ' kg' : '')))));
   if (v) { const r = (state.data && state.data.requirements) || {}, hm = (v.materials && v.materials.housing) || r.housing_material, gm = (v.materials && v.materials.gear) || r.gear_material;
     lf.append(h('div', { class: 'cmat', style: 'margin:0 12px' }, h('span', null, L('Material', 'Material')), h('b', null, [hm && `${L('Housing', 'Housing')} ${hm}`, gm && `${L('Gears', 'Gear')} ${gm}`].filter(Boolean).join(' · ') || '—'),
       v.mass_kg && isFinite(v.mass_kg.total) ? h('span', null, L(`Total mass ${f(v.mass_kg.total, 2)} kg`, `Massa total ${f(v.mass_kg.total, 2)} kg`)) : null)); }
@@ -6564,7 +6626,7 @@ function startPart(saved) {
   if (state.busy) return;
   if (state.variants.length || state.data) { resetAll(); }
   state.part = saved || { name: 'Part1', material: 'aluminium', features: [] }; partSel = null; partArm = null; partInfo = null;
-  if (!isCad()) setLayout('cad'); hideDock(true); renderTree(); renderCad();
+  if (!isCad()) setLayout('cad'); hideDock(true); renderTree(); renderCad(); if (!saved) setLpTab('tree');
   if (state.part.features.length) rebuildPart(true);
   else if (!state.part.gen) say(para(L('New part. Start with a primitive (Box, Cylinder, Tube, Sphere) or a Sketch from the toolbar; every step is kept in the feature tree and can be changed later. The CAD kernel (OpenCascade) loads on first use, ≈23 MB once.',
     'Part baru. Mulai dengan primitive (Box, Cylinder, Tube, Sphere) atau Sketch dari toolbar; setiap langkah tersimpan di pohon fitur dan bisa diubah kapan saja. Kernel CAD (OpenCascade) dimuat saat pertama dipakai, ≈23 MB sekali saja.'), 'm'));
@@ -6589,7 +6651,7 @@ function partTool(k, preset, label) {
   partArm = { type: k, p: { ...defaults(k), ...(preset || {}) }, n: label || null, d: label && typeof RIB_ALL !== 'undefined' ? (RIB_ALL.find((t) => t.n === label) || {}) : null }; partSel = null; cadTab = 'design';
   /* S10-A: opening a tool shows the panel that holds its form, scrolls the form into view and focuses its first field */
   if (narrow() || document.body.classList.contains('hide-chat')) setChat(true);
-  renderCad();
+  renderCad(); setLpTab('edit');
   requestAnimationFrame(() => {
     const pr = $('#cadProps'), form = document.querySelector('#cadProps .pform');
     if (form && form.scrollIntoView) form.scrollIntoView({ block: 'nearest' }); else if (pr) pr.scrollTop = 0;
@@ -7425,8 +7487,8 @@ function renderPartCad() {
   lf.append(h('div', { class: 'lphdrow' }, h('span', null, L('Feature tree', 'Pohon fitur')),
     h('small', null, `${p.features.length} ${L(p.features.length === 1 ? 'step' : 'steps', 'langkah')} · OpenCascade`)));
   lf.append(h('ol', { class: 'pft' }, p.features.length ? p.features.map((ft, i) => h('li', { class: (i === partSel ? 'on ' : '') + (ft.err ? 'err ' : '') + (ft.off ? 'off' : '') },
-    h('button', { class: 'pfn', onclick: () => { partSel = i; partArm = null; renderCad(); if (narrow()) setChat(true); },
-      ondblclick: () => { partSel = i; partArm = null; renderCad(); setTimeout(() => { const inp = document.querySelector('#cadProps .pform input') || document.querySelector('#cadProps .pform select'); if (inp) { inp.focus(); if (inp.select) inp.select(); } }, 40); },
+    h('button', { class: 'pfn', onclick: () => { partSel = i; partArm = null; renderCad(); setLpTab('edit'); if (narrow()) setChat(true); },
+      ondblclick: () => { partSel = i; partArm = null; renderCad(); setLpTab('edit'); setTimeout(() => { const inp = document.querySelector('#cadProps .pform input') || document.querySelector('#cadProps .pform select'); if (inp) { inp.focus(); if (inp.select) inp.select(); } }, 40); },
       title: (ft.err || ft.note || '') + '\n' + L('Double-click to edit', 'Dobel-klik untuk mengubah') },
       h('span', { class: 'pfi', 'aria-hidden': 'true' }, ribIcon(FEAT_ICON[ft.type] || 'box')),
       h('span', { class: 'cdot ' + (ft.off ? '' : ft.err ? 'bad' : ft.note ? 'warn' : 'ok'), 'aria-hidden': 'true' }),
@@ -7442,8 +7504,8 @@ function renderPartCad() {
   else if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
       h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : TOOL_GROUPS.find((g) => g[0] === partArm.type)[2]),
-      pform(partArm.type, partArm.p, () => { p.features.push({ id: Date.now().toString(36), type: partArm.type, p: { ...partArm.p } }); partSel = p.features.length - 1; const fit = p.features.length === 1; partArm = null; viewer.setPreview(null); hideSkLabel(); if (narrow()) setChat(false); rebuildPart(fit); },
-        L('Add & build', 'Tambah & bangun'), () => { partArm = null; viewer.setPreview(null); hideSkLabel(); renderCad(); }));
+      pform(partArm.type, partArm.p, () => { p.features.push({ id: Date.now().toString(36), type: partArm.type, p: { ...partArm.p } }); partSel = p.features.length - 1; const fit = p.features.length === 1; partArm = null; viewer.setPreview(null); hideSkLabel(); if (narrow()) setChat(false); setLpTab('tree'); rebuildPart(fit); },
+        L('Add & build', 'Tambah & bangun'), () => { partArm = null; viewer.setPreview(null); hideSkLabel(); renderCad(); setLpTab('tree'); }));
   } else if (fsel && fsel.type === 'sketch' && fsel.p.prof === 'ents') {
     /* P1a: a lines-and-arcs sketch keeps its entities: show them, and reopen the session to change them */
     const ents = fsel.p.ents || [], dof = p1DOF(ents, fsel.p.rels || [], fsel.p.dims || []), loop = p1OuterLoop(ents);
@@ -7457,7 +7519,7 @@ function renderPartCad() {
     pr.append(h('h2', null, h('span', null, `${partSel + 1}. ${featName(fsel)}`), h('span', { class: 'phd' }, h('small', null, FEAT[fsel.type].label(fsel.p)))),
       ...[fsel.err ? h('div', { class: 'warnbox bad' }, h('b', null, L('This step failed', 'Langkah ini gagal')), h('div', null, fsel.err)) : null,
         fsel.note ? h('p', { class: 'hint' }, fsel.note) : null].filter(Boolean),
-      pform(fsel.type, edit, () => { fsel.p = { ...edit }; if (narrow()) setChat(false); rebuildPart(); }, L('Update & rebuild', 'Perbarui & bangun ulang'), () => { partSel = null; renderCad(); }));
+      pform(fsel.type, edit, () => { fsel.p = { ...edit }; if (narrow()) setChat(false); setLpTab('tree'); rebuildPart(); }, L('Update & rebuild', 'Perbarui & bangun ulang'), () => { partSel = null; renderCad(); setLpTab('tree'); }));
   } else if (partSel === 'mass') {
     /* S11-B3: Mass Properties has its own panel: kernel volume and area, mass = volume × density, and where the density comes from. */
     const mat = PMAT[state.part.material] || PMAT.aluminium;
@@ -9173,7 +9235,9 @@ function chatFallback(text, detail, d, noAI) {
   /* gearbox sentences, or commands while a gearbox design is open: the built-in gearbox parser may read them */
   if (GEARBOX_WORD.test(text) || TOOL_CMD.test(text) || (state.variants && state.variants.length)) {
     box.append(para(L('Your sentence is about the gearbox, so the built-in gearbox parser reads it instead.', 'Kalimatmu tentang gearbox, jadi parser gearbox bawaan yang membacanya.'), 'm'));
-    return handleLocal(text);
+    try { return handleLocal(text); } catch (e) {
+      box.append(para(L('IDRIS AI is not available right now (HTTP 503). The variant is open; its numbers come from the solver.',
+        'IDRIS AI tidak tersedia sekarang (HTTP 503). Variannya tetap terbuka; angkanya dari solver.'), 'm')); return; }
   }
   const hit = Object.entries(GEN_RECIPES).find(([, r]) => r.words.test(text));
   if (hit) { const [rk, rec] = hit; box.append(para(L(`IDRIS has a built-in “${rec.en || rk}” recipe. It is not your full sentence, so it is only built if you ask.`, `IDRIS punya resep bawaan “${rec.id || rk}”. Itu bukan kalimatmu seutuhnya, jadi hanya dibangun kalau kamu minta.`), 'm'),
@@ -9465,14 +9529,94 @@ let foldedFor = null;
   if (logo && !logo.querySelector('.lw')) { const tn = [...logo.childNodes].find((n) => n.nodeType === 3 && /IDRIS/.test(n.textContent));
     if (tn) { const w = document.createElement('span'); w.className = 'lw'; w.textContent = 'IDRIS'; const w2 = document.createElement('span'); w2.className = 'lw2'; w2.textContent = ' Design Studio'; tn.replaceWith(w, w2); } }
   /* Properties is part of the left column's single scroll area, below the feature tree */
-  const pr = $('#cadProps'), tree = document.querySelector('.pane-tree'), lps = document.querySelector('#lpScroll');
-  if (pr && tree) (lps || tree).append(pr);
+  const pr = $('#cadProps'), tree = document.querySelector('.pane-tree'), editPage = document.querySelector('#lppEdit');
+  if (pr && editPage) editPage.append(pr); else if (pr && tree) tree.append(pr);
   const items = () => [$('#cadWs'), $('#cadCrumb'), $('#cadTabs'), cb && cb.querySelector('.ccmd') || tb.querySelector('.ccmd')].filter(Boolean);
   const mq = matchMedia('(min-width:1181px)');
   const place = () => { const wide = mq.matches, anchor = $('#docTabs'); let after = anchor;
     items().forEach((el) => { if (wide) { after.after(el); after = el; } else cb.append(el); });
     if (typeof viewer !== 'undefined' && viewer && viewer.resize) setTimeout(() => viewer.resize(), 30); };
   place(); (mq.addEventListener ? mq.addEventListener('change', place) : mq.addListener(place));
+})();
+
+/* ---- S14: the left panel is four pages on one track — Tree, Variants, Edit, Library.
+ * The pages are the same nodes as before (moved, not rebuilt): their numbers and their sources stay as they were.
+ * The tab bar only exists in the CAD layout; a sketch session still owns the whole left column. */
+const LP_TABS = [['tree', 'Tree', 'Pohon'], ['var', 'Variants', 'Varian'], ['edit', 'Edit', 'Ubah'], ['lib', 'Library', 'Library']];
+const LP_PAGES = { tree: 'lppTree', var: 'lppVar', edit: 'lppEdit', lib: 'lppLib' };
+let lpTab = (() => { try { const t = localStorage.getItem('idris-lptab'); return LP_PAGES[t] ? t : 'tree'; } catch (e) { return 'tree'; } })();
+let lpAutoVar = null;
+function lpVariantCount() {
+  const p = state.part, g = p && p.gen;
+  if (g && g.isConcepts && Array.isArray(g.variants)) return g.variants.filter((v) => v.concept).length + (g.conceptFail || []).length;
+  return (state.variants && state.variants.length) || 0;
+}
+function lpVariantBusy() {
+  const p = state.part, g = p && p.gen;
+  return !!(g && g.isConcepts && (g.variants || []).some((v) => v.concept && /^(pending|building|fixing|designing)$/.test(v.status)));
+}
+function setLpTab(name, opt = {}) {
+  if (!LP_PAGES[name]) return;
+  const idx = LP_TABS.findIndex(([k]) => k === name), track = $('#lpTrack');
+  lpTab = name;
+  try { localStorage.setItem('idris-lptab', name); } catch (e) { /* in-memory only */ }
+  if (track) track.style.transform = `translateX(-${idx * 100}%)`;
+  document.querySelectorAll('#lpTabs button').forEach((b) => { const on = b.dataset.lptab === name;
+    b.setAttribute('aria-selected', on ? 'true' : 'false'); b.tabIndex = on ? 0 : -1; });
+  LP_TABS.forEach(([k]) => { const el = document.getElementById(LP_PAGES[k]); if (!el) return;
+    el.setAttribute('aria-hidden', k === name ? 'false' : 'true');
+    if (k === name) el.removeAttribute('inert'); else el.setAttribute('inert', ''); });
+  if (name === 'var') lpRenderVariants();
+  if (opt.focus) { const b = document.querySelector(`#lpTabs button[data-lptab="${name}"]`); if (b) b.focus(); }
+}
+function lpSyncVarTab() {
+  const btn = $('#lpTabVar'); if (!btn) return;
+  const n = lpVariantCount(), has = n > 0;
+  btn.hidden = !has;
+  const lab = btn.querySelector('.lplab'); if (lab) lab.textContent = has ? `Variants (${n})` : 'Variants';
+  btn.classList.toggle('busy', has && lpVariantBusy());
+  btn.title = has ? L(`${n} variants: concepts from the solver, or the gearbox variants`, `${n} varian: konsep dari solver, atau varian gearbox`) : '';
+  if (!has && lpTab === 'var') setLpTab('tree');
+}
+/* the gearbox variant list lives here, not in the feature tree (Arya, 21 Nov). Concept cards fill this page themselves. */
+function lpRenderVariants() {
+  const page = $('#lppVar'); if (!page) return;
+  const p = state.part, g = p && p.gen;
+  if (g && g.isConcepts) return;
+  const vs = state.variants || [];
+  if (!vs.length) { page.innerHTML = ''; return; }
+  const keep = page.scrollTop;
+  page.innerHTML = '';
+  page.append(h('div', { class: 'lphdrow' }, h('span', null, L('Variants', 'Varian')), h('small', null, L(`${vs.length} from the solver`, `${vs.length} dari solver`))),
+    vlist(vs, state.sel != null ? state.sel : 0),
+    h('p', { class: 'lphint', style: 'padding:8px 12px' }, L('Choose one to see it in 3D. The numbers come from the solver; this page stays open so you can compare them one by one.',
+      'Pilih satu untuk melihatnya di 3D. Angkanya dari solver; halaman ini tetap terbuka supaya kamu bisa membandingkan satu per satu.')));
+  page.querySelectorAll('.vrow').forEach((b, i) => { const on = i === state.sel; b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  page.scrollTop = keep;
+}
+{ const rc = renderCad; renderCad = function () { const r = rc.apply(this, arguments); lpSyncVarTab(); if (lpTab === 'var') lpRenderVariants(); return r; }; }
+{ const sv = selectVariant; selectVariant = async function () { const r = await sv.apply(this, arguments); lpSyncVarTab(); if (lpTab === 'var') lpRenderVariants(); return r; }; }
+(function initLpTabs() {
+  const bar = $('#lpTabs'), sc = $('#lpScroll'); if (!bar || !sc) return;
+  const available = () => LP_TABS.filter(([k]) => { const b = bar.querySelector(`button[data-lptab="${k}"]`); return b && !b.hidden; });
+  bar.addEventListener('click', (e) => { const b = e.target.closest('button[data-lptab]'); if (b && !b.hidden) setLpTab(b.dataset.lptab); });
+  bar.addEventListener('keydown', (e) => {
+    if (!/^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key)) return;
+    const av = available(), at = av.findIndex(([k]) => k === lpTab); if (at < 0 || !av.length) return;
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? av.length - 1 : (at + (e.key === 'ArrowRight' ? 1 : -1) + av.length) % av.length;
+    e.preventDefault(); setLpTab(av[next][0], { focus: true });
+  });
+  /* tablet: a horizontal swipe moves one page; a vertical scroll still scrolls the page (threshold 40 px) */
+  let st = null;
+  sc.addEventListener('touchstart', (e) => { const t = e.touches[0]; st = t ? { x: t.clientX, y: t.clientY } : null; }, { passive: true });
+  sc.addEventListener('touchend', (e) => {
+    if (!st) return; const t = e.changedTouches[0], dx = (t ? t.clientX : st.x) - st.x, dy = (t ? t.clientY : st.y) - st.y; st = null;
+    if (Math.abs(dx) < 40 || Math.abs(dx) < 1.6 * Math.abs(dy)) return;
+    const av = available(), at = av.findIndex(([k]) => k === lpTab); if (at < 0) return;
+    const next = at + (dx < 0 ? 1 : -1); if (next < 0 || next >= av.length) return;
+    setLpTab(av[next][0]);
+  }, { passive: true });
+  setLpTab(lpTab);
 })();
 
 /* ---- v62.1: fold the toolbar (double-click a tab, or the button) and focus mode (F) */
@@ -9523,6 +9667,8 @@ const CONC_FIX_MAX = 2;
         expect: Array.isArray(c.cad.expect) ? c.cad.expect : [], requirements: c.cad.requirements && typeof c.cad.requirements === 'object' ? c.cad.requirements : null, status: top ? 'building' : 'pending', fixes: 0, score: null }; });
     let a = g.variants.findIndex((v) => v.status === 'building'); if (a < 0) { a = 0; g.variants[0].status = 'building'; g.params = genClone(g.variants[0].params); g.code = g.variants[0].code; g.variants[0].params = g.params; }
     g.active = a; g.requirements = g.variants[a].requirements || g.requirements || null; p.name = g.variants[a].name; g.reviewNext = 0; conceptRun = null;
+    /* S14: the concepts start building, so the panel opens on them once — the engineer may move the tab afterwards. */
+    if (typeof setLpTab === 'function' && lpAutoVar !== p.id) { lpAutoVar = p.id; setLpTab('var'); }
     savePart(); return r; }; }
 /* the solver's whole answer is needed for `concepts`; chatAI hands genFromAI only d.cad */
 { const f0 = window.fetch.bind(window); window.fetch = async function (url, opt) {
@@ -9702,18 +9848,14 @@ function conceptCards(p) {
   if (cr.none && !building) box.append(para(L('No load was given, so the concepts are not ranked. Tell IDRIS the load and where the part is held, for example “it must hold 2 kg, screwed to the wall”.', 'Belum ada beban, jadi konsep belum diurutkan. Sebutkan beban dan tumpuannya, misalnya “harus menahan 2 kg, disekrup ke dinding”.'), 'm'));
   const cur = g.variants[g.active];
   if (cur && cur.status === 'built' && conceptHasLoads(cur, p) && p.material !== 'cast_iron') box.append(h('div', { class: 'gen-var' }, h('button', { class: 'chip primary', disabled: genBusy, onclick: () => { ribAct('partFea'); setTimeout(() => { if (typeof feaExploreGo === 'function') feaExploreGo(); }, 200); } }, L(`Optimize sizes of “${cur.name}”`, `Optimasi ukuran “${cur.name}”`))));
-  if (g.conceptsMin) { [...box.childNodes].slice(1).forEach((n) => n.remove()); }
-  box.querySelector('.conc-h').append(h('button', { class: 'chip', style: 'margin-left:8px', 'aria-expanded': g.conceptsMin ? 'false' : 'true', onclick: () => { g.conceptsMin = !g.conceptsMin; savePart(); renderCad(); } }, g.conceptsMin ? L('Show cards ▴', 'Tampilkan kartu ▴') : L('Hide cards ▾', 'Sembunyikan kartu ▾')));
   box.querySelector('.conc-h').append(h('span', { class: 'conc-src', title: L('Mass and size: OpenCascade kernel. SF: Part Stress (FEA, screening). Rank: solver. Concepts you do not pick stay saved with the part.', 'Massa dan ukuran: kernel OpenCascade. SF: Part Stress (FEA, screening). Peringkat: solver. Konsep yang tidak dipilih tetap tersimpan bersama part.') }, L('mass: kernel · SF: FEA · rank: solver', 'massa: kernel · SF: FEA · peringkat: solver')));
   return box;
 }
-{ const rg = renderGenCad; renderGenCad = function () { rg.apply(this, arguments); const p = state.part, g = p && p.gen, lf = $('#cadLeft'); if (!g || !g.isConcepts || !lf) return;
-    const vp = $('#viewport'); let st = $('#concStrip'); if (!st) { st = h('div', { id: 'concStrip', class: 'conc-strip', role: 'region', 'aria-label': L('Concepts', 'Konsep') }); vp.append(st); }
-    const sl = st.querySelector('.conc-row'), keep = sl ? sl.scrollLeft : 0; st.innerHTML = ''; st.append(...conceptCards(p).childNodes); const row = st.querySelector('.conc-row'); if (row) row.scrollLeft = keep;
-    const vs = document.querySelector('#cadProps .gen-vars'); if (vs) vs.remove(); }; }
-{ const rc = renderCad; renderCad = function () { const r = rc.apply(this, arguments); const p = state.part;
-    if (!(p && p.gen && p.gen.isConcepts && isCad())) { const st = $('#concStrip'); if (st) st.remove(); }
-    return r; }; }
+/* S14 C: the concept cards are the Variants page of the left panel; the strip under the viewport is gone. */
+{ const rg = renderGenCad; renderGenCad = function () { rg.apply(this, arguments); const p = state.part, g = p && p.gen, page = $('#lppVar'); if (!g || !g.isConcepts || !page) return;
+    const keep = page.scrollTop; page.innerHTML = ''; page.append(...conceptCards(p).childNodes); page.scrollTop = keep;
+    const vs = document.querySelector('#cadProps .gen-vars'); if (vs) vs.remove();
+    if (typeof lpSyncVarTab === 'function') lpSyncVarTab(); }; }
 /* a part reopened from storage resumes its unfinished concepts */
 { const sp = startPart; startPart = function () { conceptRun = null; return sp.apply(this, arguments); }; }
 

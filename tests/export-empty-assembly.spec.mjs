@@ -33,6 +33,9 @@ await page.waitForFunction(() => !!window.__idris, null, { timeout: 60000 });
 const home = page.getByRole('button', { name: 'Open the workspace' });
 if (await home.count()) { await home.first().click(); await page.waitForTimeout(900); }
 
+/* S14: Saved parts now live on the Library tab of the left panel */
+await page.evaluate(() => { const b = document.querySelector('#lpTabLib'); if (b) b.click(); });
+await page.waitForTimeout(300);
 /* one classic part, built by the kernel: the shape form's default box */
 const newPart = page.locator('#tree').getByRole('button', { name: 'New part' }).first();
 if (!(await newPart.isVisible().catch(() => false))) { await page.locator('#cTree').click().catch(() => {}); await page.waitForTimeout(500); }
