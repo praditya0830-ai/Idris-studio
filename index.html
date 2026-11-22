@@ -535,6 +535,10 @@ table.grid td.bad{color:var(--bad);font-weight:600}
 .apx-sw label.on{border-color:var(--text)} .apx-sw input[type=color]{width:24px;height:24px;border:0;padding:0;background:none;cursor:pointer}
 .apx-note{font-size:12px;line-height:1.45;color:var(--warn);background:var(--warn-bg);border-radius:6px;padding:6px 9px}
 .apx-foot{font-size:11.5px;line-height:1.45;color:var(--dim);border-top:1px solid var(--line);padding-top:10px}
+.apx-kv{display:flex;justify-content:space-between;gap:10px;font-size:12px;line-height:1.4;padding:3px 0;border-bottom:1px solid var(--line)}
+.apx-kv:last-child{border-bottom:0}
+.apx-kv b{white-space:nowrap;text-align:right}
+.apx-sub{font-size:11px;line-height:1.4;color:var(--dim);margin:6px 0 0}
 /* comfortable density: touch targets >= 44 px */
 body.comfy{--tbH:52px}
 body.comfy .tbtn{width:44px;height:44px} body.comfy .modeseg button{min-height:40px;padding:4px 12px}
@@ -5320,8 +5324,55 @@ function renderAppearance() {
     grp(L('Viewport background', 'Latar viewport'), seg('vp', [['auto', 'Follow theme', 'Ikuti tema'], ['light', 'Light gradient', 'Gradien terang'], ['grey', 'Neutral grey', 'Abu netral'], ['dark', 'Dark', 'Gelap'], ['white', 'Plain white', 'Putih polos']])),
     grp(L('Model colour', 'Warna model'), seg('model', [['material', 'By material', 'Sesuai material'], ['metal', 'Metal grey', 'Logam abu'], ['part', 'Per part', 'Per part']])),
     grp(L('Density', 'Kepadatan'), seg('density', [['auto', 'Auto', 'Otomatis'], ['comfortable', 'Comfortable', 'Lega'], ['compact', 'Compact', 'Ringkas']])),
+    grp(L('AI usage today', 'Pemakaian AI hari ini'), aiUsageBox()),
+    grp(L('About IDRIS — reference status', 'Tentang IDRIS — status referensi'), refsStatusBox()),
     h('div', { class: 'apx-foot' }, L('Pass / note / fail colours stay green / amber / red in every theme. Saved on this device only; designs, STEP files and reports are not affected. You can also type "theme dark" or "accent teal" in the chat.',
       'Warna lolos / catatan / gagal tetap hijau / amber / merah di semua tema. Disimpan di perangkat ini saja; desain, file STEP, dan laporan tidak terpengaruh. Bisa juga ketik "theme dark" atau "accent teal" di chat.')));
+}
+/* S7: the numbers the solver reports, in Settings. No per-provider split exists in GET /ai/usage, so none is
+ * invented: the total is shown and the assumed-price providers are listed. About shows whether search and the
+ * reference database are configured and which provider is used — never a key. */
+let aiUsageCache = null, aiUsageAt = 0, refsStatusCache = null, refsStatusAt = 0;
+const kv = (label, value, cls) => h('div', { class: 'apx-kv' + (cls ? ' ' + cls : '') }, h('span', null, label), h('b', null, value));
+function aiUsageBox() {
+  const box = h('div', { id: 'aiUsage' }, h('p', { class: 'apx-sub' }, L('Reading GET /ai/usage…', 'Membaca GET /ai/usage…')));
+  const paint = () => {
+    box.innerHTML = '';
+    if (!aiUsageCache) return box.append(h('p', { class: 'apx-sub' }, L('The solver did not answer GET /ai/usage, so there is no usage to show.', 'Solver tidak menjawab GET /ai/usage, jadi tidak ada pemakaian untuk ditampilkan.')));
+    const d = aiUsageCache, t = d.tokens_today || {};
+    box.append(kv(L('Calls today', 'Panggilan hari ini'), `${d.calls_today} / ${d.calls_today_cap}` + (d.calls_today_left != null ? ` · ${d.calls_today_left} ` + L('left', 'tersisa') : '')),
+      kv(L('Tokens today (in / out)', 'Token hari ini (masuk / keluar)'), `${t.input ?? 0} / ${t.output ?? 0}`),
+      kv(L('Estimated cost today', 'Perkiraan biaya hari ini'), `$${f(d.estimated_cost_usd_today, 4)}`),
+      kv(L('Estimated cost this month', 'Perkiraan biaya bulan ini'), `$${f(d.estimated_cost_usd_month, 4)}` + (d.monthly_budget_usd != null ? ` / $${f(d.monthly_budget_usd, 2)}` : '')),
+      kv(L('Day (UTC)', 'Hari (UTC)'), String(d.date_utc || '—')));
+    if (d.blocked) box.append(h('p', { class: 'apx-sub' }, L('Blocked: ', 'Diblokir: ') + String(d.blocked_reason || d.blocked)));
+    if ((d.unpriced_providers || []).length) box.append(h('p', { class: 'apx-sub' }, L('Providers with no price row: ', 'Provider tanpa baris harga: ') + d.unpriced_providers.join(', ')));
+    box.append(h('p', { class: 'apx-sub' }, L('GET /ai/usage reports one total per day, not a per-provider split. Prices assumed for: ', 'GET /ai/usage melaporkan satu total per hari, bukan pecahan per provider. Harga diasumsikan untuk: ') + ((d.price_assumed || []).join(', ') || '—')),
+      h('p', { class: 'apx-sub' }, String(d.price_source || '')),
+      h('p', { class: 'apx-sub' }, String(d.note || '')));
+  };
+  if (aiUsageCache) paint();
+  else apiJSON('/ai/usage', undefined, 20000).then((r) => { aiUsageCache = r && r.ok && r.d && r.d.success ? r.d : null; aiUsageAt = Date.now(); if (box.isConnected) paint(); }).catch(() => { if (box.isConnected) paint(); });
+  return box;
+}
+function refsStatusBox() {
+  const box = h('div', { id: 'refsStatus' }, h('p', { class: 'apx-sub' }, L('Reading GET /references/status…', 'Membaca GET /references/status…')));
+  const paint = () => {
+    box.innerHTML = '';
+    if (!refsStatusCache) return box.append(h('p', { class: 'apx-sub' }, L('The solver did not answer GET /references/status.', 'Solver tidak menjawab GET /references/status.')));
+    const d = refsStatusCache, sr = d.search || {}, db = d.database || {};
+    box.append(kv(L('Web search', 'Pencarian web'), (sr.configured ? L('configured', 'terpasang') : L('not configured', 'belum terpasang')) + (sr.provider ? ` · ${sr.provider}` : '')),
+      kv(L('Reference database', 'Basis data referensi'), (db.configured ? L('configured', 'terpasang') : L('not configured', 'belum terpasang')) + (db.branch ? ` · ${db.branch}` : '')),
+      kv(L('Readable', 'Bisa dibaca'), db.readable ? L('yes', 'ya') : L('no', 'tidak')),
+      kv(L('Stored references', 'Referensi tersimpan'), String(d.stored_count ?? 0)),
+      kv(L('Solver version', 'Versi solver'), String(d.solver_version || '—')));
+    if (db.error) box.append(h('p', { class: 'apx-sub' }, L('Database: ', 'Basis data: ') + String(db.error)));
+    if (db.writable_hint) box.append(h('p', { class: 'apx-sub' }, String(db.writable_hint)));
+    box.append(h('p', { class: 'apx-sub' }, L('No API key is shown here or sent to the browser.', 'Tidak ada kunci API yang ditampilkan di sini atau dikirim ke browser.')));
+  };
+  if (refsStatusCache) paint();
+  else apiJSON('/references/status', undefined, 20000).then((r) => { refsStatusCache = r && r.ok && r.d && r.d.success ? r.d : null; refsStatusAt = Date.now(); if (box.isConnected) paint(); }).catch(() => { if (box.isConnected) paint(); });
+  return box;
 }
 function toggleAppearance(open) {
   const box = $('#apx'); open = open ?? box.hidden; box.hidden = !open; $('#apxBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
