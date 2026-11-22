@@ -11579,6 +11579,152 @@ async function shapeStudy(request, count, obj) {
     shapeObjectives(text).then((obj) => { if (!obj || !obj.goals || !obj.goals.length) return; const last = [...document.querySelectorAll('#chat .msg.ai .ai-body')].pop(); if (last) { last.append(goalBox(text, obj)); scrollDown(); } });
     return r; }; }
 
+/* ---- v0.44 a reliable assembly, decided by the solver's joint check (brief 22 Nov, part 5).
+ * After the parts are placed, POST /join/plan decides whether the assembly is OK, needs a fix, or failed — with the
+ * parts and checks the solver names. A shift the solver proposes is a PROPOSAL: it is shown with its part, axis and
+ * distance and is only applied when the engineer accepts it, because moving a tube on our own can pull it away from
+ * the curved part it was designed to meet. A part with no size in the plan is reported as not checked, not guessed. */
+function asmJointSizes(pt) {
+  const raw = pt && (pt.bbox_mm || pt.size_mm || pt.dims_mm || (pt.cad && (pt.cad.bbox_mm || pt.cad.size_mm)));
+  if (!Array.isArray(raw) || raw.length !== 3) return null;
+  const size = raw.map(Number);
+  return size.every((x) => isFinite(x) && x > 0) ? size : null;
+}
+async function asmJointCheck(a) {
+  if (!a) return null;
+  const plan = a.plan || {}, ifs = Array.isArray(plan.interfaces) ? plan.interfaces : [];
+  const parts = [], skipped = [];
+  (a.parts || []).forEach((pt) => {
+    if (!pt || pt.status === 'standard') return;
+    const size = asmJointSizes(pt);
+    if (!size) { skipped.push(String(pt.name || pt.id)); return; }
+    const fr = ((a.assembly && a.assembly.parts) || []).find((x) => String(x.id) === String(pt.id));
+    const at = fr && Array.isArray(fr.origin_mm) ? fr.origin_mm.map(Number) : [0, 0, 0];
+    parts.push({ name: String(pt.name || pt.id), material: String(pt.material || 'steel').toLowerCase(),
+      qty: +pt.qty || 1, shape: { type: 'box', size, at } });
+  });
+  a.joint = { status: 'checking', skipped };
+  renderAsm();
+  if (!parts.length) {
+    a.joint = { status: 'unknown', skipped, why: L('No part in this plan carries a size, so the joint check has nothing to measure. Give the parts their sizes, then check again.',
+      'Tidak ada part di rencana ini yang membawa ukuran, jadi cek sambungan tidak punya apa pun untuk diukur. Beri ukuran part-nya, lalu cek lagi.') };
+    return renderAsm();
+  }
+  const joints = ifs.map((x) => ({ between: (x.between || []).map(String), kind: x.kind || 'contact', params: x.params || {} }));
+  const r = await apiJSON('/join/plan', { parts, interfaces: joints, fix: false }, 60000).catch((e) => ({ status: 0, d: { error: e.message } }));
+  const d = (r && r.d) || {};
+  if (!r || !r.ok || !Array.isArray(d.checks)) {
+    a.joint = { status: 'unknown', skipped, why: budgetHit(r && r.status, d) ? String(d.error || 'Daily AI budget reached')
+      : r && r.status === 404 ? L('This solver has no POST /join/plan yet.', 'Solver ini belum punya POST /join/plan.')
+        : String(d.error || `HTTP ${r && r.status}`) };
+    return renderAsm();
+  }
+  const failed = Array.isArray(d.failed) ? d.failed : [];
+  const floating = Array.isArray(d.floating) ? d.floating : [];
+  const framesComplete = a.assembly ? a.assembly.frames_complete : null;
+  a.joint = { status: failed.length ? 'failed' : (floating.length || framesComplete === false) ? 'needs_fix' : 'ok',
+    checked: parts.length, skipped, failed, floating, framesComplete,
+    passed: (d.checks || []).filter((c) => c.status === 'pass').length, total: (d.checks || []).length,
+    proposals: (Array.isArray(d.proposed_fixes) ? d.proposed_fixes : []).map((p) => ({ ...p, accepted: false })),
+    assumptions: Array.isArray(d.assumptions) ? d.assumptions : [], notes: Array.isArray(d.notes) ? d.notes : [] };
+  renderAsm();
+  return a.joint;
+}
+function asmAcceptFix(i) {
+  const a = asmJob, j = a && a.joint, fix = j && j.proposals[i];
+  if (!fix) return null;
+  const axis = 'xyz'.indexOf(String(fix.axis || 'z').slice(0, 1).toLowerCase());
+  const frames = (a.assembly && a.assembly.parts) || [];
+  /* the solver names a part by its name ("Sensor bracket"); a frame carries the part id */
+  const nameOf = (x) => String(((a.parts || []).find((pt) => String(pt.id) === String(x.id)) || {}).name || x.name || '');
+  const fr = frames.find((x) => String(x.id) === String(fix.part))
+    || frames.find((x) => nameOf(x) === String(fix.part))
+    || frames.find((x) => String(x.name || '') === String(fix.part));
+  if (!fr || axis < 0) {
+    j.proposals[i].accepted = false;
+    j.proposals[i].why_not = L('the plan gives no frame for this part, so there is nothing to shift here',
+      'rencana tidak memberi frame untuk part ini, jadi tidak ada yang bisa digeser di sini');
+    return renderAsm();
+  }
+  const at = Array.isArray(fr.origin_mm) ? fr.origin_mm.slice() : [0, 0, 0];
+  at[axis] = +((+at[axis] || 0) + (+fix.shift_mm || 0)).toFixed(3);
+  fr.origin_mm = at;
+  j.proposals[i].accepted = true;
+  renderAsm();
+  return asmJointCheck(a);
+}
+function asmFixRow(p, i) {
+  const btn = p.accepted
+    ? h('span', { class: 'badge ok', style: 'margin-left:6px' }, L('accepted', 'diterima'))
+    : h('button', { class: 'chip', style: 'margin-left:6px', onclick: () => asmAcceptFix(i) }, L('Accept the shift', 'Terima geseran'));
+  return h('li', { 'data-fix': String(i) },
+    `${p.part} → ${p.with || ''}: ${p.shift_mm > 0 ? '+' : ''}${p.shift_mm} mm ${p.axis}`,
+    btn,
+    p.why_not ? h('small', null, ' · ' + p.why_not) : null);
+}
+function asmJointCard(a) {
+  const j = a.joint, st = j.status;
+  const label = st === 'ok' ? L('Assembly OK', 'Rakitan OK') : st === 'failed'
+    ? L(`FAILED: ${j.failed.length} check(s) failed`, `GAGAL: ${j.failed.length} cek tidak lulus`)
+    : st === 'needs_fix' ? L('Needs a fix', 'Perlu perbaikan')
+      : st === 'checking' ? L('Checking the joints…', 'Memeriksa sambungan…') : L('not checked yet', 'belum dicek');
+  const box = h('div', { class: 'warnbox ' + (st === 'ok' ? '' : st === 'checking' ? '' : st === 'unknown' ? '' : 'bad'), id: 'asmJoint' },
+    h('b', null, `${L('Joints', 'Sambungan')}: ${label}`));
+  if (j.checked != null) {
+    box.append(h('p', { class: 'hint' }, L(`${j.checked} part(s) measured · ${j.passed || 0}/${j.total || 0} check(s) passed · ${(j.failed || []).length} failed · ${(j.floating || []).length} with no joint`,
+      `${j.checked} part diukur · ${j.passed || 0}/${j.total || 0} cek lulus · ${(j.failed || []).length} gagal · ${(j.floating || []).length} tanpa sambungan`)));
+  }
+  if (j.why) box.append(h('p', null, j.why));
+  if ((j.failed || []).length) {
+    box.append(h('ul', { class: 'joint-bad' }, j.failed.map((c) => h('li', { 'data-check': String(c.check || '') },
+      `${c.check || L('check', 'cek')}${c.parts ? ' · ' + [].concat(c.parts).join(' + ') : ''}: `
+      + (c.value_mm3 != null ? `${c.value_mm3} mm³` : c.value_mm != null ? `${c.value_mm} mm` : c.value != null ? String(c.value) : L('failed', 'gagal'))
+      + (c.source ? ' · ' + String(c.source) : '')))));
+  }
+  if ((j.floating || []).length) box.append(h('p', null, L('No joint touches: ', 'Tidak tersambung: ') + j.floating.join(', ')));
+  if (j.framesComplete === false) {
+    box.append(h('p', null, L('The plan gives no frame for some parts, so they sit at the origin: that is a fix, not an assembly.',
+      'Rencana tidak memberi frame untuk sebagian part, jadi mereka di titik asal: itu perlu perbaikan, bukan rakitan.')));
+  }
+  if ((j.proposals || []).length) {
+    box.append(h('div', { class: 'joint-fix' }, h('b', null, L('The solver proposes a shift — nothing is applied until you accept it',
+      'Solver mengusulkan geseran — belum diterapkan sampai kamu setujui')),
+      h('ul', null, j.proposals.map(asmFixRow))));
+  }
+  if ((j.skipped || []).length) {
+    box.append(h('p', { class: 'hint' }, L(`No size in the plan for: ${j.skipped.join(', ')} — not checked here, and no size was invented for it.`,
+      `Tidak ada ukuran di rencana untuk: ${j.skipped.join(', ')} — tidak dicek di sini, dan tidak ada ukuran yang dikarang.`)));
+  }
+  if (st !== 'checking') {
+    box.append(h('div', { class: 'gen-var' }, h('button', { class: 'chip', onclick: () => asmJointCheck(a) },
+      L('Check the joints', 'Cek sambungan'))));
+  }
+  return box;
+}
+{ const st6 = document.createElement('style');
+  st6.textContent = `.joint-bad{margin:4px 0 0 14px;padding:0;font-size:11.5px}
+ .joint-fix{margin-top:6px;border:1px solid #7a6528;border-radius:8px;padding:6px 8px;font-size:11.5px;color:#e8d79a}
+ .joint-fix ul{margin:4px 0 0 14px;padding:0}`;
+  document.head.append(st6); }
+{ const ra5 = renderAsm; renderAsm = function () {
+    const r = ra5.apply(this, arguments);
+    const a = asmJob, box = $('#asmPanel');
+    if (!a || !box) return r;
+    const old = $('#asmJoint'); if (old) old.remove();
+    if (a.stage !== 'design' || a.status === 'running' || !(a.parts || []).length) return r;
+    a.joint = a.joint || { status: 'idle' };
+    const card = asmJointCard(a);
+    const notchk = box.querySelector('.notchk');
+    if (notchk) notchk.before(card); else box.append(card);
+    return r;
+  }; }
+{ const aa5 = asmAssemble; asmAssemble = async function () {
+    const r = await aa5.apply(this, arguments);
+    const a = asmJob;
+    if (a && a.built && !a.built.error) await asmJointCheck(a);
+    return r;
+  }; }
+
 /* ================= 8. Bearings, materials, references ================= */
 async function openBearings() {
   const old = $('#beardlg'); if (old) old.remove();
