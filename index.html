@@ -11481,29 +11481,46 @@ async function exportAP242(assembly) {
 /* the Studio feature tree → the solver's IDRIS feature graph; anything that would not rebuild the same is sent as
    an op the macro does not translate, so it appears as NOT TRANSLATED instead of a wrong feature */
 function swGraph(p) {
-  const feats = [], local = []; let n = 0, sk = false;
-  const skip = (id, what, why) => { feats.push({ id, op: 'not_translated', params: { what, why } }); local.push({ feature: id, what, why }); };
+  const feats = [], local = []; let n = 0, sk = false, last = null;
+  const skip = (id, what, why) => { feats.push({ id, op: 'not_translated', deps: last ? [last] : [], params: { what, why } }); local.push({ feature: id, what, why }); last = id; };
+  const add = (id, op, params) => { feats.push({ id, op, deps: last ? [last] : [], params }); last = id; };
+  /* S3: a blind hole is drilled from the top face of the body as it stands, so the macro needs that height */
+  const topZ = () => { try { return partShape ? +(partShape.boundingBox.bounds[1][2]).toFixed(3) : null; } catch (e) { return null; } };
   for (const ft of p.features || []) {
     if (ft.off || ft.type === 'dim') continue; const q = ft.p || {}, id = 'f' + (++n);
     if (ft.type === 'shape') {
       if ((q.kind === 'box' || q.kind === 'cyl') && !(+q.x) && !(+q.y) && (q.op || 'add') === 'add') {
-        feats.push({ id: id + 's', op: 'sketch', params: q.kind === 'box' ? { plane: 'XY', profile: 'rectangle', w: +q.L, h: +q.W, offset: +q.z || 0 } : { plane: 'XY', profile: 'circle', w: +q.D, offset: +q.z || 0 } });
-        feats.push({ id: id + 'e', op: 'extrude', params: { distance: +q.H, direction: '+normal' } }); }
+        add(id + 's', 'sketch', q.kind === 'box' ? { plane: 'XY', profile: 'rectangle', w: +q.L, h: +q.W, offset: +q.z || 0 } : { plane: 'XY', profile: 'circle', w: +q.D, offset: +q.z || 0 });
+        add(id + 'e', 'extrude', { distance: +q.H, direction: '+normal' }); }
       else skip(id, `shape ${q.kind}`, q.kind === 'tube' || q.kind === 'sphere' ? 'no macro mapping for this primitive' : 'off-centre or cutting primitive: the macro sketches at the origin only');
       sk = false; continue; }
     if (ft.type === 'sketch') { const info = SW_AT.get(ft), s0 = info ? info.s : q, prof = { rect: 'rectangle', circle: 'circle', poly: 'polygon' }[s0.prof];
       if (!info) { skip(id, 'sketch', 'rebuild the part once so its plane position is known'); sk = false; continue; }
       if (!prof) { skip(id, `sketch ${s0.prof}`, 'slot and free-line profiles have no macro mapping'); sk = false; continue; }
-      if (+s0.u || +s0.v) { skip(id, 'sketch', `the profile is off-centre (${+s0.u || 0}, ${+s0.v || 0}) mm; the macro sketches at the origin`); sk = false; continue; }
-      feats.push({ id, op: 'sketch', params: { plane: s0.plane || 'XY', profile: prof, w: prof === 'rectangle' ? +s0.W : +s0.D, ...(prof === 'rectangle' ? { h: +s0.Hh } : {}), ...(prof === 'polygon' ? { n: +s0.n } : {}), offset: +(+info.at || 0).toFixed(4) } }); sk = true; continue; }
-    if (ft.type === 'push') { if (!sk) skip(id, 'extrude', 'its sketch was not translated'); else if (q.op === 'cut') skip(id, 'extruded cut', 'the macro writes boss extrudes only'); else feats.push({ id, op: 'extrude', params: { distance: Math.abs(+q.dist), direction: q.both === 'both' ? 'symmetric' : +q.dist < 0 ? '-normal' : '+normal' } }); sk = false; continue; }
-    if (ft.type === 'revolve') { if (!sk || (q.op || 'add') !== 'add') skip(id, 'revolve', !sk ? 'its sketch was not translated' : 'a revolved cut has no macro mapping'); else feats.push({ id, op: 'revolve', params: { angle_deg: +q.angle, axis: String(q.axis || 'Z').toLowerCase() } }); sk = false; continue; }
+      /* S3: the profile keeps its place on the plane; the macro draws the same centre (X2 cx/cy) */
+      const cx = +(+s0.u || 0).toFixed(4), cy = +(+s0.v || 0).toFixed(4);
+      add(id, 'sketch', { plane: s0.plane || 'XY', profile: prof, w: prof === 'rectangle' ? +s0.W : +s0.D,
+        ...(prof === 'rectangle' ? { h: +s0.Hh } : {}), ...(prof === 'polygon' ? { n: +s0.n } : {}),
+        ...(cx ? { cx } : {}), ...(cy ? { cy } : {}), offset: +(+info.at || 0).toFixed(4) });
+      sk = true; continue; }
+    if (ft.type === 'push') { if (!sk) skip(id, 'extrude', 'its sketch was not translated');
+      else add(id, 'extrude', { distance: Math.abs(+q.dist), ...(q.op === 'cut' ? { op: 'cut' } : {}), direction: q.both === 'both' ? 'symmetric' : +q.dist < 0 ? '-normal' : '+normal' });
+      sk = false; continue; }
+    if (ft.type === 'revolve') { if (!sk || (q.op || 'add') !== 'add') skip(id, 'revolve', !sk ? 'its sketch was not translated' : 'a revolved cut has no macro mapping'); else add(id, 'revolve', { angle_deg: +q.angle, axis: String(q.axis || 'Z').toLowerCase() }); sk = false; continue; }
     if (ft.type === 'hole') { const d = q.type === 'tap' ? TAP[q.M] : q.type === 'clear' ? +q.Dcat : +q.D;
-      if (q.depthMode === 'thru' && q.type !== 'cbore' && d > 0) feats.push({ id, op: 'hole', params: { x: +q.x || 0, y: +q.y || 0, d, through: true } });
-      else skip(id, 'hole', q.type === 'cbore' ? 'counterbore has no macro mapping' : 'a blind hole is drilled from the top in Studio and from the sketch plane by the macro'); continue; }
-    if (ft.type === 'edge') { if (q.mode === 'chamfer') skip(id, 'chamfer', 'no macro mapping'); else feats.push({ id, op: 'fillet', params: { radius: +q.r, edges: q.which || 'all' } }); continue; }
-    if (ft.type === 'repeat') { if (q.kind === 'line') feats.push({ id, op: 'pattern', params: { mode: 'linear', count: Math.round(+q.count), dx: +q.dx || 0, dy: +q.dy || 0 } });
-      else if (q.kind === 'circle') feats.push({ id, op: 'pattern', params: { mode: 'circular', count: Math.round(+q.count), angle_deg: 360 } }); else skip(id, 'mirror', 'no macro mapping'); continue; }
+      if (!(d > 0)) { skip(id, 'hole', 'the diameter is missing'); continue; }
+      const at = { x: +q.x || 0, y: +q.y || 0, d };
+      const cbo = +q.cbD > 0 && +q.cbH > 0 ? { cbore_d: +q.cbD, cbore_depth: +q.cbH } : null;
+      if (q.type === 'cbore' && !cbo) { skip(id, 'counterbore hole', 'counterbore diameter and depth are both needed'); continue; }
+      if (q.depthMode === 'thru') { add(id, 'hole', { ...at, through: true, ...(cbo || {}) }); continue; }
+      const zt = topZ();
+      if (!(+q.depth > 0) || zt == null) { skip(id, 'blind hole', !(+q.depth > 0) ? 'the hole has no depth' : 'the top face is not known until the part is rebuilt'); continue; }
+      add(id, 'hole', { ...at, through: false, depth: +q.depth, from: 'top', z_top: zt, ...(cbo || {}) }); continue; }
+    if (ft.type === 'edge') { if (q.mode === 'chamfer') add(id, 'chamfer', { distance: +q.r, edges: q.which || 'all' });
+      else add(id, 'fillet', { radius: +q.r, edges: q.which || 'all' }); continue; }
+    if (ft.type === 'repeat') { if (q.kind === 'line') add(id, 'pattern', { mode: 'linear', count: Math.round(+q.count), dx: +q.dx || 0, dy: +q.dy || 0 });
+      else if (q.kind === 'circle') add(id, 'pattern', { mode: 'circular', count: Math.round(+q.count), angle_deg: 360 });
+      else add(id, 'mirror', { plane: q.plane || 'YZ' }); continue; }
     skip(id, ft.type, 'no macro mapping');
   }
   return { model: { model_id: String(p.id || 'part'), revision: n, units: 'mm', features: feats }, local };
@@ -11515,12 +11532,24 @@ async function exportSWMacro() {
   if (p.gen) return say(h('div', { class: 'warnbox' }, L('This part was written by the AI as code, so it has no feature tree to rebuild in SolidWorks. Export STEP (exact B-rep) or STEP AP242 instead.', 'Part ini ditulis AI sebagai kode, jadi tidak punya pohon fitur untuk dibangun ulang di SolidWorks. Pakai Export STEP (B-rep eksak) atau STEP AP242.')),
     chips([{ label: L('Export STEP AP242', 'Ekspor STEP AP242'), fn: () => exportAP242(false) }, { label: L('Export STEP (exact)', 'Ekspor STEP (eksak)'), fn: () => exportPart('step') }]));
   const g = swGraph(p);
-  const res = await apiJSON('/exchange/solidworks-macro', { name: p.name || 'Idris part', model: g.model }, 30000).catch((e) => ({ status: 0, d: { error: e.message } }));
+  /* S3: the graph is checked before a macro is written; a part that would not rebuild is not downloaded */
+  const v = await apiJSON('/model/validate', { model: g.model }, 30000).catch((e) => ({ status: 0, d: { error: e.message } }));
+  const vd = v.d || {};
+  if (!v.ok || !vd.success || vd.ok === false) {
+    const probs = Array.isArray(vd.problems) ? vd.problems : [], errs = Array.isArray(vd.errors) ? vd.errors : [];
+    return say(h('div', { class: 'warnbox bad' },
+      h('b', { style: 'display:block' }, L('The feature graph did not pass /model/validate, so no macro was written.', 'Graf fitur tidak lolos /model/validate, jadi tidak ada macro yang ditulis.')),
+      probs.length ? h('ul', null, probs.map((x) => h('li', null, `${x.feature || '\u2014'}${x.op ? ' \u00b7 ' + x.op : ''}: ${x.error}`))) : null,
+      !probs.length && errs.length ? h('ul', null, errs.map((x) => h('li', null, String(x)))) : null,
+      para(solverErr(v, 'POST /model/validate'), 'm')));
+  }
+  const model = vd.model || g.model;
+  const res = await apiJSON('/exchange/solidworks-macro', { name: p.name || 'Idris part', model }, 30000).catch((e) => ({ status: 0, d: { error: e.message } }));
   const d = res.d || {};
   if (!res.ok || !d.success || !d.macro) return say(h('div', { class: 'warnbox bad' }, solverErr(res, 'POST /exchange/solidworks-macro') + (d.hint ? ' · ' + d.hint : '')));
   dlText(d.macro, d.filename || 'idris_rebuild.bas', 'text/plain');
   const list = (title, arr, fn) => arr && arr.length ? h('details', { class: 'gen-code' }, h('summary', null, `${title} (${arr.length})`), h('ul', null, arr.map((x) => h('li', null, fn(x))))) : null;
-  say(h('div', { class: 'metabox' }, para(L(`SolidWorks macro downloaded (.bas). In SolidWorks: Tools → Macro → New or Edit, paste or import it, run it on a new part. ${(d.translated || []).length} feature step(s) translated.`, `Macro SolidWorks terunduh (.bas). Di SolidWorks: Tools → Macro → New atau Edit, tempel atau impor, jalankan pada part baru. ${(d.translated || []).length} langkah fitur diterjemahkan.`)),
+  say(h('div', { class: 'metabox' }, para(L(`SolidWorks macro downloaded (.bas). In SolidWorks: Tools → Macro → New or Edit, paste or import it, run it on a new part. The graph passed /model/validate; ${(d.translated || []).length} feature step(s) translated.`, `Macro SolidWorks terunduh (.bas). Di SolidWorks: Tools → Macro → New atau Edit, tempel atau impor, jalankan pada part baru. ${(d.translated || []).length} langkah fitur diterjemahkan.`)),
     h('div', { class: 'warnbox' }, String(d.not_executed || L('Not run in SolidWorks by IDRIS.', 'Tidak dijalankan di SolidWorks oleh IDRIS.'))),
     list(L('To finish by hand in SolidWorks', 'Diselesaikan manual di SolidWorks'), d.manual, (x) => `${x.feature}: ${x.what}`),
     list(L('Not translated (left out of the macro)', 'Tidak diterjemahkan (tidak masuk macro)'), g.local, (x) => `${x.feature} · ${x.what}: ${x.why}`),
