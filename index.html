@@ -638,6 +638,10 @@ body.cad .xrib{display:block;background:var(--white);border-bottom:1px solid var
 .ribpop,.ribpop *{text-transform:none;letter-spacing:normal} .ribpop .rp-h b{font-size:14px;color:var(--text)} .ribpop .rp-h .x{margin-left:auto;border:0;background:none;color:var(--muted);font-size:14px;padding:2px 4px}
 .ribpop p{margin:4px 0;line-height:1.45} .ribpop .rp-aka{color:var(--muted);font-size:12px} .ribpop .rp-st{color:var(--muted);font-size:12px;border-top:1px solid var(--hair);padding-top:6px;margin-top:8px}
 .ribpop .rp-act{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ribpop .rp-plan{border-top:1px solid var(--hair);margin-top:8px;padding-top:8px}
+.ribpop .rp-plan b{display:block;font-size:11.5px;margin:6px 0 2px}
+.ribpop .rp-plan p{margin:0;font-size:12px;line-height:1.45;color:var(--text)}
+.ribpop .rp-plan .rp-src{color:var(--muted);font-size:11px;margin-top:6px}
 .gen-src{padding:8px 12px;font-size:12.5px} .gen-src p{margin:6px 0 0;line-height:1.45}
 .gen-code{margin:6px 12px;font-size:12px} .gen-code summary{cursor:pointer;color:var(--accent)} .gen-code pre{max-height:240px;overflow:auto;background:var(--white);border:1px solid var(--line);border-radius:8px;padding:8px;font:11px/1.45 var(--mono);white-space:pre}
 .gen-h{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px}
@@ -7785,6 +7789,33 @@ function ribClick(t, btn) {
   showRibPop(t, btn);
 }
 function closeRibPop() { const p = $('#ribpop'); if (p) p.remove(); }
+/* S5: a grey tool that has a counterpart in the solver's `planned` list shows the solver's own reason and what it
+ * needs, word for word. Nothing is invented here: if the solver does not answer or does not list it, the popover
+ * says that instead. */
+const SOLVER_PLANNED = { drop: 'drop_test', topo: 'topology_simp_3d', cfd: 'cfd_3d' };
+let solversPlanned = null, solversPlannedAt = 0;
+async function loadSolversPlanned() {
+  if (solversPlanned && Date.now() - solversPlannedAt < 10 * 60 * 1000) return solversPlanned;
+  const r = await apiJSON('/solvers', undefined, 30000).catch(() => ({ d: null }));
+  solversPlanned = r && r.d && Array.isArray(r.d.planned) ? r.d.planned : null;
+  solversPlannedAt = Date.now(); return solversPlanned;
+}
+/** S5: a box that fills with the solver's `planned` entry for `name`, word for word. */
+function plannedReasonBox(name) {
+  const box = h('div', { class: 'rp-plan', id: 'rpPlan-' + name }, h('p', { class: 'rp-src' }, L('Asking the solver why this is not built…', 'Menanyakan ke solver kenapa ini belum dibangun…')));
+  loadSolversPlanned().then((list) => {
+    if (!box.isConnected) return;
+    box.innerHTML = '';
+    const e = list && list.find((x) => x && x.name === name);
+    if (!e) { box.append(h('p', { class: 'rp-src' }, L('The solver did not list this under planned (GET /solvers), so there is no reason to quote.', 'Solver tidak mendaftarkan ini di planned (GET /solvers), jadi tidak ada alasan untuk dikutip.'))); return; }
+    box.append(h('b', null, L('Why the solver does not ship it yet', 'Kenapa solver belum merilisnya')),
+      h('p', null, String(e.reason || '')),
+      h('b', null, L('What it needs first', 'Yang perlu ada dulu')),
+      h('p', null, String(e.needs || '')),
+      h('p', { class: 'rp-src' }, L('From the solver: GET /solvers → planned · ', 'Dari solver: GET /solvers → planned · ') + String(e.status || '')));
+  });
+  return box;
+}
 function showRibPop(t, btn) {
   const st = RIB_ST[t.st], app = document.querySelector('.app');
   const pop = h('div', { class: 'ribpop', id: 'ribpop', role: 'dialog', 'aria-label': t.n },
@@ -7796,6 +7827,8 @@ function showRibPop(t, btn) {
       t.alt ? h('button', { class: 'chip primary', onclick: () => { closeRibPop(); if (t.alt[2]) ribAct(t.alt[2]); else { const i = document.querySelector('#cadProps input'); if (i) i.focus(); } } }, L(t.alt[0], t.alt[1])) : null,
       h('button', { class: 'chip', onclick: () => { closeRibPop(); if (document.body.classList.contains('hide-chat') || narrow()) setChat(true); const inp = $('#inp'); inp.value = L(`I need ${t.n}: `, `Aku butuh ${t.n}: `); inp.focus(); } }, L('Ask IDRIS', 'Tanya IDRIS'))));
   app.append(pop);
+  /* S5: the solver's own words for why this tool is not built yet */
+  if (SOLVER_PLANNED[t.ic]) pop.insertBefore(plannedReasonBox(SOLVER_PLANNED[t.ic]), pop.querySelector('.rp-act'));
   if (btn && !narrow()) { const r = btn.getBoundingClientRect(), ar = app.getBoundingClientRect();
     pop.style.left = Math.max(8, Math.min(ar.width - 348, r.left - ar.left)) + 'px'; pop.style.top = (r.bottom - ar.top + 6) + 'px'; }
   else pop.classList.add('sheet');
@@ -11431,6 +11464,8 @@ function pipeTool() {
   const row = (lab, el) => h('label', { class: 'dr-f' }, h('span', null, lab), el);
   toolDlg('pipedlg', L('Pipe flow (pressure drop)', 'Aliran pipa (penurunan tekanan)'),
     h('p', { class: 'hint' }, L('Darcy-Weisbach: laminar f = 64/Re below Re 2300, Colebrook above 4000, plus the sum of fitting K values. A straight-pipe model, not a 3D flow field.', 'Darcy-Weisbach: laminar f = 64/Re di bawah Re 2300, Colebrook di atas 4000, ditambah jumlah nilai K fitting. Model pipa lurus, bukan medan aliran 3D.')),
+    /* S5: full 3D CFD is not built; the solver's own reason sits here, where CFD lives */
+    h('details', { class: 'rp-plan', id: 'cfd3dWhy' }, h('summary', null, L('Why full 3D CFD is not built yet', 'Kenapa CFD 3D penuh belum dibangun')), plannedReasonBox('cfd_3d')),
     h('div', { class: 'tool-grid' }, row(L('Fluid', 'Fluida'), fl), row(L('Density (kg/m³)', 'Densitas (kg/m³)'), rho), row(L('Viscosity (Pa·s)', 'Viskositas (Pa·s)'), mu), row(L('Inner diameter (mm)', 'Diameter dalam (mm)'), Dm), row(L('Length (mm)', 'Panjang (mm)'), Lm), row(L('Wall roughness (mm)', 'Kekasaran dinding (mm)'), eps), row(L('Given as', 'Diberikan sebagai'), by), row(L('Value', 'Nilai'), qv), row(L('Fittings ΣK', 'Fitting ΣK'), K), row(L('Max pressure drop (bar)', 'Penurunan tekanan maks (bar)'), dpMax)),
     h('p', { class: 'm' }, L('Roughness examples are not filled in for you: take it from your pipe’s datasheet (drawn steel is often quoted near 0.045 mm, plastic near 0.0015 mm).', 'Contoh kekasaran tidak diisikan: ambil dari datasheet pipamu (baja tarik sering disebut sekitar 0,045 mm, plastik sekitar 0,0015 mm).')),
     h('div', { class: 'gen-var' }, h('button', { class: 'chip primary', onclick: run }, L('Solve', 'Hitung'))), out);
