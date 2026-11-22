@@ -12525,7 +12525,10 @@ let colleagueLast = null, refsFetched = '';
  .sug-row{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
  .sug-btn,.q-chip{font:inherit;font-size:11.5px;padding:5px 9px;border-radius:14px;border:1px solid #2f4d63;
    background:#101c25;color:#d7ecf8;cursor:pointer;text-align:left}
- .sug-btn:hover,.q-chip:hover{border-color:#4ea6d8;background:#132533}
+ .sug-btn:hover,.pat-btn:hover,.q-chip:hover{border-color:#4ea6d8;background:#132533}
+ .pat-btn{font:inherit;font-size:11.5px;padding:5px 9px;border-radius:14px;border:1px solid #2f4d63;
+   background:#101c25;color:#d7ecf8;cursor:pointer;text-align:left}
+ .pat-btn:disabled,.sug-btn:disabled{opacity:.55;cursor:default}
  .q-wrap{display:flex;flex-direction:column;gap:8px;margin:8px 0 2px}
  .q-card{border:1px solid #263c4c;border-radius:8px;padding:7px 9px;background:#0d1720}
  .q-t{margin:0 0 6px;font-size:12px;color:#e7f3fa}
@@ -12540,7 +12543,9 @@ let colleagueLast = null, refsFetched = '';
  .ref-card{border:1px solid #263c4c;border-radius:8px;padding:7px;background:#0d1720;display:flex;flex-direction:column;gap:4px}
  .ref-thumb{width:100%;max-height:72px;object-fit:cover;border-radius:5px}
  .ref-t{color:#7fd6ff;font-size:12px;text-decoration:none;font-weight:600}
- .ref-num{font-size:10.5px;color:#cbd9a0}
+ .ref-num{font-size:10.5px;color:#cbd9a0;display:flex;align-items:center;gap:6px;justify-content:space-between;flex-wrap:wrap}
+ .ref-num .q-chip{font-size:10px;padding:3px 7px}
+ .ref-num .q-chip:disabled{opacity:.65;cursor:default}
  .asm-panel{border:1px solid #2b4252;border-radius:8px;padding:7px 9px;margin:6px 0 2px;background:#0b151d}
  .asm-panel b{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#9fc2d6}
  .asm-row{display:flex;align-items:center;gap:6px;margin:5px 0}
@@ -12616,9 +12621,33 @@ function colleagueRefCard(c) {
   if (c.what_it_is) card.append(para(String(c.what_it_is), 'm'));
   if (Array.isArray(c.key_features) && c.key_features.length) card.append(para(String(c.key_features.join(' · ')), 'm'));
   (Array.isArray(c.numbers_found) ? c.numbers_found : []).slice(0, 4).forEach((n) => {
-    card.append(h('div', { class: 'ref-num' }, `${n.value} ${n.unit || ''} · ${String(n.label || 'web — not verified')}`));
+    const row = h('div', { class: 'ref-num' }, h('span', null, `${n.value} ${n.unit || ''} · ${String(n.label || 'web — not verified')}`));
+    /* A web number is a candidate until the engineer says otherwise: this button is that confirmation, and it is
+     * sent as the engineer's own input — never as a value the solver computed. */
+    const use = h('button', { class: 'q-chip', title: L('Sends this number to IDRIS as your confirmation. It is a candidate from the web, not a calculation.',
+      'Mengirim angka ini ke IDRIS sebagai konfirmasi kamu. Ini kandidat dari web, bukan hasil perhitungan.') },
+      L('Use this number', 'Pakai angka ini'));
+    use.addEventListener('click', () => {
+      use.disabled = true; use.textContent = L('sent as your confirmation', 'terkirim sebagai konfirmasi');
+      handleText(`Use this number (I confirm it): ${n.value} ${n.unit || ''} — from ${c.source_url || 'the source'}. Treat it as my input, not as a computed value.`);
+    });
+    row.append(use); card.append(row);
   });
   return card;
+}
+/** The patterns are suggestions, so they are offered, never applied: each button sends the engineer's choice as a
+ *  message and then goes quiet, so it is clear the choice was made once. */
+function colleaguePatternRow(patterns) {
+  if (!Array.isArray(patterns) || !patterns.length) return null;
+  const row = h('div', { class: 'sug-row' });
+  const pick = (label, text, why) => {
+    const b = h('button', { class: 'pat-btn', title: why, onclick: () => { row.querySelectorAll('button').forEach((x) => { x.disabled = true; }); handleText(text); } }, label);
+    row.append(b);
+  };
+  pick(L('Use this pattern', 'Pakai pola ini'), `Use this pattern as the base: ${patterns[0]}`, L('Sends this pattern as your choice; nothing is applied by itself.', 'Mengirim pola ini sebagai pilihanmu; tidak ada yang diterapkan sendiri.'));
+  if (patterns.length > 1) pick(L('Combine', 'Gabungkan'), `Combine these patterns: ${patterns.join('; ')}`, L('Sends both patterns as your choice.', 'Mengirim kedua pola sebagai pilihanmu.'));
+  pick(L('Skip', 'Lewati'), 'Skip the references — compare two concepts instead.', L('Goes on without the web references.', 'Lanjut tanpa referensi web.'));
+  return row;
 }
 async function colleagueReferences(j, bodyEl) {
   const brief = typeof chatBrief !== 'undefined' ? chatBrief : null;
@@ -12634,7 +12663,9 @@ async function colleagueReferences(j, bodyEl) {
     const r = await fetch(API + '/references/design', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brief: b, project_id: colleagueProjectId() }) });
     const d = await r.json();
     const live = box.querySelector('.ref-live');
-    if (live) live.textContent = (d.steps || []).slice(-1)[0] || '';
+    const steps = Array.isArray(d.steps) ? d.steps.map(String) : [];
+    const found = steps.slice().reverse().find((s) => /^Found \d+, reading \d+/.test(s));
+    if (live) live.textContent = found ? `${found}${(d.cards || []).length ? ` · ${(d.cards || []).length} cards` : ''}` : (steps.slice(-1)[0] || '');
     if (!d || !d.ok || !(d.cards || []).length) {
       if (live) live.textContent = (d && d.error) || L('Web search is not available; using the solver references.', 'Pencarian web tidak tersedia; memakai referensi solver.');
       return;
@@ -12642,6 +12673,8 @@ async function colleagueReferences(j, bodyEl) {
     (d.cards || []).slice(0, 6).forEach((c) => box.append(colleagueRefCard(c)));
     if (Array.isArray(d.patterns) && d.patterns.length) box.append(para(L('Patterns: ', 'Pola: ') + d.patterns.join('; '), 'm'));
     if (d.proposal) box.append(para(String(d.proposal), 'm'));
+    const pat = colleaguePatternRow(d.patterns); if (pat) box.append(pat);
+    if (d.note) box.append(h('p', { class: 'hint' }, String(d.note)));
   } catch (e) {
     const live = box.querySelector('.ref-live');
     if (live) live.textContent = L('Web search is not available right now.', 'Pencarian web tidak tersedia saat ini.');

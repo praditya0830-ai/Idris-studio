@@ -34,8 +34,9 @@ const REFS = {
   cards: [{ title: 'Truck snow plow blade mount', source_url: 'https://example.com/a', thumbnail_url: null,
     what_it_is: 'The blade is laser cut from 6 mm S355 steel.', key_features: ['TIG weld', 'gusset'],
     numbers_found: [{ value: 6, unit: 'mm', source_url: 'https://example.com/a', label: 'web — not verified' }] }],
-  patterns: ['TIG weld appears in 3 of 4 sources'],
+  patterns: ['TIG weld appears in 3 of 4 sources', 'gusset appears in 2 of 4 sources'],
   proposal: 'I would start from the pattern the sources share: TIG weld appears in 3 of 4 sources.',
+  note: 'Numbers from the web are candidates until the engineer confirms them.',
 };
 
 const browser = await chromium.launch({
@@ -99,6 +100,11 @@ check('reference card with its source and a labelled number', () => {
   if (!/web — not verified/.test(dom.nums[0])) throw new Error('number label missing: ' + dom.nums[0]);
 });
 check('the research status line is shown', () => { if (!/Found 12/.test(dom.live)) throw new Error('live: ' + dom.live); });
+const useBtns = await page.evaluate(() => [...document.querySelectorAll('.ref-num button')].map((b) => b.textContent));
+check('a web number carries a Use this number button, still labelled as a candidate', () => {
+  eq(1, useBtns.length, 'use buttons');
+  if (!/Use this number/.test(useBtns[0])) throw new Error('button: ' + useBtns[0]);
+});
 check('the history and the project travel with the message (B1)', () => {
   eq(true, Array.isArray(first.history), 'history array');
   eq(true, first.history.length >= 1 && first.history[0].role === 'user', 'first history row');
@@ -114,6 +120,27 @@ check('clicking a suggestion sends it as the next message', () => {
 await page.click('.q-chip.rec');
 await page.waitForTimeout(600);
 check('clicking a question chip answers it', () => { eq('Pikap', sent[2] && sent[2].message, 'answer message'); });
+
+await page.click('.ref-num button');
+await page.waitForTimeout(600);
+const used = await page.evaluate(() => { const b = document.querySelector('.ref-num button'); return { text: b.textContent, disabled: b.disabled }; });
+check('Use this number sends the engineer\'s confirmation, not an applied value', () => {
+  const msg = String((sent[3] || {}).message || '');
+  if (!/^Use this number \(I confirm it\): 6 mm/.test(msg)) throw new Error('sent: ' + msg);
+  if (!/not as a computed value/.test(msg)) throw new Error('not marked as the engineer\'s input: ' + msg);
+  eq(true, used.disabled, 'button goes quiet after one confirmation');
+});
+
+const pats = await page.evaluate(() => [...document.querySelectorAll('.pat-btn')].map((b) => b.textContent));
+check('the patterns are offered as choices, not applied', () => {
+  eq('Use this pattern|Combine|Skip', pats.join('|'), 'pattern buttons');
+});
+await page.click('.pat-btn');
+await page.waitForTimeout(600);
+check('Use this pattern sends the chosen pattern', () => {
+  const msg = String((sent[4] || {}).message || '');
+  if (!/^Use this pattern as the base: TIG weld appears in 3 of 4 sources/.test(msg)) throw new Error('sent: ' + msg);
+});
 
 if (process.env.SHOT !== '0') {
   await page.screenshot({ path: `${root}/${OUT}/t31-colleague-${VP[0]}.png`, fullPage: false });
