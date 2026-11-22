@@ -1834,9 +1834,9 @@ class Viewer {
     }
 
     const parts = this.parts || [], multi = parts.length > 1, mode = this.housingMode || 'glass';
-    const KIND = { part: [0.72, 0.75, 0.80], sketch: [0.25, 0.50, 0.95], housing: [0.80, 0.83, 0.87], gear: [0.34, 0.37, 0.42], shaft: [0.74, 0.76, 0.79], bearing: [0.30, 0.52, 0.86], fastener: [0.24, 0.26, 0.30], seal: [0.82, 0.42, 0.16], plug: [0.80, 0.64, 0.26] };
+    const KIND = { part: [0.72, 0.75, 0.80], sketch: [0.25, 0.50, 0.95], housing: [0.80, 0.83, 0.87], gear: [0.34, 0.37, 0.42], shaft: [0.74, 0.76, 0.79], bearing: [0.30, 0.52, 0.86], fastener: [0.24, 0.26, 0.30], seal: [0.82, 0.42, 0.16], plug: [0.80, 0.64, 0.26], placeholder: [0.86, 0.60, 0.20] };
     const cm = this.colorMode || 'material', hm = String(this.housingMat || '');
-    const MAT = { part: [0.72, 0.75, 0.80], sketch: [0.25, 0.50, 0.95], housing: /steel|gg-|iron|cast/i.test(hm) ? [0.50, 0.52, 0.55] : [0.80, 0.83, 0.87], gear: [0.46, 0.48, 0.52], shaft: [0.62, 0.64, 0.67], bearing: [0.68, 0.70, 0.74], fastener: [0.24, 0.26, 0.29], seal: [0.36, 0.22, 0.18], plug: [0.80, 0.64, 0.26] };
+    const MAT = { part: [0.72, 0.75, 0.80], sketch: [0.25, 0.50, 0.95], housing: /steel|gg-|iron|cast/i.test(hm) ? [0.50, 0.52, 0.55] : [0.80, 0.83, 0.87], gear: [0.46, 0.48, 0.52], shaft: [0.62, 0.64, 0.67], bearing: [0.68, 0.70, 0.74], fastener: [0.24, 0.26, 0.29], seal: [0.36, 0.22, 0.18], plug: [0.80, 0.64, 0.26], placeholder: [0.86, 0.60, 0.20] };
     const hsl = (hh, ss, ll) => { const f = (n) => { const k = (n + hh / 30) % 12, a = ss * Math.min(ll, 1 - ll); return ll - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); }; return [f(0), f(8), f(4)]; };
     const col = (p, i) => { let c = cm === 'metal' ? (p.kind === 'fastener' ? [0.42, 0.44, 0.48] : [0.72, 0.75, 0.79]) : cm === 'part' ? hsl((i * 137.508 + 205) % 360, 0.55, 0.58) : (MAT[p.kind] || KIND[p.kind] || [0.70, 0.74, 0.80]);
       if (!multi && p.kind === 'housing' && cm !== 'part') c = dark ? [0.64, 0.69, 0.76] : [0.70, 0.74, 0.80];
@@ -10853,6 +10853,114 @@ async function openSolvers() {
  * 6  Shape families for a goal (POST /shape/objectives map, /shape/families 3|5|7|10, /shape/rank)
  * 8  Bearings from GET /catalog/bearings, materials compared with GET /engineer/materials, reference library. */
 
+/* ---- v0.44 the feature tree from the solver, repaired one step at a time (brief 22 Nov, 2c and 2e).
+ * 2e: a recipe answer arrives as `cad.feature_tree` — {id, type, p} steps in the same feature names the Studio's own
+ * tree uses — so it opens as a real, editable part instead of being dropped for having no code. Every number in it
+ * keeps the source the solver attached (you / computed with its method / a table that is still assumed).
+ * 2c: a step the browser kernel refuses is reported on its own line, with the kernel's sentence. The steps before it
+ * are kept and the steps after it still build (buildPart already does that); what was missing is the repair: this
+ * block lists the failed steps, opens the one you pick for editing, and lets you drop just that step so the rest of
+ * the part survives. Nothing is invented to fill the gap. */
+function treeSourceLabel(n) {
+  const src = String((n && n.source) || '');
+  if (src === 'you') return L('you gave it', 'dari kamu');
+  if (src === 'computed') {
+    const method = String(n.method || '').trim();
+    const from = Array.isArray(n.from_) ? n.from_ : Array.isArray(n.from) ? n.from : [];
+    const tail = from.length ? L(` (from ${from.join(', ')})`, ` (dari ${from.join(', ')})`) : '';
+    return (method ? L(`computed: ${method}`, `dihitung: ${method}`) : L('computed', 'dihitung')) + tail;
+  }
+  if (src.startsWith('table:')) return L(`${src} — assumed, confirm it`, `${src} — diasumsikan, mohon dikonfirmasi`);
+  return L(`no source (${src || 'none'})`, `tanpa sumber (${src || 'tidak ada'})`);
+}
+/* The solver's step names are the Studio's feature names; a name this build does not know is refused by name,
+   never swapped for something similar. */
+function treeStepsFromSolver(steps) {
+  const out = [], bad = [];
+  (Array.isArray(steps) ? steps : []).forEach((s, i) => {
+    const type = String((s && s.type) || '');
+    const p = s && typeof s.p === 'object' && s.p ? s.p : {};
+    if (!FEAT[type]) { bad.push({ i: i + 1, type: type || '?', id: String((s && s.id) || '') }); return; }
+    out.push({ id: String((s && s.id) || `t${i + 1}`), type, p: { ...p } });
+  });
+  return { steps: out, bad };
+}
+function treeSourcesCard(tree) {
+  const nums = Array.isArray(tree.numbers) ? tree.numbers : [];
+  const box = h('div', { class: 'tree-src', id: 'treeSources' },
+    h('div', { class: 'lphdrow' }, h('span', null, L('Sizes and their sources', 'Ukuran dan sumbernya')),
+      h('small', null, String(tree.read_by || 'IDRIS feature recipe'))));
+  if (!nums.length) {
+    box.append(h('p', { class: 'hint' }, L('The solver sent no numbers with this tree, so there is nothing to label here.',
+      'Solver tidak mengirim angka dengan pohon ini, jadi tidak ada yang dilabeli di sini.')));
+    return box;
+  }
+  box.append(h('table', { class: 'grid tree-num' },
+    h('tr', null, h('th', null, L('Size', 'Ukuran')), h('th', null, L('Value', 'Nilai')), h('th', null, L('Source', 'Sumber'))),
+    ...nums.map((n) => h('tr', { 'data-k': String(n.k) }, h('td', { style: 'text-align:left' }, String(n.k)),
+      h('td', null, `${n.value}${n.unit ? ' ' + n.unit : ''}`), h('td', { style: 'text-align:left' }, treeSourceLabel(n))))));
+  if (Array.isArray(tree.missing) && tree.missing.length) {
+    box.append(h('p', { class: 'hint' }, L('Still missing: ', 'Masih kurang: ')
+      + tree.missing.map((m) => m.question || m.k || m).join('; ')));
+  }
+  return box;
+}
+function treeFailedCard(p, bad) {
+  return h('div', { class: 'warnbox bad', id: 'treeFailed' },
+    h('b', null, L(`${bad.length} step(s) did not build`, `${bad.length} langkah gagal dibangun`)),
+    h('ul', { class: 'tree-bad' }, bad.map((ft) => {
+      const i = p.features.indexOf(ft);
+      return h('li', { 'data-step': String(i + 1) },
+        h('div', null, h('b', null, `${i + 1}. ${featName(ft)}`), h('span', null, ' · ' + String(ft.err))),
+        h('div', { class: 'tree-fix' },
+          h('button', { class: 'chip', onclick: () => { partSel = i; partArm = null; renderCad(); setLpTab('edit'); } },
+            L('Fix this step', 'Perbaiki langkah ini')),
+          h('button', { class: 'chip', onclick: () => { ft.off = true; rebuildPart(); } },
+            L('Skip it, keep the rest', 'Lewati, simpan sisanya'))));
+    })),
+    h('p', { class: 'hint' }, L('The steps before a failed step are kept and the steps after it still build: the part is not thrown away, and no number was invented to fill the gap.',
+      'Langkah sebelum yang gagal tetap ada dan langkah sesudahnya tetap dibangun: part tidak dibuang, dan tidak ada angka yang dikarang untuk menutup celah.')));
+}
+{ const st4 = document.createElement('style');
+  st4.textContent = `.tree-src{margin:8px 0 4px}
+ .tree-num{font-size:11px;margin-top:4px}
+ .tree-bad{margin:4px 0 0 14px;padding:0;font-size:11.5px;display:flex;flex-direction:column;gap:6px}
+ .tree-bad b{color:#ffd7d7}
+ .tree-fix{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap}`;
+  document.head.append(st4); }
+{ const rpc = renderPartCad; renderPartCad = function () {
+    const r = rpc.apply(this, arguments);
+    const p = state.part, lf = $('#cadLeft');
+    if (!p || !lf || p.gen) return r;
+    const tree = p.tree && typeof p.tree === 'object' ? p.tree : null;
+    const ol = lf.querySelector('ol.pft');
+    const bad = (p.features || []).filter((f) => f.err && !f.off);
+    if (bad.length) { const card = treeFailedCard(p, bad); if (ol) ol.before(card); else lf.prepend(card); }
+    if (tree) { const card = treeSourcesCard(tree); if (ol) ol.after(card); else lf.append(card); }
+    return r;
+  }; }
+{ const gfa = genFromAI; genFromAI = function (cad) {
+    const raw = cad && Array.isArray(cad.feature_tree) ? cad.feature_tree : null;
+    if (!raw || !raw.length) return gfa.apply(this, arguments);
+    const { steps, bad } = treeStepsFromSolver(raw);
+    if (bad.length) {
+      return say(h('div', { class: 'warnbox bad', id: 'treeRefused' },
+        h('b', null, L('The feature tree was not opened', 'Pohon fitur tidak dibuka')),
+        h('div', null, L(`Step ${bad.map((b) => b.i).join(', ')} uses a feature this build cannot make: ${bad.map((b) => '“' + b.type + '”').join(', ')}. Nothing was replaced by a guess.`,
+          `Langkah ${bad.map((b) => b.i).join(', ')} memakai fitur yang belum bisa dibangun di sini: ${bad.map((b) => '“' + b.type + '”').join(', ')}. Tidak ada yang diganti dengan tebakan.`))));
+    }
+    if (state.part) savePart();
+    const part = { id: Date.now().toString(36) + 't', name: String(cad.title || 'Part').slice(0, 60),
+      material: PMAT[cad.material] ? cad.material : 'aluminium',
+      features: steps,
+      tree: { from: 'solver feature recipe', read_by: String(cad.read_by || 'IDRIS feature recipe (validated)'),
+        numbers: Array.isArray(cad.numbers) ? cad.numbers : [], missing: Array.isArray(cad.missing) ? cad.missing : [],
+        shape_class: cad.shape_class || null } };
+    genAnswered = true; genLib = null; genConcepts = null;
+    startPart(part);
+    return part;
+  }; }
+
 /* ================= 7a. Import STEP ================= */
 const importBufs = {};
 function pickStep() {
@@ -11481,19 +11589,72 @@ function asmOpenPart(pt) {
   genLastText = `${asmJob.request} — ${pt.name}`; genAnswered = true; genLib = null; genConcepts = null; lastChatMeta = { fidelity: pt.fidelity || null, validated: false, target_check: null, not_checked: [] };
   genFromAI(pt.cad); const p = state.part; if (p && p.gen) { p.gen.reviewNext = 0; p.gen.asmPart = { job: asmJob.id, id: pt.id }; savePart(); }
 }
+/* A standard/library part has no `cad.code`, so the kernel cannot build it. Instead of leaving the assembly looking
+ * incomplete (the hydraulic unit and the pivot pins simply missing), such a part is placed as a plain block at its
+ * frame and named "<name> (standard)". The block is a placeholder, NOT real geometry: it is never sent to the
+ * interference check, and every row that mentions it says so. */
+const ASM_STD_NOTHING = () => L('Nothing to build yet: every part here is a standard/library part (no 3D geometry). Design at least one custom part, or open each standard part from the library.',
+  'Belum ada yang bisa dibangun: semua part di sini standar/dari library (tanpa geometri 3D). Desain minimal satu part custom, atau buka tiap part standar dari library.');
+/** The block size: the plan's own size for this part when it has one, else the largest size the plan fixed at an
+ *  interface this part takes part in. No size in the plan -> no block (reported, never invented). */
+function asmStdSize(pt, a) {
+  const dims = pt.bbox_mm || pt.size_mm || pt.dims_mm;
+  if (Array.isArray(dims) && dims.length === 3 && dims.every((x) => Number(x) > 0)) return dims.map(Number);
+  if (dims && typeof dims === 'object') {
+    const v = [dims.x ?? dims.width_mm, dims.y ?? dims.height_mm, dims.z ?? dims.depth_mm].map((x) => Number(x));
+    if (v.every((x) => x > 0)) return v;
+  }
+  const nums = [];
+  ((a.plan && a.plan.interfaces) || []).forEach((x) => {
+    if (!(x.between || []).includes(pt.id)) return;
+    Object.entries(x.params || {}).forEach(([k, v]) => {
+      const n = Number(v);
+      if (n > 0 && /mm|dia|width|height|length|stroke|bore|radius|thick|\bod\b|\bid\b/.test(String(k))) nums.push(n);
+    });
+  });
+  if (nums.length) { const e = Math.max(...nums); return [e, e, e]; }
+  return null;
+}
+/** A box around a frame origin, in the same millimetre frame as the built parts (CAD Z-up, turned for the viewer). */
+function asmBoxSTL(at, size) {
+  const h = size.map((x) => Number(x) / 2), v = new Float32Array(24); let i = 0;
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) { v[i++] = at[0] + sx * h[0]; v[i++] = at[1] + sy * h[1]; v[i++] = at[2] + sz * h[2]; }
+  const q = (x, y, z) => (x ? 4 : 0) + (y ? 2 : 0) + (z ? 1 : 0), t = [];
+  const quad = (a2, b2, c2, d2) => t.push(a2, b2, c2, a2, c2, d2);
+  quad(q(0, 0, 0), q(0, 1, 0), q(1, 1, 0), q(1, 0, 0)); quad(q(0, 0, 1), q(1, 0, 1), q(1, 1, 1), q(0, 1, 1));
+  quad(q(0, 0, 0), q(1, 0, 0), q(1, 0, 1), q(0, 0, 1)); quad(q(0, 1, 0), q(0, 1, 1), q(1, 1, 1), q(1, 1, 0));
+  quad(q(0, 0, 0), q(0, 0, 1), q(0, 1, 1), q(0, 1, 0)); quad(q(1, 0, 0), q(1, 1, 0), q(1, 1, 1), q(1, 0, 1));
+  return meshToSTL(zUp({ vertices: v, triangles: t }));
+}
+function asmStdBlocks(a, frames) {
+  const out = { parts: [], skipped: [] };
+  (a.parts || []).forEach((pt) => {
+    if (pt.cad && pt.cad.code) return;
+    const name = String(pt.name || pt.id);
+    if (!frames[pt.id]) { out.skipped.push(`${name}: no frame in the plan`); return; }
+    const size = asmStdSize(pt, a);
+    if (!size) { out.skipped.push(`${name}: no size in the plan`); return; }
+    out.parts.push({ buf: asmBoxSTL(frames[pt.id], size), kind: 'placeholder', name: `${name} (standard)` });
+  });
+  return out;
+}
 async function asmAssemble() {
   const a = asmJob, frames = {}, rots = {}; let derived = 0;
   ((a.assembly && a.assembly.parts) || []).forEach((x) => { frames[x.id] = x.origin_mm || [0, 0, 0]; const rr = frameRotation(x); if (rr) rots[x.id] = rr; if (x.x_axis_source === 'derived') derived++; });
   a.derivedX = derived;
   const items = (a.parts || []).filter((pt) => pt.cad && pt.cad.code).map((pt) => ({ id: pt.id, code: pt.cad.code, params: Object.fromEntries((pt.cad.params || []).filter((q) => q && q.k).map((q) => [q.k, +q.value])), t: frames[pt.id] || [0, 0, 0], rot: rots[pt.id] || null }));
-  if (!items.length) return;
+  const std = asmStdBlocks(a, frames);
+  /* the button used to do nothing at all here: a standard-only assembly stopped silently */
+  if (!items.length) { a.built = { error: String(ASM_STD_NOTHING()) }; return renderAsm(); }
   a.assembling = true; renderAsm();
   try { await genWorker(); const r = await genCall({ t: 'asm', items }, 240000);
     if (state.part) savePart(); leavePart && state.part && leavePart();
     const cols = r.parts.filter((x) => x.ok);
-    viewer.setParts(cols.map((x) => ({ buf: meshToSTL(zUp({ vertices: x.mesh.v, triangles: x.mesh.t })), kind: 'part', name: ((a.parts || []).find((pt) => pt.id === x.id) || {}).name || x.id }))); frameFit && frameFit();
+    const placed = cols.map((x) => ({ buf: meshToSTL(zUp({ vertices: x.mesh.v, triangles: x.mesh.t })), kind: 'part', name: ((a.parts || []).find((pt) => pt.id === x.id) || {}).name || x.id }));
+    viewer.setParts([...placed, ...std.parts]); frameFit && frameFit();
     const ve = $('#vempty'); if (ve) ve.classList.add('hide');
-    a.built = { ok: cols.length, failed: r.parts.filter((x) => !x.ok).map((x) => `${x.id}: ${x.err}`), clashes: r.clashes, framesComplete: a.assembly ? a.assembly.frames_complete : null }; }
+    a.built = { ok: cols.length, failed: r.parts.filter((x) => !x.ok).map((x) => `${x.id}: ${x.err}`), clashes: r.clashes, framesComplete: a.assembly ? a.assembly.frames_complete : null,
+      standard: std.parts.length, stdSkipped: std.skipped }; }
   catch (e) { a.built = { error: e.message }; }
   a.assembling = false; renderAsm();
 }
@@ -11544,12 +11705,77 @@ function renderAsm() {
       else box.append(h('ul', { class: 'gen-checks' }, h('li', null, h('span', { class: 'cdot ' + (b.failed.length ? 'warn' : 'ok'), 'aria-hidden': 'true' }), h('div', null, h('b', null, L(`${b.ok} parts placed at their frames`, `${b.ok} part ditempatkan di frame-nya`)), b.failed.length ? h('span', null, ' · ' + b.failed.join('; ')) : null)),
         h('li', null, h('span', { class: 'cdot ' + (b.clashes.length ? 'bad' : 'ok'), 'aria-hidden': 'true' }), h('div', null, h('b', null, b.clashes.length ? L(`${b.clashes.length} interference(s)`, `${b.clashes.length} interferensi`) : L('No interference', 'Tidak ada interferensi')),
           h('span', null, b.clashes.length ? ' · ' + b.clashes.map((c) => `${c.a} ↔ ${c.b}: ${f(c.vol / 1000, 2)} cm³`).join('; ') : L(' (common volume of every pair, OpenCascade)', ' (volume bersama tiap pasang, OpenCascade)')))),
+        b.standard ? h('li', null, h('span', { class: 'cdot warn', 'aria-hidden': 'true' }), h('div', null, h('b', { id: 'asmStdLine' }, L(`${b.standard} standard parts shown as blocks (no real geometry)`, `${b.standard} part standar ditampilkan sebagai blok (bukan geometri nyata)`)), h('span', null, L(' · placeholder bbox, not real geometry — not in the interference check', ' · placeholder bbox, bukan geometri nyata — tidak ikut cek interferensi'))))
+        : null,
+        b.stdSkipped && b.stdSkipped.length ? h('li', null, h('span', { class: 'cdot warn', 'aria-hidden': 'true' }), h('div', null, h('b', { id: 'asmStdSkipped' }, L(`${b.stdSkipped.length} standard part(s) have no frame or size in the plan, so no block is drawn`, `${b.stdSkipped.length} part standar tidak punya frame atau ukuran di rencana, jadi tidak digambar`)), h('span', null, ' · ' + b.stdSkipped.join('; '))))
+        : null,
         b.framesComplete === false ? h('li', null, h('span', { class: 'cdot warn', 'aria-hidden': 'true' }), h('div', null, h('b', null, L('Some parts have no frame in the plan', 'Sebagian part tidak punya frame di rencana')), h('span', null, L(' · they sit at the origin', ' · diletakkan di titik asal'))))
         : null)); }
   }
   const nc = a.notChecked || (a.assembly && a.assembly.not_checked ? [a.assembly.not_checked] : null) || [L('kinematics of the assembly, loads between parts, and the assembly as one system', 'kinematika rakitan, beban antar-part, dan rakitan sebagai satu sistem')];
   box.append(h('div', { class: 'notchk' }, h('b', null, L('Not checked by IDRIS', 'Tidak dicek oleh IDRIS')), h('ul', null, [].concat(nc).map((x) => h('li', null, String(x))))));
 }
+
+/* ---- v0.44 review gate before the assembly build (brief 22 Nov, part 4): a part that failed, was never designed, or
+ * was designed as feature steps the assembly build cannot send to the kernel is listed by name before anything is
+ * assembled — and Assemble stays disabled until every one of them is designed again.
+ * Before this, asmAssemble filtered on `pt.cad.code` and returned without a word: the assembly was quietly missing a
+ * part, which is worse than refusing to build it. */
+function asmReviewBlocked(a) {
+  const parts = a && Array.isArray(a.parts) ? a.parts : [];
+  return parts.filter((pt) => pt && pt.status !== 'standard' && !(pt.status === 'done' && pt.cad && pt.cad.code));
+}
+function asmReviewReason(pt) {
+  if (!pt) return '';
+  if (pt.status === 'failed') return String(pt.error || L('the design failed', 'desainnya gagal'));
+  if (pt.status === 'done' && pt.cad && !pt.cad.code) {
+    return L('designed as feature steps, not code: the assembly build needs code for this part',
+      'didesain sebagai langkah fitur, bukan kode: build rakitan butuh kode untuk part ini');
+  }
+  return L(`not designed yet (${pt.status || 'unknown'})`, `belum didesain (${pt.status || 'tidak diketahui'})`);
+}
+function asmReviewCard(blocked) {
+  return h('div', { class: 'warnbox bad asm-review', id: 'asmReview' },
+    h('b', null, L(`Review ${blocked.length} part(s) before assembling`, `Tinjau ${blocked.length} part sebelum merakit`)),
+    h('ul', { class: 'asm-review-list' }, blocked.map((pt) => h('li', { 'data-part': String(pt.id || pt.name) },
+      h('div', null, h('b', null, String(pt.name || pt.id)), h('span', null, ' · ' + asmReviewReason(pt))),
+      h('button', { class: 'chip', onclick: () => asmRedesign(pt) }, L('Redesign', 'Desain ulang'))))),
+    h('p', { class: 'hint' }, L('Assemble is blocked until every part here is designed again: an assembly with a part missing is not an assembly.',
+      'Rakit diblokir sampai semua part di sini didesain ulang: rakitan yang kehilangan satu part bukan rakitan.')));
+}
+{ const st5 = document.createElement('style');
+  st5.textContent = `.asm-review{margin:6px 0}
+ .asm-review-list{margin:4px 0 0 14px;padding:0;font-size:11.5px;display:flex;flex-direction:column;gap:6px}
+ .asm-review-list b{color:#ffd7d7}`;
+  document.head.append(st5); }
+{ const ra4 = renderAsm; renderAsm = function () {
+    const r = ra4.apply(this, arguments);
+    const a = asmJob, box = $('#asmPanel');
+    if (!a || !box) return r;
+    const old = $('#asmReview'); if (old) old.remove();
+    if (a.stage !== 'design') return r;
+    const blocked = asmReviewBlocked(a);
+    if (!blocked.length) return r;
+    const card = asmReviewCard(blocked);
+    const rows = box.querySelectorAll('.gen-var'), row = rows.length ? rows[rows.length - 1] : null;
+    if (row) row.before(card); else box.append(card);
+    const btn = [...box.querySelectorAll('button')].find((b) => /^(Assemble|Rakit)$/.test(b.textContent.trim()));
+    if (btn) { btn.disabled = true; btn.title = L('Design the parts in Review first.', 'Desain dulu part di Tinjau.'); }
+    return r;
+  }; }
+{ const aa4 = asmAssemble; asmAssemble = async function () {
+    const blocked = asmReviewBlocked(asmJob);
+    if (blocked.length) {
+      renderAsm();
+      const msg = L(`Assemble is waiting on ${blocked.length} part(s): ${blocked.map((p) => p.name || p.id).join(', ')}. Design them again in Review, then assemble.`,
+        `Rakit menunggu ${blocked.length} part: ${blocked.map((p) => p.name || p.id).join(', ')}. Desain ulang di Tinjau, lalu rakit.`);
+      const last = [...document.querySelectorAll('#chat .msg.ai .ai-body')].pop();
+      const note = h('div', { class: 'warnbox', id: 'asmBlockedNote' }, msg);
+      if (last) last.append(note); else say(note);
+      return null;
+    }
+    return aa4.apply(this, arguments);
+  }; }
 
 /* ================= 6. Shape families for a goal ================= */
 async function shapeObjectives(request) {
@@ -11616,6 +11842,152 @@ async function shapeStudy(request, count, obj) {
     const p = state.part; if (!(p && p !== before && p.gen && !p.gen.shapeStudy) || typeof text !== 'string') return r;
     shapeObjectives(text).then((obj) => { if (!obj || !obj.goals || !obj.goals.length) return; const last = [...document.querySelectorAll('#chat .msg.ai .ai-body')].pop(); if (last) { last.append(goalBox(text, obj)); scrollDown(); } });
     return r; }; }
+
+/* ---- v0.44 a reliable assembly, decided by the solver's joint check (brief 22 Nov, part 5).
+ * After the parts are placed, POST /join/plan decides whether the assembly is OK, needs a fix, or failed — with the
+ * parts and checks the solver names. A shift the solver proposes is a PROPOSAL: it is shown with its part, axis and
+ * distance and is only applied when the engineer accepts it, because moving a tube on our own can pull it away from
+ * the curved part it was designed to meet. A part with no size in the plan is reported as not checked, not guessed. */
+function asmJointSizes(pt) {
+  const raw = pt && (pt.bbox_mm || pt.size_mm || pt.dims_mm || (pt.cad && (pt.cad.bbox_mm || pt.cad.size_mm)));
+  if (!Array.isArray(raw) || raw.length !== 3) return null;
+  const size = raw.map(Number);
+  return size.every((x) => isFinite(x) && x > 0) ? size : null;
+}
+async function asmJointCheck(a) {
+  if (!a) return null;
+  const plan = a.plan || {}, ifs = Array.isArray(plan.interfaces) ? plan.interfaces : [];
+  const parts = [], skipped = [];
+  (a.parts || []).forEach((pt) => {
+    if (!pt || pt.status === 'standard') return;
+    const size = asmJointSizes(pt);
+    if (!size) { skipped.push(String(pt.name || pt.id)); return; }
+    const fr = ((a.assembly && a.assembly.parts) || []).find((x) => String(x.id) === String(pt.id));
+    const at = fr && Array.isArray(fr.origin_mm) ? fr.origin_mm.map(Number) : [0, 0, 0];
+    parts.push({ name: String(pt.name || pt.id), material: String(pt.material || 'steel').toLowerCase(),
+      qty: +pt.qty || 1, shape: { type: 'box', size, at } });
+  });
+  a.joint = { status: 'checking', skipped };
+  renderAsm();
+  if (!parts.length) {
+    a.joint = { status: 'unknown', skipped, why: L('No part in this plan carries a size, so the joint check has nothing to measure. Give the parts their sizes, then check again.',
+      'Tidak ada part di rencana ini yang membawa ukuran, jadi cek sambungan tidak punya apa pun untuk diukur. Beri ukuran part-nya, lalu cek lagi.') };
+    return renderAsm();
+  }
+  const joints = ifs.map((x) => ({ between: (x.between || []).map(String), kind: x.kind || 'contact', params: x.params || {} }));
+  const r = await apiJSON('/join/plan', { parts, interfaces: joints, fix: false }, 60000).catch((e) => ({ status: 0, d: { error: e.message } }));
+  const d = (r && r.d) || {};
+  if (!r || !r.ok || !Array.isArray(d.checks)) {
+    a.joint = { status: 'unknown', skipped, why: budgetHit(r && r.status, d) ? String(d.error || 'Daily AI budget reached')
+      : r && r.status === 404 ? L('This solver has no POST /join/plan yet.', 'Solver ini belum punya POST /join/plan.')
+        : String(d.error || `HTTP ${r && r.status}`) };
+    return renderAsm();
+  }
+  const failed = Array.isArray(d.failed) ? d.failed : [];
+  const floating = Array.isArray(d.floating) ? d.floating : [];
+  const framesComplete = a.assembly ? a.assembly.frames_complete : null;
+  a.joint = { status: failed.length ? 'failed' : (floating.length || framesComplete === false) ? 'needs_fix' : 'ok',
+    checked: parts.length, skipped, failed, floating, framesComplete,
+    passed: (d.checks || []).filter((c) => c.status === 'pass').length, total: (d.checks || []).length,
+    proposals: (Array.isArray(d.proposed_fixes) ? d.proposed_fixes : []).map((p) => ({ ...p, accepted: false })),
+    assumptions: Array.isArray(d.assumptions) ? d.assumptions : [], notes: Array.isArray(d.notes) ? d.notes : [] };
+  renderAsm();
+  return a.joint;
+}
+function asmAcceptFix(i) {
+  const a = asmJob, j = a && a.joint, fix = j && j.proposals[i];
+  if (!fix) return null;
+  const axis = 'xyz'.indexOf(String(fix.axis || 'z').slice(0, 1).toLowerCase());
+  const frames = (a.assembly && a.assembly.parts) || [];
+  /* the solver names a part by its name ("Sensor bracket"); a frame carries the part id */
+  const nameOf = (x) => String(((a.parts || []).find((pt) => String(pt.id) === String(x.id)) || {}).name || x.name || '');
+  const fr = frames.find((x) => String(x.id) === String(fix.part))
+    || frames.find((x) => nameOf(x) === String(fix.part))
+    || frames.find((x) => String(x.name || '') === String(fix.part));
+  if (!fr || axis < 0) {
+    j.proposals[i].accepted = false;
+    j.proposals[i].why_not = L('the plan gives no frame for this part, so there is nothing to shift here',
+      'rencana tidak memberi frame untuk part ini, jadi tidak ada yang bisa digeser di sini');
+    return renderAsm();
+  }
+  const at = Array.isArray(fr.origin_mm) ? fr.origin_mm.slice() : [0, 0, 0];
+  at[axis] = +((+at[axis] || 0) + (+fix.shift_mm || 0)).toFixed(3);
+  fr.origin_mm = at;
+  j.proposals[i].accepted = true;
+  renderAsm();
+  return asmJointCheck(a);
+}
+function asmFixRow(p, i) {
+  const btn = p.accepted
+    ? h('span', { class: 'badge ok', style: 'margin-left:6px' }, L('accepted', 'diterima'))
+    : h('button', { class: 'chip', style: 'margin-left:6px', onclick: () => asmAcceptFix(i) }, L('Accept the shift', 'Terima geseran'));
+  return h('li', { 'data-fix': String(i) },
+    `${p.part} → ${p.with || ''}: ${p.shift_mm > 0 ? '+' : ''}${p.shift_mm} mm ${p.axis}`,
+    btn,
+    p.why_not ? h('small', null, ' · ' + p.why_not) : null);
+}
+function asmJointCard(a) {
+  const j = a.joint, st = j.status;
+  const label = st === 'ok' ? L('Assembly OK', 'Rakitan OK') : st === 'failed'
+    ? L(`FAILED: ${j.failed.length} check(s) failed`, `GAGAL: ${j.failed.length} cek tidak lulus`)
+    : st === 'needs_fix' ? L('Needs a fix', 'Perlu perbaikan')
+      : st === 'checking' ? L('Checking the joints…', 'Memeriksa sambungan…') : L('not checked yet', 'belum dicek');
+  const box = h('div', { class: 'warnbox ' + (st === 'ok' ? '' : st === 'checking' ? '' : st === 'unknown' ? '' : 'bad'), id: 'asmJoint' },
+    h('b', null, `${L('Joints', 'Sambungan')}: ${label}`));
+  if (j.checked != null) {
+    box.append(h('p', { class: 'hint' }, L(`${j.checked} part(s) measured · ${j.passed || 0}/${j.total || 0} check(s) passed · ${(j.failed || []).length} failed · ${(j.floating || []).length} with no joint`,
+      `${j.checked} part diukur · ${j.passed || 0}/${j.total || 0} cek lulus · ${(j.failed || []).length} gagal · ${(j.floating || []).length} tanpa sambungan`)));
+  }
+  if (j.why) box.append(h('p', null, j.why));
+  if ((j.failed || []).length) {
+    box.append(h('ul', { class: 'joint-bad' }, j.failed.map((c) => h('li', { 'data-check': String(c.check || '') },
+      `${c.check || L('check', 'cek')}${c.parts ? ' · ' + [].concat(c.parts).join(' + ') : ''}: `
+      + (c.value_mm3 != null ? `${c.value_mm3} mm³` : c.value_mm != null ? `${c.value_mm} mm` : c.value != null ? String(c.value) : L('failed', 'gagal'))
+      + (c.source ? ' · ' + String(c.source) : '')))));
+  }
+  if ((j.floating || []).length) box.append(h('p', null, L('No joint touches: ', 'Tidak tersambung: ') + j.floating.join(', ')));
+  if (j.framesComplete === false) {
+    box.append(h('p', null, L('The plan gives no frame for some parts, so they sit at the origin: that is a fix, not an assembly.',
+      'Rencana tidak memberi frame untuk sebagian part, jadi mereka di titik asal: itu perlu perbaikan, bukan rakitan.')));
+  }
+  if ((j.proposals || []).length) {
+    box.append(h('div', { class: 'joint-fix' }, h('b', null, L('The solver proposes a shift — nothing is applied until you accept it',
+      'Solver mengusulkan geseran — belum diterapkan sampai kamu setujui')),
+      h('ul', null, j.proposals.map(asmFixRow))));
+  }
+  if ((j.skipped || []).length) {
+    box.append(h('p', { class: 'hint' }, L(`No size in the plan for: ${j.skipped.join(', ')} — not checked here, and no size was invented for it.`,
+      `Tidak ada ukuran di rencana untuk: ${j.skipped.join(', ')} — tidak dicek di sini, dan tidak ada ukuran yang dikarang.`)));
+  }
+  if (st !== 'checking') {
+    box.append(h('div', { class: 'gen-var' }, h('button', { class: 'chip', onclick: () => asmJointCheck(a) },
+      L('Check the joints', 'Cek sambungan'))));
+  }
+  return box;
+}
+{ const st6 = document.createElement('style');
+  st6.textContent = `.joint-bad{margin:4px 0 0 14px;padding:0;font-size:11.5px}
+ .joint-fix{margin-top:6px;border:1px solid #7a6528;border-radius:8px;padding:6px 8px;font-size:11.5px;color:#e8d79a}
+ .joint-fix ul{margin:4px 0 0 14px;padding:0}`;
+  document.head.append(st6); }
+{ const ra5 = renderAsm; renderAsm = function () {
+    const r = ra5.apply(this, arguments);
+    const a = asmJob, box = $('#asmPanel');
+    if (!a || !box) return r;
+    const old = $('#asmJoint'); if (old) old.remove();
+    if (a.stage !== 'design' || a.status === 'running' || !(a.parts || []).length) return r;
+    a.joint = a.joint || { status: 'idle' };
+    const card = asmJointCard(a);
+    const notchk = box.querySelector('.notchk');
+    if (notchk) notchk.before(card); else box.append(card);
+    return r;
+  }; }
+{ const aa5 = asmAssemble; asmAssemble = async function () {
+    const r = await aa5.apply(this, arguments);
+    const a = asmJob;
+    if (a && a.built && !a.built.error) await asmJointCheck(a);
+    return r;
+  }; }
 
 /* ================= 8. Bearings, materials, references ================= */
 async function openBearings() {
@@ -13173,7 +13545,7 @@ async function manufacturingPanel() {
     if (/^(manufacturing|sambungan|produksi|joining)$/.test(t)) { addUser(text); return manufacturingPanel(); }
     return ht2.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, aiUsageRefresh, aiBadgePaint, sheetMetal: sheetMetalPanel, bendAllowance, flatPattern, bendSetback, setback: bendSetback, manufacturingPanel, manufacturing: manufacturingPanel, manufacturingFromParts, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
+window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), asm: { setJob: (a) => { asmJob = a; renderAsm(); }, job: () => asmJob, assemble: () => asmAssemble(), render: () => renderAsm() }, vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, aiUsageRefresh, aiBadgePaint, sheetMetal: sheetMetalPanel, bendAllowance, flatPattern, bendSetback, setback: bendSetback, manufacturingPanel, manufacturing: manufacturingPanel, manufacturingFromParts, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
 })();
 </script>
 </body>
