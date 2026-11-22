@@ -30,8 +30,8 @@ const f = (n, d = 0) => Number(n).toFixed(d);
 const oc = await ocmod({ locateFile: (f2) => new URL('../kernel/' + f2, import.meta.url).href });
 R.setOC(oc);
 const make = new Function('kernel', 'L', 'catClearance', 'state', 'f',
-  `${src}\nreturn { buildPart, WELD_PROFILES, weldArea, weldCutList, weldMemberSolid };`);
-const { buildPart, WELD_PROFILES, weldArea, weldCutList } = make(async () => R, L, async () => null, {}, f);
+  `${src}\nreturn { buildPart, WELD_PROFILES, weldArea, weldCutList, weldMemberSolid, weldSectionSummary, weldMassNote, weldProfileOptions };`);
+const { buildPart, WELD_PROFILES, weldArea, weldCutList, weldSectionSummary, weldMassNote, weldProfileOptions } = make(async () => R, L, async () => null, {}, f);
 
 let pass = 0, fail = 0;
 const t = (name, ok, detail = '') => { if (ok) { pass++; console.log('  ok   ' + name); } else { fail++; console.log('  FAIL ' + name + (detail ? '  -> ' + detail : '')); } };
@@ -51,15 +51,22 @@ const errsOf = (p) => p.features.filter((x) => x.err).map((x) => `${x.type}: ${x
   t('cut list: 2 x 500 mm', rows[500] === 2, JSON.stringify(rows));
   t('cut list: 2 x 300 mm', rows[300] === 2, JSON.stringify(rows));
   const area = weldArea(WELD_PROFILES['SHS 40x40x3']);
-  near(area, 444, 1e-6, 'SHS 40x40x3 section area = 444 mm2');
+  const A = WELD_PROFILES['SHS 40x40x3'].A;
+  near(area, 444, 1e-6, 'SHS 40x40x3 kernel section area = 444 mm2 (sharp corners)');
+  near(A, 421, 1e-6, 'SHS 40x40x3 table area A = 421 mm2 (EN 10219-2, 4.21 cm2)');
   const vol = res.body ? R.measureVolume(res.body) : 0;
   const sum = area * 1600;
   t('kernel volume is below the sum of the pieces (corners share steel)', vol < sum, `${vol} < ${sum}`);
   t('kernel volume is above 90 % of the pieces', vol > sum * 0.9, `${vol} vs ${sum}`);
   const massCut = cut.reduce((n, r) => n + r.qty * r.mass, 0);
-  near(massCut, sum * 7.85e-3, 0.5, 'mass of the cut pieces = area x length x 7.85');
+  near(massCut, A * 1600 * 7.85e-3, 0.5, 'mass of the cut pieces = table A x length x 7.85');
+  t('cut list rows carry the table area A and its source', cut.every((r) => r.A === A && /EN 10219-2/.test(r.tbl)), JSON.stringify(cut[0]));
   const massKernel = vol * 7.85e-3;
-  t('part mass = kernel volume x 7.85', massKernel > 0 && massKernel <= massCut + 1e-6, `${massKernel} vs ${massCut}`);
+  t('part mass = kernel volume x 7.85', massKernel > 0, String(massKernel));
+  /* the old assertion (kernel <= table mass) assumed a table area above the kernel area; with the table numbers the
+     simplified kernel section is 5.5 % larger, so the two differ and the label says by how much */
+  t('the simplified kernel mass differs from the table-A cut mass', Math.abs(massKernel - massCut) > 1, `${massKernel} vs ${massCut}`);
+  t('kernel mass stays within 10 % of the table-A cut mass', Math.abs(massKernel / massCut - 1) < 0.1, `${(100 * (massKernel / massCut - 1)).toFixed(1)} %`);
   console.log(`       kernel volume ${vol.toFixed(0)} mm3, cut pieces ${sum.toFixed(0)} mm3, kernel mass ${massKernel.toFixed(0)} g, cut mass ${massCut.toFixed(0)} g`);
 }
 
@@ -104,6 +111,28 @@ const errsOf = (p) => p.features.filter((x) => x.err).map((x) => `${x.type}: ${x
   const p = { features: [{ id: 'm', type: 'member', p: { profile: 'SHS 40x40x3', trim: 'none', op: 'add' } }] };
   await buildPart(p);
   t('member with no sketch says so', /needs a sketch/i.test(p.features[0].err || ''), p.features[0].err);
+}
+
+/* 6. the numbers: cut-list mass uses the standard's table A, and the part label shows kernel area vs table A with a
+ *    signed Δ; the first profile in the picker says it is only a default */
+{
+  const TBL = { 'SHS 40x40x3': 421, 'SHS 50x50x3': 541, 'CHS 42.4x3.2': 394, 'L 40x40x4': 308, 'UPN 80': 1100, 'IPE 100': 1032 };
+  const sk = (k) => ({ id: 'sk' + k, type: 'sketch', p: { prof: 'ents', plane: 'XY', at: 'value', off: 0, u: 0, v: 0, ents: [line('a' + k, 0, 0, 1000, 0)], rels: [], dims: [] } });
+  for (const [name, a] of Object.entries(TBL)) {
+    const prof = WELD_PROFILES[name];
+    t(`${name}: table A = ${a} mm2, mass per metre and a source on the row`, !!prof && prof.A === a && prof.mpm > 0 && /EN \d/.test(prof.tbl), JSON.stringify(prof));
+    const p = { features: [sk(name.length), { id: 'm', type: 'member', p: { profile: name, trim: 'none', op: 'add' } }] };
+    await buildPart(p);
+    const row = weldCutList(p.features)[0];
+    near(row.mass, a * 1000 * 7.85e-3, 0.5, `${name}: cut-list mass = table A x 1000 mm x 7.85`);
+    const s = weldSectionSummary(p.features), kA = weldArea(prof), note = weldMassNote(s);
+    t(`${name}: the part label names the simplified section and both areas`, !!s && /simplified section/.test(note) && /kernel area/.test(note) && /table A/.test(note), note);
+    t(`${name}: Δ is signed and matches kernel ${kA.toFixed(1)} vs table ${a} mm2`, !!s && Math.abs(s.delta - (kA - a) / a * 100) < 1e-9 && (kA - a) * s.delta > 0, note);
+    if (name === 'CHS 42.4x3.2') t('CHS: Δ = 0,0 % (a round tube has no corner radius)', f(s.delta, 1) === '0.0', note);
+    else t(`${name}: Δ is not 0,0 %`, f(s.delta, 1) !== '0.0', note);
+  }
+  const opts = weldProfileOptions();
+  t('the first profile is marked a default selection, the others are not', /default selection/.test(opts[0][1][0]) && opts.slice(1).every((o) => !/default selection/.test(o[1][0])), opts[0][1][0]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

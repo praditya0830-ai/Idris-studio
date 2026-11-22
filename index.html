@@ -5961,7 +5961,8 @@ function lpProperties() {
     } else {
       wrap.append(lpRow(L('Part', 'Part'), p.name), lpRow(L('Material', 'Material'), (PMAT[p.material] || PMAT.aluminium)[0], L('standard', 'standar')),
         lpRow(L('Feature steps', 'Langkah fitur'), p.features.length));
-      if (partInfo) wrap.append(lpRow(L('Mass', 'Massa'), f(partInfo.mass, 1) + ' g'), lpRow(L('Size', 'Ukuran'), partInfo.size.map((x) => f(x, 1)).join(' × ') + ' mm'));
+      if (partInfo) { wrap.append(lpRow(L('Mass', 'Massa'), f(partInfo.mass, 1) + ' g'), lpRow(L('Size', 'Ukuran'), partInfo.size.map((x) => f(x, 1)).join(' × ') + ' mm'));
+        if (partInfo.weld) wrap.append(h('p', { class: 'lphint' }, weldMassNote(partInfo.weld))); }
       const g = p.gen;
       if (g && Array.isArray(g.params) && g.params.length) {
         wrap.append(h('div', { class: 'lphd2', style: 'margin-top:6px' }, L('Concept parameters', 'Parameter konsep')));
@@ -5972,7 +5973,8 @@ function lpProperties() {
     wrap.append(h('div', { class: 'cmat', style: 'margin-top:6px' }, h('span', null, L('Material', 'Material')),
       h('select', { onchange: (e) => { p.material = e.target.value; rebuildPart(); }, 'aria-label': L('Material', 'Material') },
         Object.entries(PMAT).map(([k, [n, rho]]) => h('option', { value: k, selected: k === p.material }, `${n} · ${rho} g/cm³`))),
-      partInfo ? h('span', null, L(`Mass ${f(partInfo.mass, 1)} g (kernel volume × typical density)`, `Massa ${f(partInfo.mass, 1)} g (volume kernel × densitas tipikal)`)) : null));
+      partInfo ? h('span', null, partInfo.weld ? L(`Mass ${f(partInfo.mass, 1)} g (kernel volume × 7.85 kg/dm³ steel) · ${weldMassNote(partInfo.weld)}`, `Massa ${f(partInfo.mass, 1)} g (volume kernel × 7,85 kg/dm³ baja) · ${weldMassNote(partInfo.weld)}`)
+        : L(`Mass ${f(partInfo.mass, 1)} g (kernel volume × typical density)`, `Massa ${f(partInfo.mass, 1)} g (volume kernel × densitas tipikal)`)) : null));
     wrap.append(h('div', { class: 'pdoc' }, h('button', { class: 'linkbtn', onclick: () => renamePart() }, L('Rename part', 'Ganti nama part')), ' · ',
       h('button', { class: 'linkbtn', onclick: () => leavePart() }, L('Close part', 'Tutup part'))));
     return wrap;
@@ -6451,17 +6453,26 @@ const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
 const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
-/* ---- P1d: welded frames. Profile numbers come from the standards named on each row; nothing is invented. ---- */
+/* ---- P1d: welded frames. Two numbers on every row come from its standard's table: A (mm²) and the mass
+ * per metre (kg/m). The kernel builds a SIMPLIFIED section — sharp corners, no corner or root radius — so its
+ * area and the table area differ; the difference is shown, never hidden. No table value is guessed: a size
+ * whose A is not in a table I could read is left out of the list. ---- */
 const WELD_PROFILES = {
-  'SHS 40x40x3': { kind: 'shs', w: 40, t: 3, src: 'EN 10219-2 SHS 40×40×3' },
-  'SHS 50x50x3': { kind: 'shs', w: 50, t: 3, src: 'EN 10219-2 SHS 50×50×3' },
-  'CHS 42.4x3.2': { kind: 'chs', d: 42.4, t: 3.2, src: 'EN 10219-2 CHS 42,4×3,2' },
-  'L 40x40x4': { kind: 'angle', w: 40, t: 4, src: 'EN 10056-1 L 40×40×4' },
-  'UPN 80': { kind: 'upn', h: 80, b: 45, tw: 6, tf: 8, src: 'EN 10365 UPN 80' },
-  'IPE 100': { kind: 'ipe', h: 100, b: 55, tw: 4.1, tf: 5.7, src: 'EN 10365 IPE 100' },
+  'SHS 40x40x3': { kind: 'shs', w: 40, t: 3, src: 'EN 10219-2 SHS 40×40×3', A: 421, mpm: 3.30, tbl: 'EN 10219-2:2019, A 4.21 cm², 3.30 kg/m' },
+  'SHS 50x50x3': { kind: 'shs', w: 50, t: 3, src: 'EN 10219-2 SHS 50×50×3', A: 541, mpm: 4.25, tbl: 'EN 10219-2:2019, A 5.41 cm², 4.25 kg/m' },
+  'CHS 42.4x3.2': { kind: 'chs', d: 42.4, t: 3.2, src: 'EN 10219-2 CHS 42,4×3,2', A: 394, mpm: 3.09, tbl: 'EN 10219-2:2019, A 3.94 cm², 3.09 kg/m' },
+  'L 40x40x4': { kind: 'angle', w: 40, t: 4, src: 'EN 10056-1 L 40×40×4', A: 308, mpm: 2.42, tbl: 'EN 10056-1:2017, A 3.08 cm², 2.42 kg/m' },
+  'UPN 80': { kind: 'upn', h: 80, b: 45, tw: 6, tf: 8, src: 'EN 10365 UPN 80', A: 1100, mpm: 8.64, tbl: 'EN 10365:2017, A 11.0 cm², 8.64 kg/m' },
+  'IPE 100': { kind: 'ipe', h: 100, b: 55, tw: 4.1, tf: 5.7, src: 'EN 10365 IPE 100', A: 1032, mpm: 8.1, tbl: 'EN 10365:2017, A 10.3 cm², 8.1 kg/m' },
 };
 const weldWidth = (p) => p.w || p.d;
-/* section area in mm², from the standard's own dimensions (UPN/IPE: web + two flanges, no root radius) */
+/* the profile picker; the first entry is a starting point, not a silent choice */
+const weldProfileOptions = () => Object.keys(WELD_PROFILES).map((k) => {
+  const lab = `${k} — ${WELD_PROFILES[k].src}${k === 'SHS 40x40x3' ? ` · ${L('default selection — change to your profile', 'pilihan default — ganti ke profilmu')}` : ''}`;
+  return [k, [lab, lab]];
+});
+/* SIMPLIFIED section area in mm² of the solid the kernel builds (sharp corners; UPN/IPE: web + two flanges,
+ * no root radius). This is the kernel's area, not the table's; weldCutList and the part label use pr.A. */
 const weldArea = (p) => p.kind === 'shs' ? p.w ** 2 - (p.w - 2 * p.t) ** 2
   : p.kind === 'chs' ? Math.PI / 4 * (p.d ** 2 - (p.d - 2 * p.t) ** 2)
     : p.kind === 'angle' ? 2 * p.w * p.t - p.t ** 2
@@ -6486,20 +6497,36 @@ function weldCutList(features) {
     for (const c of f.cut) {
       const pr = WELD_PROFILES[c.profile]; if (!pr) continue;
       const len = Math.round(c.len * 10) / 10, key = c.profile + '|' + len;
-      const r = rows.get(key) || { profile: c.profile, len, qty: 0, src: pr.src, area: weldArea(pr) };
+      const r = rows.get(key) || { profile: c.profile, len, qty: 0, src: pr.src, tbl: pr.tbl, A: pr.A, kernel: weldArea(pr) };
       r.qty++; rows.set(key, r);
     }
   }
-  return [...rows.values()].map((r) => ({ ...r, mass: r.area * r.len * 7.85e-3 })).sort((a, b) => a.profile.localeCompare(b.profile) || b.len - a.len);
+  /* mass each = the standard's table A × length × 7.85 kg/dm³, not the simplified kernel area */
+  return [...rows.values()].map((r) => ({ ...r, mass: r.A * r.len * 7.85e-3 })).sort((a, b) => a.profile.localeCompare(b.profile) || b.len - a.len);
 }
+/* the section areas behind the steel in this part: what the kernel built summed over the members, and what the
+ * profile tables say for the same members. Used for the part-mass label and its Δ %. */
+function weldSectionSummary(features) {
+  let kernel = 0, table = 0, members = 0;
+  for (const f of features || []) {
+    if (!f || f.type !== 'member' || f.off || !Array.isArray(f.cut)) continue;
+    for (const c of f.cut) { const pr = WELD_PROFILES[c.profile]; if (!pr) continue; kernel += weldArea(pr); table += pr.A; members++; }
+  }
+  if (!members) return null;
+  return { members, kernel, table, delta: (kernel - table) / table * 100 };
+}
+/* the label every part-mass readout carries once structural members are in the part */
+const weldMassNote = (w) => !w ? '' : L(
+  `simplified section: sharp corners, no root/corner radius (kernel area ${f(w.kernel, 1)} mm² vs table A ${f(w.table, 1)} mm², Δ ${w.delta >= 0 ? '+' : ''}${f(w.delta, 1)} %)`,
+  `penampang disederhanakan: sudut tajam, tanpa jari-jari root/sudut (luas kernel ${f(w.kernel, 1)} mm² vs A tabel ${f(w.table, 1)} mm², Δ ${w.delta >= 0 ? '+' : ''}${f(w.delta, 1)} %)`);
 /* P1d: the Cut List toolbar item prints the same list the panel shows */
 function weldCutListShow() {
   const p = state.part;
   if (!p) return say(para(L('Build a part with structural members first.', 'Bangun part dengan structural member dulu.'), 'm'));
   const rows = weldCutList(p.features);
   if (!rows.length) return say(para(L('No structural members yet: pick Weldments → Structural Member and run it along a sketch.', 'Belum ada structural member: pilih Weldments → Structural Member dan jalankan sepanjang sketch.'), 'm'));
-  const txt = rows.map((r) => `${r.qty}× ${r.profile} ${f(r.len, 1)} mm — ${f(r.mass, 2)} g  (${r.src})`).join('\n');
-  say(para(L(`Cut list:\n${txt}`, `Daftar potong:\n${txt}`), 'm'));
+  const txt = rows.map((r) => `${r.qty}× ${r.profile} ${f(r.len, 1)} mm — ${f(r.mass, 2)} g  (${r.src} · ${r.tbl})`).join('\n');
+  say(para(L(`Cut list (mass from table A × length × 7.85 kg/dm³):\n${txt}`, `Daftar potong (massa dari A tabel × panjang × 7,85 kg/dm³):\n${txt}`), 'm'));
 }
 /* ISO 261 coarse pitch per size, used by the cosmetic thread (the tap drill is the ISO 2306 value in TAP) */
 const M_PITCH = { M3: 0.5, M4: 0.7, M5: 0.8, M6: 1, M8: 1.25, M10: 1.5, M12: 1.75, M16: 2 };
@@ -6555,13 +6582,13 @@ const FEAT = {
       S('op', 'Result', 'Hasil', OPS, 'add')],
     label: (p) => `${L('Revolve', 'Putar')} ${p.angle}\u00b0 \u00b7 ${p.axis}${p.op === 'cut' ? ' \u00b7 ' + L('cut', 'potong') : ''}` },
   member: { en: 'Structural Member', id: 'Structural Member', get fields() {
-      return [S('profile', 'Profile', 'Profil', Object.keys(WELD_PROFILES).map((k) => [k, [`${k} — ${WELD_PROFILES[k].src}`, `${k} — ${WELD_PROFILES[k].src}`]]), 'SHS 40x40x3'),
+      return [S('profile', 'Profile', 'Profil', weldProfileOptions(), 'SHS 40x40x3'),
         S('trim', 'Ends', 'Ujung', [['none', ['To the sketch line (no trim)', 'Sampai garis sketch (tanpa potong)']], ['miter', ['Trimmed at shared corners (half the profile each end)', 'Dipotong di sudut bersama (setengah profil tiap ujung)']]], 'none'),
         S('op', 'Result', 'Hasil', OPS, 'add')]; },
     label: (p) => `${p.profile}${p.trim === 'miter' ? ' · ' + L('trimmed', 'dipotong') : ''}` },
   endcap: { en: 'End Cap', id: 'End Cap', get fields() {
       const o = weldSketchOptions();
-      return [S('sketch', 'Sketch', 'Sketch', o, o[0][0]), S('profile', 'Profile', 'Profil', Object.keys(WELD_PROFILES).map((k) => [k, [`${k} — ${WELD_PROFILES[k].src}`, `${k} — ${WELD_PROFILES[k].src}`]]), 'SHS 40x40x3'),
+      return [S('sketch', 'Sketch', 'Sketch', o, o[0][0]), S('profile', 'Profile', 'Profil', weldProfileOptions(), 'SHS 40x40x3'),
         N('t', 'Plate thickness', 'Tebal pelat', 'mm', 3, { min: 0.5 }), S('op', 'Result', 'Hasil', OPS, 'add')]; },
     label: (p) => `${L('End caps', 'Tutup ujung')} ${p.t} mm · ${p.profile}` },
   sweep: { en: 'Swept Boss/Base', id: 'Swept Boss/Base', get fields() {
@@ -6719,7 +6746,7 @@ async function buildPart(pArg) {
           apply(t, q.op || 'add'); made++; cut.push({ profile: q.profile, len });
         }
         if (!made) throw new Error(L('No member was built from this sketch.', 'Tidak ada member yang terbangun dari sketch ini.'));
-        ft.cut = cut; ft.note = L(`${made} member(s) from ${q.profile} (${prof.src}).`, `${made} member dari ${q.profile} (${prof.src}).`);
+        ft.cut = cut; ft.note = L(`${made} member(s) from ${q.profile} (${prof.src}; table A ${prof.A} mm², ${prof.mpm} kg/m).`, `${made} member dari ${q.profile} (${prof.src}; A tabel ${prof.A} mm², ${prof.mpm} kg/m).`);
         sketch.used = true; sketch = null;
       } else if (ft.type === 'endcap') {
         /* P1d: a plate of the profile's own size at both ends of every member in the named sketch */
@@ -6848,7 +6875,9 @@ async function rebuildPart(fit) {
       $('#vempty').classList.add('hide'); }
     else { viewer.clear(); $('#vempty').classList.remove('hide'); }
     partInfo = out.body ? (() => { const R = out.R, vol = R.measureVolume(out.body), area = R.measureArea(out.body), b = out.body.boundingBox.bounds, mat = PMAT[state.part.material] || PMAT.aluminium;
-      return { vol, area, size: [0, 1, 2].map((k) => b[1][k] - b[0][k]), mass: vol / 1000 * mat[1], mat }; })() : null;
+      /* P1d: a welded frame is steel, so its kernel mass uses 7.85 kg/dm³ and carries the simplified-section label */
+      const weld = weldSectionSummary(state.part.features), rho = weld ? 7.85 : mat[1];
+      return { vol, area, size: [0, 1, 2].map((k) => b[1][k] - b[0][k]), mass: vol / 1000 * rho, rho, weld, mat }; })() : null;
   } catch (e) {
     partInfo = null; say(h('div', { class: 'warnbox bad' }, h('b', null, L('The CAD kernel could not load', 'Kernel CAD tidak bisa dimuat')),
       para(L(`The part tools need the kernel files in a kernel/ (or Kernel/) folder next to index.html (${String(e.message || e).slice(0, 120)}).`, `Alat part butuh file kernel di folder kernel/ (atau Kernel/) di samping index.html (${String(e.message || e).slice(0, 120)}).`))));
@@ -7854,9 +7883,9 @@ function renderPartCad() {
   { const cut = weldCutList(p.features);
     if (cut.length) {
       lf.append(h('div', { class: 'lphdrow' }, h('span', null, L('Cut list', 'Daftar potong')), h('small', null, `${cut.reduce((n, r) => n + r.qty, 0)} ${L('pieces', 'potong')}`)));
-      lf.append(h('table', { class: 'cutlist' }, h('tr', null, h('th', null, L('Profile', 'Profil')), h('th', null, L('Length', 'Panjang')), h('th', null, 'Qty'), h('th', null, L('Mass each', 'Massa/potong'))),
-        ...cut.map((r) => h('tr', null, h('td', { title: r.src }, r.profile), h('td', null, `${f(r.len, 1)} mm`), h('td', null, String(r.qty)), h('td', null, `${f(r.mass, 2)} g`)))));
-      lf.append(h('p', { class: 'hint' }, L('Mass each = section area from the standard dimensions × length × 7.85 kg/dm³. The part mass in Checks is the kernel solid.', 'Massa/potong = luas penampang dari dimensi standar × panjang × 7,85 kg/dm³. Massa part di Checks adalah solid kernel.')));
+      lf.append(h('table', { class: 'cutlist' }, h('tr', null, h('th', null, L('Profile', 'Profil')), h('th', null, L('Length', 'Panjang')), h('th', null, 'Qty'), h('th', { title: L('Mass each = the standard table area A × length × 7.85 kg/dm³', 'Massa/potong = luas A tabel standar × panjang × 7,85 kg/dm³') }, L('Mass (EN table A)', 'Massa (A tabel EN'))),
+        ...cut.map((r) => h('tr', null, h('td', { title: `${r.src} · ${r.tbl}` }, r.profile), h('td', null, `${f(r.len, 1)} mm`), h('td', null, String(r.qty)), h('td', null, `${f(r.mass, 2)} g`)))));
+      lf.append(h('p', { class: 'hint' }, L('Mass each = table area A from the standard named on the row × length × 7.85 kg/dm³. The kernel builds a simplified section (sharp corners, no root radius), so the part mass in Checks is a kernel volume and carries its own Δ label.', 'Massa/potong = luas A tabel dari standar pada baris itu × panjang × 7,85 kg/dm³. Kernel membangun penampang sederhana (sudut tajam, tanpa jari-jari root), jadi massa part di Checks adalah volume kernel dan membawa label Δ sendiri.')));
     } }
   lf.append(h('div', { class: 'lpsep' }));
   lf.append(lpProperties());
@@ -7888,7 +7917,8 @@ function renderPartCad() {
     const src = (typeof PMAT_SRC !== 'undefined' && PMAT_SRC[state.part.material]) || L('IDRIS material table (typical value, not a certified lot)', 'Tabel material IDRIS (nilai tipikal, bukan sertifikat lot)');
     pr.append(h('h2', null, h('span', null, L('Mass Properties', 'Properti Massa')), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))));
     if (I) pr.append(kvs([[L('Volume', 'Volume'), `${f(I.vol / 1000, 2)} cm³`], [L('Surface area', 'Luas permukaan'), `${f(I.area / 100, 2)} cm²`],
-      [L('Size X × Y × Z', 'Ukuran X × Y × Z'), I.size.map((x) => f(x, 2)).join(' × ') + ' mm'], [L('Density', 'Densitas'), `${mat[1]} g/cm³ · ${mat[0]}`], [L('Mass', 'Massa'), `${f(I.vol / 1000 * mat[1], 1)} g`]]),
+      [L('Size X × Y × Z', 'Ukuran X × Y × Z'), I.size.map((x) => f(x, 2)).join(' × ') + ' mm'], [L('Density', 'Densitas'), `${I.rho != null ? I.rho : mat[1]} g/cm³ · ${I.rho === 7.85 ? L('steel (structural members)', 'baja (structural member)') : mat[0]}`], [L('Mass', 'Massa'), `${f(I.vol / 1000 * (I.rho != null ? I.rho : mat[1]), 1)} g`]]),
+      I.weld ? h('p', { class: 'hint' }, weldMassNote(I.weld)) : document.createTextNode(''),
       h('div', { class: 'pform' }, h('label', null, h('span', null, L('Material (drives the density)', 'Material (menentukan densitas)')),
         h('select', { onchange: (e) => { state.part.material = e.target.value; rebuildPart(); }, 'aria-label': L('Material', 'Material') }, Object.entries(PMAT).map(([k, [n, rho]]) => h('option', { value: k, selected: k === state.part.material }, `${n} · ${rho} g/cm³`))))),
       h('p', { class: 'hint' }, L('Volume and area come from the OpenCascade kernel in this browser. Mass = volume × density. Density source: ', 'Volume dan luas dari kernel OpenCascade di browser ini. Massa = volume × densitas. Sumber densitas: ') + src + '.'));
@@ -7896,7 +7926,8 @@ function renderPartCad() {
   } else if (partSel === 'measure' || cadTab === 'check') {
     pr.append(h('h2', null, h('span', null, L('Measure', 'Ukur')), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))));
     if (I) pr.append(kvs([[L('Volume', 'Volume'), `${f(I.vol / 1000, 2)} cm³`], [L('Surface area', 'Luas permukaan'), `${f(I.area / 100, 2)} cm²`],
-      [L('Size X × Y × Z', 'Ukuran X × Y × Z'), I.size.map((x) => f(x, 2)).join(' × ') + ' mm'], [L('Mass', 'Massa'), `${f(I.mass, 1)} g`], [L('Density used', 'Densitas dipakai'), `${I.mat[1]} g/cm³ (${I.mat[0]}, ${L('typical', 'tipikal')})`]]),
+      [L('Size X × Y × Z', 'Ukuran X × Y × Z'), I.size.map((x) => f(x, 2)).join(' × ') + ' mm'], [L('Mass', 'Massa'), `${f(I.mass, 1)} g`], [L('Density used', 'Densitas dipakai'), `${I.rho != null ? I.rho : I.mat[1]} g/cm³ (${I.rho === 7.85 ? L('steel, structural members', 'baja, structural member') : I.mat[0] + ', ' + L('typical', 'tipikal')})`]]),
+      I.weld ? h('p', { class: 'hint' }, weldMassNote(I.weld)) : document.createTextNode(''),
       h('p', { class: 'hint' }, L('Volume, area and size come from the OpenCascade kernel in this browser. Mass uses a typical density, not a certified material value. No strength check has been run for this part.', 'Volume, luas, dan ukuran berasal dari kernel OpenCascade di browser ini. Massa memakai densitas tipikal, bukan nilai material bersertifikat. Belum ada cek kekuatan untuk part ini.')));
     else pr.append(h('p', { class: 'hint' }, L('Build a body first.', 'Bangun body dulu.')));
   } else {
