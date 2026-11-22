@@ -109,6 +109,15 @@ check('the placeholder blocks stay out of the interference check', () => {
 });
 
 if (process.env.SHOT !== '0') await page.screenshot({ path: `${root}/${OUT}/t34-assemble-${VP[0]}.png` });
+
+/* ---- 3. a kernel/worker failure keeps its own message on screen (the catch in asmAssemble) ---- */
+await page.evaluate(() => { const a = window.__idris.asm.job(); a.built = { error: 'The kernel stopped: simulated worker failure' }; window.__idris.asm.render(); });
+await page.waitForSelector('#asmPanel .warnbox.bad', { timeout: 10000 });
+const failedMsg = await page.evaluate(() => (document.querySelector('#asmPanel .warnbox.bad') || {}).textContent || '');
+check('a worker failure is shown, not swallowed', () => {
+  if (!/The kernel stopped: simulated worker failure/.test(failedMsg)) throw new Error('message: ' + failedMsg);
+});
+
 check('no JavaScript errors while assembling', () => { if (errors.length) throw new Error(errors.join(' | ')); });
 
 await browser.close();
