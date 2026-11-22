@@ -7780,7 +7780,8 @@ const RIBBON = [
       T('Modal / Frequency', 'modal', 'on', 'Natural frequencies of the open part (solver), or the gearbox frequency check against the gear mesh.', 'Frekuensi alami part yang terbuka (solver), atau cek frekuensi gearbox terhadap mesh gear.', 'Frequency', 'modalAny'),
       T('Thermal', 'therm', 'gb', 'Oil temperature, with or without a fan.', 'Suhu oli, dengan atau tanpa kipas.', 'Heat Transfer', 'gbCheck', ALT_GB),
       T('Bearing Life & Fatigue', 'fatigue', 'on', 'ISO 281 modified rating life L_nm of a catalogue deep-groove bearing (calculator S4). Inside a gearbox it runs the solver’s shaft and bearing check instead; the solver used is named in the result.', 'Umur rating termodifikasi L_nm ISO 281 untuk bearing deep-groove dari katalog (kalkulator S4). Di dalam gearbox, yang jalan adalah cek poros dan bearing dari solver; solver yang dipakai ditulis di hasil.', 'Fatigue', 'bearingAny')]],
-    ['Advanced', [T('Topology Optimisation', 'topo', 'no', 'Remove material that carries no load.', 'Buang material yang tidak menahan beban.', 'Generative Design, Shape Optimization'),
+    ['Advanced', [T('Calculators', 'calc', 'no', 'Engineering calculators built from the solver’s own schema: pressure vessel, bolted joint, bearing life, oil viscosity, mesh GCI and more.', 'Kalkulator teknik dari skema solver sendiri: bejana tekan, sambungan baut, umur bantalan, viskositas oli, GCI mesh, dan lainnya.', 'Engineering Reference'),
+      T('Topology Optimisation', 'topo', 'no', 'Remove material that carries no load.', 'Buang material yang tidak menahan beban.', 'Generative Design, Shape Optimization'),
       T('CFD', 'cfd', 'no', 'Air and fluid flow.', 'Aliran udara dan fluida.', 'Flow Simulation'), T('Buckling', 'buck', 'no', 'Collapse load of thin parts.', 'Beban runtuh part tipis.', ''),
       T('Drop Test', 'drop', 'no', 'Impact on the floor.', 'Benturan ke lantai.', 'Explicit Dynamics')]]]],
   ['draw', 'Drawing', 'Gambar', [
@@ -7822,6 +7823,7 @@ function ribAct(a, name) {
   if (typeof a === 'object' && a.sk) return openSketchSession(a.sk, a.editId);
   if (typeof a === 'object' && a.part) return partTool(a.part, a.p, name);
   if (a === 'library') return openLibrary();
+  if (a === 'calculators') return calculatorsTool();
   if (a === 'measure') return !state.part && state.variants.length ? cadTabGo('check') : partTool('measure');
   /* S12 B11: a part routes to the S4 calculator, a gearbox to its own solver check. */
   if (a === 'bearingAny') { if (state.part) return bearingPanel(); const g = gbRunner('gbCheck'); return g ? g() : bearingPanel(); }
@@ -11523,6 +11525,100 @@ function pipeTool() {
   showF();
 }
 
+/* ---- S4: Engineering calculators, built from GET /solvers -------------------------------------------------
+ * The form is the solver's schema: every value is typed by the engineer (nothing is defaulted), the published
+ * example fills the fields but each one is marked "example value" until it is changed, and the answer carries the
+ * solver's own checks, method, fidelity, benchmarks and limitations. */
+const CALC_IDS = ['shaft_section', 'bearing_rating', 'bearing_life_iso281', 'bearing_aiso', 'bolted_joint', 'bolted_stiffness', 'bolt_proof_load', 'pressure_vessel', 'gear_pair_iso6336', 'gear_tooth_form_iso', 'gear_loss_factor', 'oil_viscosity', 'thermal_slab', 'free_convection_plate', 'fea_plane', 'mesh_gci', 'fea_shell_cases', 'nafems_le1'];
+let calcCat = null, calcAt = 0;
+async function calcCatalog() {
+  if (calcCat && Date.now() - calcAt < 5 * 60 * 1000) return calcCat;
+  const r = await apiJSON('/solvers', undefined, 30000).catch(() => ({ d: null }));
+  calcCat = r && r.ok && r.d && Array.isArray(r.d.solvers) ? r.d.solvers : null;
+  calcAt = Date.now(); return calcCat;
+}
+const calcKeep = { id: 'pressure_vessel', vals: {} };
+const calcLabel = (k) => k.replace(/_/g, ' ');
+function calculatorsTool() {
+  const out = h('div', { class: 'tool-out', id: 'calcOut' });
+  const head = h('div', { id: 'calcHead' }, h('p', { class: 'm' }, L('Reading GET /solvers…', 'Membaca GET /solvers…')));
+  const form = h('div', { id: 'calcForm' });
+  const pick = h('select', { class: 'visin', id: 'calcPick', 'aria-label': L('Calculator', 'Kalkulator') });
+  const dlg = toolDlg('calcdlg', L('Engineering calculators', 'Kalkulator teknik'),
+    h('p', { class: 'hint' }, L('Built from the solver’s schema: every field is empty until you type it, and the solver’s own checks, method, benchmarks and limitations come back with the answer.', 'Dibangun dari skema solver: setiap kolom kosong sampai kamu isi, dan checks, method, benchmark, serta batasan solver ikut kembali bersama jawabannya.')),
+    h('div', { class: 'dr-f' }, h('span', null, L('Calculator', 'Kalkulator')), pick), head, form, out);
+
+  const draw = () => {
+    const cats = calcCat.filter((c) => CALC_IDS.includes(c.name));
+    if (!pick.options.length) cats.forEach((c) => pick.append(h('option', { value: c.name }, c.name.replace(/_/g, ' '))));
+    pick.value = calcKeep.id = cats.some((c) => c.name === calcKeep.id) ? calcKeep.id : (cats[0] && cats[0].name);
+    const cat = cats.find((c) => c.name === calcKeep.id); if (!cat) return;
+    head.innerHTML = '';
+    head.append(h('p', { class: 'm' }, h('b', null, cat.summary || cat.name), ' ', h('span', { class: 'tool-src' }, `${cat.domain || ''} · ${cat.fidelity || ''}${cat.fidelity_meaning ? ' — ' + cat.fidelity_meaning : ''}`)));
+    form.innerHTML = '';
+    const sch = cat.schema || {}, ex = cat.example || {}, inputs = {};
+    const grid = h('div', { class: 'tool-grid' });
+    for (const [k, sc] of Object.entries(sch)) {
+      const opts = sc.enum || sc.options;
+      let el;
+      if (Array.isArray(opts)) el = h('select', { class: 'visin', id: 'calc_' + k }, h('option', { value: '' }, L('— pick —', '— pilih —')), opts.map((o) => h('option', { value: String(o) }, String(o))));
+      else el = h('input', { type: 'number', step: 'any', class: 'visin', id: 'calc_' + k, inputmode: 'decimal' });
+      el.value = calcKeep.vals[k] ?? '';
+      const badge = h('span', { class: 'calc-ex' }, '');
+      const lab = h('label', { class: 'dr-f' }, h('span', null, calcLabel(k) + (sc.unit ? ` (${sc.unit})` : '') + (sc.required ? ' *' : '')), el, badge);
+      if (sc.desc) lab.title = sc.desc;
+      const mark = () => {
+        calcKeep.vals[k] = el.value;
+        const isEx = el.value !== '' && String(ex[k]) === String(el.value);
+        badge.textContent = isEx ? L('example value', 'nilai contoh') : '';
+        badge.classList.toggle('on', isEx);
+      };
+      el.oninput = el.onchange = mark; mark();
+      inputs[k] = { el, sc, badge };
+      grid.append(lab);
+    }
+    const exBtn = ex && Object.keys(ex).length ? h('button', { class: 'chip', onclick: () => { for (const [k, v] of Object.entries(ex)) { const f0 = inputs[k]; if (!f0) continue; f0.el.value = String(v); calcKeep.vals[k] = String(v); f0.badge.textContent = L('example value', 'nilai contoh'); f0.badge.classList.add('on'); } } }, L('Fill the published example', 'Isi contoh terbitan')) : null;
+    const runBtn = h('button', { class: 'chip primary', onclick: run }, L('Solve', 'Hitung'));
+    form.append(grid, h('div', { class: 'gen-var' }, exBtn, runBtn, h('span', { class: 'tool-src' }, L('Fields marked * are required by the solver. Units are the ones in the field name.', 'Kolom bertanda * wajib menurut solver. Satuan mengikuti nama kolomnya.'))));
+
+    async function run() {
+      out.innerHTML = '';
+      const missing = Object.entries(inputs).filter(([, v]) => v.sc.required && String(v.el.value).trim() === '').map(([k]) => calcLabel(k));
+      if (missing.length) return out.append(h('div', { class: 'warnbox' }, L('Fill: ', 'Isi: ') + missing.join(', ') + L('. IDRIS does not assume values.', '. IDRIS tidak mengasumsikan nilai.')));
+      const body = {};
+      for (const [k, v] of Object.entries(inputs)) {
+        const raw = String(v.el.value).trim(); if (raw === '') continue;
+        const opts = v.sc.enum || v.sc.options;
+        body[k] = Array.isArray(opts) ? (raw === 'true' ? true : raw === 'false' ? false : (opts.every((x) => typeof x === 'number') ? +raw : raw)) : (v.sc.type === 'string' ? raw : +raw);
+      }
+      out.append(para(L('Solving…', 'Menghitung…'), 'm'));
+      const res = await apiJSON('/solve/' + cat.name, body, 60000).catch((e) => ({ status: 0, d: { error: e.message } }));
+      out.innerHTML = ''; const d = res.d || {};
+      if (!res.ok || !d || d.ok === false || !d.outputs) return out.append(h('div', { class: 'warnbox bad' }, solverErr(res, 'POST /solve/' + cat.name) + (Array.isArray(d.errors) && d.errors.length ? ' ' + d.errors.join('; ') : '')));
+      const o = d.outputs || {};
+      out.append(h('table', { class: 'tool-tab' }, ...Object.entries(o).filter(([, v]) => v == null || typeof v !== 'object').map(([k, v]) => h('tr', null, h('td', null, calcLabel(k)), h('td', null, h('b', null, typeof v === 'number' ? (Math.abs(v) >= 1000 ? f(v, 0) : f(v, 4)) : String(v)))))));
+      const chks = [].concat(d.checks || []);
+      if (chks.length) out.append(h('ul', { class: 'gen-checks' }, chks.map((c) => h('li', null, h('span', { class: 'cdot ' + ((c.pass ?? c.ok) === false ? 'bad' : 'ok'), 'aria-hidden': 'true' }), h('div', null, h('b', null, String(c.name || c.check || '')), h('span', null, [c.value != null ? `${c.value}${c.unit && c.unit !== '-' ? ' ' + c.unit : ''}` : '', c.limit != null ? ` ${L('limit', 'batas')} ${c.limit}${c.kind ? ' (' + c.kind + ')' : ''}` : '', c.note ? ' · ' + c.note : ''].filter(Boolean).join('')))))));
+      if (d.verdict) out.append(h('p', { class: 'm' }, L('Verdict: ', 'Putusan: ') + String(d.verdict)));
+      [].concat(d.warnings || []).forEach((w) => out.append(h('div', { class: 'warnbox' }, typeof w === 'object' ? (w.message || JSON.stringify(w)) : String(w))));
+      [].concat(d.not_checked || []).forEach(() => {});
+      if ((d.not_checked || []).length) out.append(h('div', { class: 'notchk' }, h('b', null, L('Not checked by IDRIS', 'Tidak dicek oleh IDRIS')), h('ul', null, d.not_checked.map((x) => h('li', null, String(x))))));
+      out.append(sourceLine(`${cat.method || d.method || ''} · ${cat.fidelity || d.fidelity || ''} · solver ${d.solver_version || ''}`));
+      const bms = [].concat(cat.benchmarks || []);
+      if (bms.length) out.append(h('details', { class: 'gen-code' }, h('summary', null, L('Benchmarks the solver ships with', 'Benchmark yang dibawa solver')), h('ul', null, bms.map((b) => h('li', null, typeof b === 'string' ? b : (b.id ? b.id + ' — ' : '') + String(b.source || JSON.stringify(b)))))));
+      const lims = [].concat(d.limitations || cat.limitations || []);
+      if (lims.length) out.append(h('details', { class: 'gen-code' }, h('summary', null, L('Limitations', 'Batasan')), h('ul', null, lims.map((x) => h('li', null, String(x))))));
+    }
+  };
+
+  pick.onchange = () => { calcKeep.id = pick.value; calcKeep.vals = {}; draw(); };
+  calcCatalog().then((list) => {
+    if (!list) { head.innerHTML = ''; head.append(h('div', { class: 'warnbox bad' }, L('The solver did not answer GET /solvers, so there are no calculators to build.', 'Solver tidak menjawab GET /solvers, jadi tidak ada kalkulator untuk dibangun.'))); return; }
+    draw();
+  });
+  return dlg;
+}
+
 /* ---------- exports for SolidWorks ---------- */
 const dlText = (text, name, type) => { const u = URL.createObjectURL(new Blob([text], { type })), a = h('a', { href: u, download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000); };
 const COLOURS = [[0.62, 0.66, 0.72], [0.85, 0.55, 0.25], [0.3, 0.55, 0.85], [0.45, 0.7, 0.4], [0.75, 0.35, 0.45], [0.55, 0.45, 0.75]];
@@ -11648,6 +11744,7 @@ async function exportSWMacro() {
   set('eval:Design for Manufacturing', 'on', 'dfmPart', 'Wall thickness measured on the mesh, overhang, draft and drill sizes, each against a rule with its source (solver).', 'Tebal dinding diukur dari mesh, overhang, draft, dan ukuran bor, masing-masing terhadap aturan bersumber (solver).');
   set('eval:Thickness Analysis', 'on', 'dfmWall', 'Colour the part by measured wall thickness (solver ray casting, ±1 voxel).', 'Warnai part menurut tebal dinding terukur (ray casting solver, ±1 voxel).');
   set('eval:Draft Analysis', 'on', 'dfmDraft', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.');
+  set('sim:Calculators', 'on', 'calculators', 'Eighteen solver calculators with the solver’s schema as the form: nothing is defaulted, examples are labelled, and every number carries its benchmark and limitations.', 'Delapan belas kalkulator solver dengan skema solver sebagai formulir: tidak ada nilai default, contoh diberi label, dan setiap angka membawa benchmark serta batasannya.');
   set('sim:Buckling', 'on', 'buckling', 'Euler buckling of a slender column: critical load for four end conditions (solver, benchmarked).', 'Tekuk Euler kolom ramping: beban kritis untuk empat kondisi ujung (solver, ber-benchmark).');
   set('sim:CFD', 'on', 'pipeFlow', 'Pipe flow: Reynolds, friction factor and pressure drop (Darcy-Weisbach / Colebrook). Full 3D CFD is not in IDRIS yet.', 'Aliran pipa: Reynolds, faktor gesek, dan penurunan tekanan (Darcy-Weisbach / Colebrook). CFD 3D penuh belum ada di IDRIS.');
   set('draw:Dimensions & Notes', 'on', 'drawing', 'Open the part drawing: edit the title block and notes, add measured dimensions.', 'Buka gambar part: edit kotak judul dan catatan, tambah dimensi terukur.');
@@ -11672,12 +11769,14 @@ try { renderRibbon(); } catch (e) { /* not drawn yet */ }
     return ra.apply(this, arguments); }; }
 { const ht = handleText; handleText = async function (text, opt = {}) { const t = String(text || '').trim().toLowerCase();
     const cmd = [[/^(dfm|manufacturability|cek manufaktur)$/, () => dfmPart()], [/^(wall thickness|tebal dinding)$/, () => dfmPart('wall')], [/^(modal|natural frequenc(y|ies)|frekuensi alami)$/, () => modalPart()],
-      [/^(buckling|tekuk|column buckling)$/, () => bucklingTool()], [/^(pipe flow|pipe|aliran pipa)$/, () => pipeTool()], [/^(ap242|step ap242|export ap242)$/, () => exportAP242(!state.part && !!asmJob)], [/^(solidworks|solidworks macro|sw macro|macro solidworks)$/, () => exportSWMacro()]].find(([re]) => re.test(t));
+      [/^(calculators|calculator|kalkulator)$/, () => calculatorsTool()], [/^(buckling|tekuk|column buckling)$/, () => bucklingTool()], [/^(pipe flow|pipe|aliran pipa)$/, () => pipeTool()], [/^(ap242|step ap242|export ap242)$/, () => exportAP242(!state.part && !!asmJob)], [/^(solidworks|solidworks macro|sw macro|macro solidworks)$/, () => exportSWMacro()]].find(([re]) => re.test(t));
     if (cmd) { addUser(text); return cmd[1](); }
     return ht.apply(this, arguments); }; }
 { const st = document.createElement('style'); st.textContent = `.tool-in{width:min(680px,96vw)} .tool-out{margin-top:8px;display:flex;flex-direction:column;gap:6px} .tool-src{font-size:11px;color:var(--muted);display:block}
   .tool-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin:8px 0} .tool-grid .dr-f[hidden]{display:none}
-  .tool-tab{border-collapse:collapse;font-size:12.5px} .tool-tab td,.tool-tab th{padding:3px 10px 3px 0;text-align:left;border-bottom:1px solid var(--line)} .job-chg{font-size:12px;margin:4px 0 0 16px}`; document.head.append(st); }
+  .calc-ex{font-size:10.5px;color:var(--muted);margin-left:6px}
+.calc-ex.on{color:var(--accent);font-weight:600}
+.tool-tab{border-collapse:collapse;font-size:12.5px} .tool-tab td,.tool-tab th{padding:3px 10px 3px 0;text-align:left;border-bottom:1px solid var(--line)} .job-chg{font-size:12px;margin:4px 0 0 16px}`; document.head.append(st); }
 
 /* ---- S11: exit sketch, section view, bill of materials, exploded view, and one button per function --- */
 function exitSketch() {
