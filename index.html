@@ -6450,7 +6450,7 @@ const N = (k, en, id, unit, def, extra = {}) => ({ k, en, id, unit, def, t: 'num
 const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
-const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', member: 'ext', endcap: 'shell', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
+const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
 /* ---- P1d: welded frames. Profile numbers come from the standards named on each row; nothing is invented. ---- */
 const WELD_PROFILES = {
   'SHS 40x40x3': { kind: 'shs', w: 40, t: 3, src: 'EN 10219-2 SHS 40×40×3' },
@@ -6501,12 +6501,16 @@ function weldCutListShow() {
   const txt = rows.map((r) => `${r.qty}× ${r.profile} ${f(r.len, 1)} mm — ${f(r.mass, 2)} g  (${r.src})`).join('\n');
   say(para(L(`Cut list:\n${txt}`, `Daftar potong:\n${txt}`), 'm'));
 }
-/* the sketches a weldment step may point at */
-function weldSketchOptions() {
+/* ISO 261 coarse pitch per size, used by the cosmetic thread (the tap drill is the ISO 2306 value in TAP) */
+const M_PITCH = { M3: 0.5, M4: 0.7, M5: 0.8, M6: 1, M8: 1.25, M10: 1.5, M12: 1.75, M16: 2 };
+/* P1c: the sketches an existing part already has, as (id, label) pairs for the reference fields */
+function sketchOptions() {
   const sk = (state.part ? state.part.features : []).map((f, i) => ({ f, i })).filter((x) => x.f && x.f.type === 'sketch');
   if (!sk.length) return [['', [L('No sketch yet', 'Belum ada sketch'), L('No sketch yet', 'Belum ada sketch')]]];
   return sk.map((x) => [x.f.id, [`${x.i + 1}. ${FEAT.sketch.label(x.f.p)}`, `${x.i + 1}. ${FEAT.sketch.label(x.f.p)}`]]);
 }
+/* the sketches a weldment step may point at */
+function weldSketchOptions() { return sketchOptions(); }
 const FEAT = {
   shape: { en: 'Shape', id: 'Shape', fields: [S('kind', 'Shape', 'Bentuk', [['box', ['Box', 'Balok']], ['cyl', ['Cylinder', 'Silinder']], ['tube', ['Tube', 'Tabung']], ['sphere', ['Sphere', 'Bola']]], 'box'),
       N('L', 'Length X', 'Panjang X', 'mm', 100, { show: (p) => p.kind === 'box' }), N('W', 'Width Y', 'Lebar Y', 'mm', 60, { show: (p) => p.kind === 'box' }),
@@ -6560,6 +6564,19 @@ const FEAT = {
       return [S('sketch', 'Sketch', 'Sketch', o, o[0][0]), S('profile', 'Profile', 'Profil', Object.keys(WELD_PROFILES).map((k) => [k, [`${k} — ${WELD_PROFILES[k].src}`, `${k} — ${WELD_PROFILES[k].src}`]]), 'SHS 40x40x3'),
         N('t', 'Plate thickness', 'Tebal pelat', 'mm', 3, { min: 0.5 }), S('op', 'Result', 'Hasil', OPS, 'add')]; },
     label: (p) => `${L('End caps', 'Tutup ujung')} ${p.t} mm · ${p.profile}` },
+  sweep: { en: 'Swept Boss/Base', id: 'Swept Boss/Base', get fields() {
+      const o = sketchOptions();
+      return [S('profile', 'Profile sketch', 'Sketch profil', o, o[0][0]), S('path', 'Path sketch', 'Sketch lintasan', o, o.length > 1 ? o[1][0] : o[0][0]), S('op', 'Result', 'Hasil', OPS, 'add')]; },
+    label: (p) => `${L('Sweep', 'Sapuan')} · ${p.op === 'cut' ? L('cut', 'potong') : L('add', 'tambah')}` },
+  loft: { en: 'Lofted Boss/Base', id: 'Lofted Boss/Base', get fields() {
+      const o = sketchOptions();
+      return [S('from', 'From sketch', 'Dari sketch', o, o[0][0]), S('to', 'To sketch', 'Ke sketch', o, o.length > 1 ? o[1][0] : o[0][0]), S('op', 'Result', 'Hasil', OPS, 'add')]; },
+    label: (p) => `${L('Loft', 'Loft')} · ${p.op === 'cut' ? L('cut', 'potong') : L('add', 'tambah')}` },
+  rib: { en: 'Rib', id: 'Rib', fields: [N('t', 'Thickness', 'Tebal', 'mm', 3, { min: 0.2 }), N('h', 'Height', 'Tinggi', 'mm', 20, { min: 0.2 }), S('op', 'Result', 'Hasil', OPS, 'add')],
+    label: (p) => `Rib ${p.t}×${p.h} mm` },
+  thread: { en: 'Thread', id: 'Thread', fields: [S('M', 'Thread', 'Ulir', Object.keys(TAP).map((k) => [k, [`${k} (pitch ${M_PITCH[k]} mm, tap drill Ø${TAP[k]})`, `${k} (pitch ${M_PITCH[k]} mm, bor Ø${TAP[k]})`]]), 'M8'),
+      N('depth', 'Engaged length', 'Panjang ulir', 'mm', 12, { min: 0.5 }), N('x', 'Position X', 'Posisi X', 'mm', 0), N('y', 'Position Y', 'Posisi Y', 'mm', 0)],
+    label: (p) => `${p.M} ${L('cosmetic thread', 'ulir kosmetik')}` },
   draft: { en: 'Draft', id: 'Draft', fields: [
       S('sides', 'Faces to taper', 'Muka yang dimiringkan', [['X', ['\u00b1X (front / back)', '\u00b1X (depan / belakang)']], ['Y', ['\u00b1Y (left / right)', '\u00b1Y (kiri / kanan)']], ['XY', ['All four sides', 'Keempat sisi']]], 'XY'),
       N('angle', 'Draft angle', 'Sudut draft', '\u00b0', 3, { min: 0.1 }),
@@ -6576,7 +6593,7 @@ const FEAT = {
     },
     label: (p) => `${p.param} = ${p.value}${p.param === 'n' ? '' : ' mm'}` },
 };
-const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'member', 'endcap', 'draft', 'dim', 'measure'];
+const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'draft', 'dim', 'measure'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
 const defaults = (type) => Object.fromEntries(FEAT[type].fields.map((x) => [x.k, x.def]));
 
@@ -6596,6 +6613,13 @@ async function buildPart(pArg) {
     const d = s.prof === 'rect' ? R.drawRectangle(+s.W, +s.Hh) : s.prof === 'circle' ? R.drawCircle(+s.D / 2) : s.prof === 'slot' ? R.drawRoundedRectangle(+s.W, +s.Hh, Math.min(+s.W, +s.Hh) / 2 - 1e-6) : R.drawPolysides(+s.D / 2, Math.max(3, Math.round(+s.n)));
     return d.translate(+s.u || 0, +s.v || 0); };
   const sketchAt = (s) => s.plane === 'XY' && s.at !== 'value' ? (body ? bb()[1][2] : 0) : (+s.off || 0);
+  /* P1c: a sketch named in a form field, with its Smart Dimension values and its own plane height */
+  const pickSketch = (id) => {
+    const f2 = p.features.find((x) => x.id === id);
+    if (!f2 || f2.type !== 'sketch') throw new Error(L('Pick an existing Sketch step in the form.', 'Pilih langkah Sketch yang sudah ada di form.'));
+    const s2 = { ...f2.p, ...(dims[f2.id] || {}) };
+    return { f: f2, s: s2, at: sketchAt(s2) };
+  };
   /* Smart Dimension: a dimension step drives one size of the sketch it points at, so the sketch is built with that value.
      Errors are kept in dimErr and raised in the dim step, because the loop below clears ft.err on every pass. */
   const dims = {}, dimErr = {};
@@ -6716,6 +6740,56 @@ async function buildPart(pArg) {
           }
         }
         ft.note = L(`${n} end cap(s), ${q.t} mm plate, ${q.profile}.`, `${n} tutup ujung, pelat ${q.t} mm, ${q.profile}.`);
+      } else if (ft.type === 'sweep') {
+        /* P1c: a named profile sketch swept along a named path sketch, read as a 3D wire on its own plane. The kernel
+           sweeps the profile wire along that wire and refuses a path that leaves no solid. */
+        const A = pickSketch(q.profile), B2 = pickSketch(q.path);
+        if (A.f.id === B2.f.id) throw new Error(L('Sweep needs two sketches: one for the profile, one for the path.', 'Sweep butuh dua sketch: satu profil, satu lintasan.'));
+        const pathDraw = p1PathDrawing(R, B2.s.ents || []);
+        if (!pathDraw) throw new Error(L('The path sketch needs one open chain of lines or arcs (no rectangle or circle): draw the path as lines.', 'Sketch lintasan butuh satu rangkaian terbuka dari garis atau busur (bukan persegi atau lingkaran): gambar lintasannya sebagai garis.'));
+        let t;
+        try {
+          const pathWire = pathDraw.sketchOnPlane(B2.s.plane, B2.at).wire;
+          t = R.genericSweep(profile(A.s).sketchOnPlane(A.s.plane, A.at).wire, pathWire, { withContact: false, transitionMode: 'right' });
+        } catch (e) { throw new Error(L('The kernel could not sweep this profile along that path. The path must be one open chain (lines or arcs) that does not double back, and the profile must stand square to the path where it starts.', 'Kernel tidak bisa menyapu profil ini sepanjang lintasan itu. Lintasan harus satu rangkaian terbuka (garis atau busur) yang tidak berbalik, dan profil harus tegak lurus lintasan di titik awalnya.')); }
+        if (!(R.measureVolume(t) > 0)) throw new Error(L('The sweep left no solid: the profile and the path do not meet.', 'Sapuan tidak menghasilkan solid: profil dan lintasan tidak bertemu.'));
+        apply(t, q.op || 'add'); ft.note = L('Profile swept along the path sketch; the swept volume is the kernel volume.', 'Profil disapu sepanjang sketch lintasan; volumenya volume kernel.');
+        if (sketch && sketch.s === A.s) { sketch.used = true; sketch = null; }
+      } else if (ft.type === 'loft') {
+        /* P1c: two sketches on their own planes, blended by the kernel. Both are named in the step, so the loft does
+           not depend on which sketch happens to be last. */
+        const A = pickSketch(q.from), B2 = pickSketch(q.to);
+        if (A.f.id === B2.f.id) throw new Error(L('Loft needs two different sketches, not the same one twice.', 'Loft butuh dua sketch berbeda, bukan sketch yang sama dua kali.'));
+        let t;
+        try { t = profile(A.s).sketchOnPlane(A.s.plane, A.at).loftWith(profile(B2.s).sketchOnPlane(B2.s.plane, B2.at)); }
+        catch (e) { throw new Error(L('The kernel could not loft between these two profiles. Keep both closed, on different planes, and not twisted.', 'Kernel tidak bisa me-loft dua profil ini. Jaga keduanya tertutup, di bidang berbeda, dan tidak terpuntir.')); }
+        if (Array.isArray(t)) { if (!t.length) throw new Error(L('The loft left no solid.', 'Loft tidak menghasilkan solid.')); t = t.length === 1 ? t[0] : t.reduce((a, b) => a.fuse(b)); }
+        if (!(R.measureVolume(t) > 0)) throw new Error(L('The loft left no solid: the two sketches are on the same plane.', 'Loft tidak menghasilkan solid: kedua sketch di bidang yang sama.'));
+        apply(t, q.op || 'add');
+        A.f.note = L(`Lofted to step ${p.features.indexOf(B2.f) + 1}.`, `Di-loft ke langkah ${p.features.indexOf(B2.f) + 1}.`);
+        if (sketch && (sketch.s === A.s || sketch.s === B2.s)) { sketch.used = true; sketch = null; }
+      } else if (ft.type === 'rib') {
+        /* P1c: one straight line in the sketch, thickness across it, height up from its plane. A rib is a flat wall, so
+           it is a box turned to the line rather than an offset of the sketch. */
+        if (!sketch) throw new Error(L('Rib needs a sketch with one straight line before it.', 'Rib butuh sketch dengan satu garis lurus sebelumnya.'));
+        if (sketch.s.plane !== 'XY') throw new Error(L('A rib is built from a sketch on XY in this build; the line is lifted by the height you give.', 'Rib dibangun dari sketch di XY pada build ini; garisnya dinaikkan setinggi nilai yang kamu beri.'));
+        const lines = (sketch.s.ents || []).filter((e) => e.t === 'line' && !e.c);
+        if (lines.length !== 1) throw new Error(L(`A rib takes exactly one straight line; this sketch has ${lines.length}. Draw one open line, then Rib.`, `Rib butuh tepat satu garis lurus; sketch ini punya ${lines.length}. Gambar satu garis terbuka, lalu Rib.`));
+        const e0 = lines[0], len = p1Length(e0), tMm = pos(q.t), h = pos(q.h);
+        if (!(len > 0)) throw new Error(L('The rib line has no length.', 'Garis rib tidak punya panjang.'));
+        const ang = Math.atan2(e0.b[1] - e0.a[1], e0.b[0] - e0.a[0]) * 180 / Math.PI;
+        const mid = [(e0.a[0] + e0.b[0]) / 2, (e0.a[1] + e0.b[1]) / 2];
+        const t = R.makeBox([-len / 2, -tMm / 2, 0], [len / 2, tMm / 2, h]).rotate(ang, [0, 0, 0], [0, 0, 1]).translate([mid[0], mid[1], sketch.at]);
+        apply(t, q.op || 'add'); ft.note = L(`Rib from a ${f(len, 2)} mm line: ${f(tMm, 2)} mm thick, ${f(h, 2)} mm high.`, `Rib dari garis ${f(len, 2)} mm: tebal ${f(tMm, 2)} mm, tinggi ${f(h, 2)} mm.`);
+        sketch.used = true; sketch = null;
+      } else if (ft.type === 'thread') {
+        /* P1c: cosmetic thread. The size comes from the ISO 261 pitch and the ISO 2306 tap drill already in the page;
+           no geometry is added, so the kernel volume does not move. */
+        if (!body) throw new Error(L('A thread annotates a body: build the part first.', 'Ulir menganotasi body: bangun part dulu.'));
+        const pitch = M_PITCH[q.M];
+        if (!(pitch > 0)) throw new Error(L('Pick a metric size from the table.', 'Pilih ukuran metrik dari tabel.'));
+        pos(q.depth);
+        ft.note = L(`${q.M}×${pitch} cosmetic thread over ${f(+q.depth, 1)} mm at ${f(+q.x, 1)}, ${f(+q.y, 1)}: ISO 261 pitch, ISO 2306 tap drill Ø${TAP[q.M]}. Not modelled, so the volume does not change.`, `Ulir kosmetik ${q.M}×${pitch} sepanjang ${f(+q.depth, 1)} mm di ${f(+q.x, 1)}, ${f(+q.y, 1)}: pitch ISO 261, bor tap ISO 2306 Ø${TAP[q.M]}. Tidak dimodelkan, jadi volume tidak berubah.`);
       } else if (ft.type === 'draft') {
         if (!body) throw new Error(L('Draft needs a body.', 'Draft butuh body.'));
         const ang = +q.angle; if (!(ang > 0 && ang <= 45)) throw new Error(L('The draft angle must be above 0\u00b0 and at most 45\u00b0.', 'Sudut draft harus di atas 0\u00b0 dan paling besar 45\u00b0.'));
@@ -6802,7 +6876,7 @@ function partTool(k, preset, label) {
   if (k === 'measure') { partArm = null; partSel = 'measure'; cadTab = 'design'; renderCad(); return; }
   const first = !state.part.features.some((f) => f.type === 'shape' || f.type === 'push');
   /* Push/Pull, Revolve and Smart Dimension all work on a sketch before there is a body */
-  if (first && !['shape', 'sketch', 'push', 'revolve', 'dim'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
+  if (first && !['shape', 'sketch', 'push', 'revolve', 'sweep', 'loft', 'rib', 'dim'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
   if (k === 'push' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Extrude needs a sketch: draw one first.', 'Extrude butuh sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'revolve' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Revolve needs a sketch: draw the profile first.', 'Revolve butuh sketch: buat profilnya dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'dim' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Smart Dimension drives a sketch size: draw a sketch first.', 'Smart Dimension mengatur ukuran sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
@@ -7208,6 +7282,101 @@ function p1Drawing(R, ents) {
 }
 /* ---- end P1a helpers */
 
+/* ---- P1b: sketch correction. Every fix is a proposal; nothing moves until the engineer accepts it. ---- */
+const P1B_DEG = 3, P1B_MM = 0.5;
+const p1bNorm = (d) => { let a = ((d % 360) + 360) % 360; return a > 180 ? a - 360 : a; };
+const p1bAngle = (e) => Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]) * 180 / Math.PI;
+const p1bDim = (dims, id) => (dims || []).find((d) => (d.e || []).includes(id)) || null;
+function p1bShared(ents, id, pt) { return (ents || []).some((o) => o.id !== id && (p1Same(p1Start(o), pt, 0.01) || p1Same(p1End(o), pt, 0.01) || (o.t === 'point' && p1Same(o.p, pt, 0.01)))); }
+function p1bRotate(e, anchorEnd, deg) {
+  const p = anchorEnd ? e.b : e.a, len = p1Length(e), th = deg * Math.PI / 180;
+  const q = [p[0] + Math.cos(th) * len, p[1] + Math.sin(th) * len];
+  return anchorEnd ? { ...e, a: q } : { ...e, b: q };
+}
+/** every correction the sketch would take, as a list the engineer can accept, reject or ignore. */
+function p1bProposals(ents, rels = [], dims = [], opt = {}) {
+  const deg = opt.deg || P1B_DEG, mm = opt.mm || P1B_MM, out = [], list = ents || [];
+  const lines = list.filter((e) => e.t === 'line' && !e.c);
+  for (const e of lines) {
+    const n0 = p1bNorm(p1bAngle(e));
+    const dH = Math.min(Math.abs(n0), Math.abs(180 - Math.abs(n0))), dV = Math.abs(Math.abs(n0) - 90);
+    const bShared = p1bShared(list, e.id, e.b), aShared = p1bShared(list, e.id, e.a);
+    const anchorEnd = bShared && !aShared;
+    if (dH > 0.02 && dH <= deg) { const want = Math.abs(n0) <= 90 ? 0 : 180;
+      out.push({ id: 'h:' + e.id, kind: 'horizontal', e: e.id, deg: want, anchorEnd, label: `${e.id} ${n0.toFixed(1)}° → ${want === 0 ? '0°' : '180°'} (horizontal)` }); continue; }
+    if (dV > 0.02 && dV <= deg) { const want = n0 >= 0 ? 90 : -90;
+      out.push({ id: 'v:' + e.id, kind: 'vertical', e: e.id, deg: want, anchorEnd, label: `${e.id} ${n0.toFixed(1)}° → ${want}° (vertical)` }); }
+  }
+  /* endpoints that nearly meet */
+  const eps = [];
+  for (const e of list) { if (e.t === 'point') eps.push({ id: e.id, p: e.p, end: 'p' }); else if (e.t === 'line') { eps.push({ id: e.id, p: e.a, end: 's' }); eps.push({ id: e.id, p: e.b, end: 'e' }); } }
+  const seen = new Set();
+  for (let i = 0; i < eps.length; i++) for (let j = i + 1; j < eps.length; j++) {
+    const A = eps[i], B = eps[j]; if (A.id === B.id) continue;
+    const gap = Math.hypot(A.p[0] - B.p[0], A.p[1] - B.p[1]);
+    if (!(gap > 1e-6 && gap <= mm)) continue;
+    const key = [A.id, B.id].sort().join('|'); if (seen.has(key)) continue; seen.add(key);
+    const dA = p1bDim(dims, A.id), dB = p1bDim(dims, B.id);
+    if ((dA && dA.t === 'length') || (dB && dB.t === 'length')) continue;   /* a typed length would be lost */
+    out.push({ id: 'j:' + key, kind: 'join', e: B.id, from: B.end, point: A.p, to: A.id, label: `join ${B.id} to ${A.id} (gap ${gap.toFixed(2)} mm)` });
+  }
+  /* pairs of lines: equal length, parallel, perpendicular */
+  for (let i = 0; i < lines.length; i++) for (let j = i + 1; j < lines.length; j++) {
+    const A = lines[i], B = lines[j], la = p1Length(A), lb = p1Length(B);
+    const da = p1bNorm(p1bAngle(A) - p1bAngle(B));
+    const para = Math.min(Math.abs(da), 180 - Math.abs(da)), perp = Math.abs(Math.abs(da) - 90);
+    if (Math.abs(la - lb) > 0.02 && Math.abs(la - lb) <= mm && !p1bDim(dims, A.id) && !p1bDim(dims, B.id))
+      out.push({ id: 'e:' + A.id + B.id, kind: 'equal', e: B.id, to: A.id, label: `${B.id} length ${lb.toFixed(2)} → ${la.toFixed(2)} mm (equal to ${A.id})` });
+    if (para > 0.02 && para <= deg) {
+      const target = Math.abs(p1bNorm(p1bAngle(A) - p1bAngle(B))) > 90 ? p1bNorm(p1bAngle(A) + 180) : p1bNorm(p1bAngle(A));
+      const bShared = p1bShared(list, B.id, B.b), aShared = p1bShared(list, B.id, B.a);
+      out.push({ id: 'p:' + A.id + B.id, kind: 'parallel', e: B.id, deg: target, anchorEnd: bShared && !aShared, label: `${B.id} parallel to ${A.id} (${Math.abs(da).toFixed(1)}° off)` });
+    } else if (perp > 0.02 && perp <= deg) {
+      const base = p1bAngle(A) + (p1bNorm(p1bAngle(B) - p1bAngle(A)) >= 0 ? 90 : -90);
+      const bShared = p1bShared(list, B.id, B.b), aShared = p1bShared(list, B.id, B.a);
+      out.push({ id: 'q:' + A.id + B.id, kind: 'perpendicular', e: B.id, deg: p1bNorm(base), anchorEnd: bShared && !aShared, label: `${B.id} perpendicular to ${A.id} (${Math.abs(perp).toFixed(1)}° off)` });
+    }
+  }
+  return out.slice(0, 14);
+}
+/** apply one proposal to a copy of the entities; the caller re-runs the relations and dimensions afterwards. */
+function p1bApply(ents, prop) {
+  return (ents || []).map((e) => {
+    if (prop.kind === 'horizontal' || prop.kind === 'vertical' || prop.kind === 'parallel' || prop.kind === 'perpendicular') {
+      if (e.id !== prop.e || e.t !== 'line') return e;
+      return p1bRotate(e, !!prop.anchorEnd, prop.deg);
+    }
+    if (prop.kind === 'equal') {
+      if (e.id !== prop.e || e.t !== 'line') return e;
+      const src = (ents || []).find((x) => x.id === prop.to); if (!src) return e;
+      return { ...e, b: p1Add(e.a, p1Mul(p1Unit(p1Sub(e.b, e.a)), p1Length(src))) };
+    }
+    if (prop.kind === 'join') {
+      if (e.id !== prop.e) return e;
+      const p = [...prop.point];
+      if (e.t === 'point') return { ...e, p };
+      if (e.t !== 'line') return e;
+      return prop.from === 's' ? { ...e, a: p } : { ...e, b: p };
+    }
+    return e;
+  });
+}
+/* ---- end P1b helpers */
+
+/* ---- P1c: an open chain as a Drawing, for a sweep path (close() would shut the path, so it is not used) ---- */
+function p1PathDrawing(R, ents) {
+  const loops = p1Loops((ents || []).filter((e) => !e.c && e.t !== 'point'));
+  if (!loops.length) return null;
+  const walk = loops[0].ents, first = p1Start(walk[0]);
+  let pen = R.draw([first[0], first[1]]);
+  for (const e of walk) {
+    if (e.t === 'arc') { if (!p1ArcFrom3(e.s, e.m, e.e)) return null; pen = pen.threePointsArcTo([e.e[0], e.e[1]], [e.m[0], e.m[1]]); }
+    else pen = pen.lineTo([e.b[0], e.b[1]]);
+  }
+  return pen.done ? pen.done() : null;
+}
+/* ---- end P1c helpers */
+
 /* ---- S10 helpers: the sketch gesture, its snapping and the tool labels (lifted by tests/features.test.mjs) */
 function snapMM(v, fine) { const step = fine ? 0.1 : 1; return Math.round((+v || 0) / step) * step; }
 /** prof + two points on the sketch plane -> the form values the same build path reads. circle/poly: centre + radius;
@@ -7547,6 +7716,23 @@ document.addEventListener('keydown', (e) => {
 });
 /* orbiting away from the plane raises the angle hint; it comes down as soon as the view is normal again */
 { const pv = viewer.onView; viewer.onView = (m) => { if (pv) pv(m); if (typeof updateNormalHint === 'function') updateNormalHint(); }; }
+/* P1b: accept, reject and undo the corrections; the undo stack keeps the entity list before each fix */
+function skCorrectOne(prop) { const a = skSession(); if (!a) return; const p = a.p;
+  const before = JSON.parse(JSON.stringify(p.ents || []));
+  p.ents = p1Solve(p1bApply(before, prop), p.rels || [], p.dims || []);
+  a.undo = [...(a.undo || []), before].slice(-20); a.note = L('Correction applied: ', 'Koreksi diterapkan: ') + prop.label;
+  renderCad(); requestAnimationFrame(skOverlay); }
+function skCorrectAll() { const a = skSession(); if (!a) return; const p = a.p;
+  const before = JSON.parse(JSON.stringify(p.ents || [])); let cur = before, n = 0;
+  for (let g = 0; g < 20; g++) { const props = p1bProposals(cur, p.rels || [], p.dims || []).filter((x) => !(a.rejected || []).includes(x.id)); if (!props.length) break; cur = p1bApply(cur, props[0]); n++; }
+  p.ents = p1Solve(cur, p.rels || [], p.dims || []);
+  a.undo = [...(a.undo || []), before].slice(-20); a.note = L(`${n} corrections applied. Undo is available.`, `${n} koreksi diterapkan. Undo tersedia.`);
+  renderCad(); requestAnimationFrame(skOverlay); }
+function skCorrectUndo() { const a = skSession(); if (!a) return; const u = [...(a.undo || [])], prev = u.pop(); if (!prev) return;
+  a.p.ents = prev; a.undo = u; a.note = L('Corrections undone.', 'Koreksi dibatalkan.'); renderCad(); requestAnimationFrame(skOverlay); }
+function skCorrectReject() { const a = skSession(); if (!a) return;
+  a.rejected = [...(a.rejected || []), ...p1bProposals(a.p.ents || [], a.p.rels || [], a.p.dims || []).map((x) => x.id)];
+  a.note = L('Proposals rejected. Nothing moved.', 'Usulan ditolak. Tidak ada yang bergerak.'); renderCad(); requestAnimationFrame(skOverlay); }
 function renderSketchPanel(pr) {
   const a = skSession(), p = a.p, ents = p.ents || [], dof = p1DOF(ents, p.rels || [], p.dims || []), loop = p1OuterLoop(ents);
   const tools = [['line', L('Line', 'Garis')], ['cline', L('Centerline', 'Centerline')], ['arc3', L('Arc 3-point', 'Busur 3 titik')],
@@ -7572,6 +7758,16 @@ function renderSketchPanel(pr) {
     h('span', null, dof.status === 'under' ? L(`${dof.dof} free parameter(s)`, `${dof.dof} parameter bebas`) : dof.status === 'over' ? L(`${-dof.dof} redundant relation(s)`, `${-dof.dof} relasi berlebih`) : L('every parameter is fixed', 'semua parameter terkunci')),
     h('span', null, loop ? L('closed profile', 'profil tertutup') : L('no closed loop yet', 'belum ada rangkaian tertutup')))
     : h('div', { class: 'skstat' }, h('b', null, L('Empty sketch', 'Sketch kosong')), h('span', null, L('draw a line, arc or point to see the free parameters', 'gambar garis, busur atau titik untuk melihat parameter bebas'))));
+  /* P1b: the corrections the sketch would take, each one a button; rejected proposals stay rejected */
+  const props = p1bProposals(ents, p.rels || [], p.dims || []).filter((x) => !(a.rejected || []).includes(x.id));
+  if (props.length) {
+    pr.append(h('h3', null, L('Suggested corrections', 'Usulan koreksi') + ` (${props.length})`));
+    pr.append(h('p', { class: 'hint' }, L('Each fix is a proposal. Accept it, reject it, or accept all; a size you typed is never changed.', 'Tiap perbaikan adalah usulan. Terima, tolak, atau terima semua; ukuran yang kamu ketik tidak pernah diubah.')));
+    pr.append(h('div', { class: 'sktools' }, props.map((pp) => h('button', { class: 'chip', title: pp.label, onclick: () => skCorrectOne(pp) }, L('Accept: ', 'Terima: ') + pp.label))));
+    pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', onclick: skCorrectAll }, L('Accept all', 'Terima semua')),
+      h('button', { class: 'chip', onclick: skCorrectReject }, L('Reject all', 'Tolak semua'))));
+  }
+  if ((a.undo || []).length) pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip', onclick: skCorrectUndo }, L('Undo correction', 'Batalkan koreksi') + ` (${(a.undo || []).length})`)));
   pr.append(h('h3', null, L('Sketch entities', 'Entitas sketch')));
   const skItem = (e) => {
     const kind = e.t === 'line' ? (e.c ? L('Centerline', 'Centerline') : L('Line', 'Garis')) : e.t === 'arc' ? L('Arc', 'Busur') : L('Point', 'Titik');
@@ -7920,13 +8116,13 @@ const RIBBON = [
   ['feat', 'Features', 'Fitur', [
     ['Boss / Base', [T('Extruded Boss/Base', 'ext', 'on', 'Extrude the last sketch and add it to the body, one side or both.', 'Tarik sketch terakhir dan tambahkan ke body, satu sisi atau dua sisi.', 'Extrude, Pad', P('push', { op: 'add' })),
       T('Revolved Boss/Base', 'rev', 'on', 'Turn the last sketch around X, Y or Z, up to 360\u00b0.', 'Putar sketch terakhir mengelilingi X, Y, atau Z, sampai 360\u00b0.', 'Revolve, Shaft', P('revolve')),
-      T('Swept Boss/Base', 'sweep', 'mk1', 'Move a profile along a path.', 'Gerakkan profil sepanjang lintasan.', 'Sweep, Rib (CATIA)'),
-      T('Lofted Boss/Base', 'loft', 'mk1', 'Blend between two or more profiles.', 'Gabungan halus antar dua profil atau lebih.', 'Loft, Multi-section Solid'),
+      T('Swept Boss/Base', 'sweep', 'on', 'Sweep the last sketch along another sketch drawn as one open line or arc chain. The kernel builds it; the step stays in the tree.', 'Sapukan sketch terakhir sepanjang sketch lain yang digambar sebagai satu rangkaian garis atau busur terbuka. Kernel yang membangun; langkahnya tetap di pohon.', 'Sweep', P('sweep')),
+      T('Lofted Boss/Base', 'loft', 'on', 'Blend between two sketches on their own planes. Pick both in the form; the kernel lofts them.', 'Gabungkan dua sketch di bidangnya masing-masing. Pilih keduanya di form; kernel yang me-loft.', 'Loft, Multi-section Solid', P('loft')),
       T('Boundary Boss/Base', 'bound', 'no', 'Solid from boundary curves in two directions.', 'Solid dari kurva batas dua arah.', '')]],
     ['Cut', [T('Extruded Cut', 'cut', 'on', 'Extrude the last sketch and remove it from the body.', 'Tarik sketch terakhir dan buang dari body.', 'Pocket, Extrude Cut', P('push', { op: 'cut', dist: -5 })),
       T('Revolved Cut', 'rev', 'on', 'Cut by turning the last sketch around X, Y or Z, up to 360°. The kernel removes the volume it sweeps.', 'Potong dengan memutar sketch terakhir mengelilingi X, Y, atau Z, sampai 360°. Kernel membuang volume yang disapu.', 'Groove', P('revolve', { op: 'cut' })),
-      T('Swept Cut', 'sweep', 'mk1', 'Cut along a path.', 'Potong sepanjang lintasan.', 'Slot (CATIA)'),
-      T('Lofted Cut', 'loft', 'mk1', 'Cut between profiles.', 'Potong di antara profil.', 'Removed Multi-section'),
+      T('Swept Cut', 'sweep', 'on', 'Cut by sweeping the last sketch along another sketch. Same kernel sweep as the boss, removed from the body.', 'Potong dengan menyapu sketch terakhir sepanjang sketch lain. Sapuan kernel yang sama, dibuang dari body.', 'Slot (CATIA)', P('sweep', { op: 'cut' })),
+      T('Lofted Cut', 'loft', 'on', 'Cut by lofting between two sketches.', 'Potong dengan me-loft antara dua sketch.', 'Removed Multi-section', P('loft', { op: 'cut' })),
       T('Hole Wizard', 'hole', 'on', 'Simple, counterbore or tapped ISO M hole (tap drill, thread not modelled), through or to a depth.', 'Lubang biasa, counterbore, atau ulir ISO M (bor tap, ulir tidak dimodelkan), tembus atau sedalam nilai.', 'Hole, Threaded Hole', P('hole'))]],
     ['Primitives', [T('Box', 'box', 'on', 'Block by length, width, height.', 'Balok dengan panjang, lebar, tinggi.', 'Primitive Box', P('shape', { kind: 'box' })),
       T('Cylinder', 'cyl', 'on', 'Cylinder by diameter and height.', 'Silinder dengan diameter dan tinggi.', 'Primitive Cylinder', P('shape', { kind: 'cyl' })),
@@ -7937,10 +8133,12 @@ const RIBBON = [
       T('Variable Fillet', 'fillet', 'no', 'Fillet whose radius changes along the edge.', 'Fillet dengan radius berubah sepanjang tepi.', 'Face Fillet, Full Round'),
       T('Shell', 'shell', 'on', 'Hollow the body with an open top or bottom.', 'Kosongkan body dengan sisi atas atau bawah terbuka.', 'Shell', P('wall')),
       T('Draft', 'draft', 'on', 'Taper the \u00b1X or \u00b1Y faces about a neutral plane, so the part leaves the mould.', 'Miringkan muka \u00b1X atau \u00b1Y terhadap bidang netral, supaya part bisa lepas dari cetakan.', 'Draft Angle', P('draft')),
-      T('Rib', 'rib', 'mk1', 'Thin stiffening wall from a sketch line.', 'Dinding tipis penguat dari garis sketch.', 'Stiffener, Web'),
-      T('Thread', 'thread', 'no', 'Modelled or cosmetic thread. Today the hole gets the ISO tap drill size.', 'Ulir dimodelkan atau kosmetik. Saat ini lubang memakai ukuran bor tap ISO.', 'Cosmetic Thread', null, ['Use Hole Wizard → Tapped ISO M', 'Pakai Hole Wizard → Ulir ISO M', P('hole', { type: 'tap' })]),
+      T('Rib', 'rib', 'on', 'Thin stiffening wall from one open sketch line: thickness across the line, height up from its plane.', 'Dinding tipis penguat dari satu garis sketch terbuka: tebal melintang garis, tinggi naik dari bidangnya.', 'Stiffener, Web', P('rib')),
+      T('Thread', 'thread', 'on', 'Cosmetic metric thread: size, pitch (ISO 261) and tap drill (ISO 2306) recorded on the step. The thread is not modelled, so the volume does not change.', 'Ulir metrik kosmetik: ukuran, pitch (ISO 261), dan bor tap (ISO 2306) dicatat di langkahnya. Ulir tidak dimodelkan, jadi volume tidak berubah.', 'Cosmetic Thread', P('thread')),
       T('Dome', 'dome', 'no', 'Curved cap on a face.', 'Tudung melengkung di sebuah muka.', ''),
       T('Wrap / Emboss', 'wrap', 'no', 'Wrap or emboss a sketch onto a face.', 'Bungkus atau timbulkan sketch di muka.', 'Emboss')]],
+    ['Reference', [T('Reference Plane', 'rplane', 'no', 'A plane you pick as a sketch plane (offset, angle or three points). Sketches sit on XY, XZ or YZ only in this build, so a reference plane cannot host one yet.', 'Bidang yang bisa dipakai sebagai bidang sketch (offset, sudut, atau tiga titik). Sketch hanya bisa di XY, XZ, atau YZ pada build ini, jadi bidang rujukan belum bisa menampung sketch.', 'Plane, Datum Plane'),
+      T('Reference Axis', 'raxis', 'no', 'A named axis for patterns and mates. Patterns turn around a field value, not a named axis, so there is nothing to point a datum axis at yet.', 'Sumbu bernama untuk pola dan mate. Pola berputar mengelilingi nilai di form, bukan sumbu bernama, jadi belum ada yang bisa ditunjuk datum axis.', 'Axis, Datum Axis')]],
     ['Pattern', [T('Linear Pattern', 'lpat', 'on', 'Repeat the step before along X/Y.', 'Ulangi langkah sebelumnya sepanjang X/Y.', 'Rectangular Pattern', P('repeat', { kind: 'line' })),
       T('Circular Pattern', 'cpat', 'on', 'Repeat the step before around a centre.', 'Ulangi langkah sebelumnya mengelilingi pusat.', 'Polar Pattern', P('repeat', { kind: 'circle' })),
       T('Mirror', 'mirror', 'on', 'Mirror the step before about YZ or XZ.', 'Cerminkan langkah sebelumnya terhadap YZ atau XZ.', 'Symmetry', P('repeat', { kind: 'mirror' })),
@@ -10595,14 +10793,121 @@ function stepSummary(d) {
   return box;
 }
 
+/* ---- S6: drawing helpers: section, measured radius/angle, text placement ---- */
+function s6Vec(d) {
+  /* one SVG path -> sampled points and straight segments, in view coordinates */
+  const tk = String(d).match(/[MLACZ]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || [];
+  const pts = [], segs = []; let cmd = '', buf = [], cur = null, start = null;
+  const push = (x, y) => { if (cur && (Math.abs(cur[0] - x) > 1e-9 || Math.abs(cur[1] - y) > 1e-9)) segs.push([cur[0], cur[1], x, y]); pts.push([x, y]); cur = [x, y]; };
+  const arc = (x1, y1, rx, ry, rot, laf, sf, x2, y2) => {
+    if (!rx || !ry) { push(x2, y2); return; }
+    const phi = (+rot || 0) * Math.PI / 180, dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
+    const x1p = Math.cos(phi) * dx + Math.sin(phi) * dy, y1p = -Math.sin(phi) * dx + Math.cos(phi) * dy;
+    let rx2 = Math.abs(rx), ry2 = Math.abs(ry); const lam = (x1p * x1p) / (rx2 * rx2) + (y1p * y1p) / (ry2 * ry2);
+    if (lam > 1) { const s0 = Math.sqrt(lam); rx2 *= s0; ry2 *= s0; }
+    const num = rx2 * rx2 * ry2 * ry2 - rx2 * rx2 * y1p * y1p - ry2 * ry2 * x1p * x1p, den = rx2 * rx2 * y1p * y1p + ry2 * ry2 * x1p * x1p;
+    const co = Math.sqrt(Math.max(0, num / (den || 1))) * ((+laf === +sf) ? -1 : 1);
+    const cxp = co * rx2 * y1p / ry2, cyp = -co * ry2 * x1p / rx2;
+    const cx = Math.cos(phi) * cxp - Math.sin(phi) * cyp + (x1 + x2) / 2, cy = Math.sin(phi) * cxp + Math.cos(phi) * cyp + (y1 + y2) / 2;
+    const ang = (ux, uy, vx, vy) => { const d0 = Math.hypot(ux, uy) * Math.hypot(vx, vy) || 1; return Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / d0))); };
+    const a1 = ang(1, 0, (x1p - cxp) / rx2, (y1p - cyp) / ry2), a2 = ang(1, 0, (-x1p - cxp) / rx2, (-y1p - cyp) / ry2);
+    let da = a2; if (!+sf && da > 0) da -= 2 * Math.PI; else if (+sf && da < 0) da += 2 * Math.PI;
+    const th0 = Math.atan2((y1p - cyp) / ry2, (x1p - cxp) / rx2), n = 24;
+    for (let i = 1; i <= n; i++) { const t = th0 + da * i / n; push(cx + rx2 * Math.cos(phi) * Math.cos(t) - ry2 * Math.sin(phi) * Math.sin(t), cy + rx2 * Math.sin(phi) * Math.cos(t) + ry2 * Math.cos(phi) * Math.sin(t)); }
+  };
+  for (const t of tk) {
+    if (/^[MLACZ]$/i.test(t)) { cmd = t.toUpperCase(); buf = []; continue; }
+    buf.push(+t);
+    if (cmd === 'M' && buf.length === 2) { cur = [buf[0], buf[1]]; start = cur.slice(); pts.push(cur.slice()); buf = []; cmd = 'L'; }
+    else if (cmd === 'L' && buf.length === 2) { push(buf[0], buf[1]); buf = []; }
+    else if (cmd === 'A' && buf.length === 7) { const c0 = cur || [0, 0]; arc(c0[0], c0[1], buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6]); buf = []; }
+    else if (cmd === 'C' && buf.length === 6) { const c0 = cur || [0, 0], [x1, y1, x2, y2, x3, y3] = buf; for (let i = 1; i <= 12; i++) { const u = i / 12, m = 1 - u; push(m * m * m * c0[0] + 3 * m * m * u * x1 + 3 * m * u * u * x2 + u * u * u * x3, m * m * m * c0[1] + 3 * m * m * u * y1 + 3 * m * u * u * y2 + u * u * u * y3); } buf = []; }
+    else if (cmd === 'Z') { if (start && cur && (Math.abs(cur[0] - start[0]) > 1e-9 || Math.abs(cur[1] - start[1]) > 1e-9)) segs.push([cur[0], cur[1], start[0], start[1]]); cur = start ? start.slice() : null; buf = []; }
+  }
+  return { pts, segs };
+}
+const s6VecAll = (paths) => (paths || []).flatMap((d) => s6Vec(d).segs);
+function s6Loops(paths) { return (paths || []).map((d) => s6Vec(d).pts).filter((p) => p.length > 2); }
+function s6Inside(loops, x, y) { let c = false;
+  for (const l of loops) for (let i = 0, j = l.length - 1; i < l.length; j = i++) { const xi = l[i][0], yi = l[i][1], xj = l[j][0], yj = l[j][1];
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) c = !c; }
+  return c; }
+function s6Hatch(loops, step) {
+  /* 45-degree hatch lines (ISO 128-50) clipped to the section face, in sheet millimetres */
+  const out = []; if (!loops.length) return out;
+  const all = loops.flat(), xs = all.map((q) => q[0]), ys = all.map((q) => q[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const c0 = x0 - y1, c1 = x1 - y0, d = (step || 1.6) * Math.SQRT2, run = 0.5;   /* line y = x - c */
+  for (let c = c0; c <= c1; c += d) { let on = false, sx = 0;
+    for (let x = x0; x <= x1 + run; x += run) { const inside = x <= x1 && s6Inside(loops, x, x - c);
+      if (inside && !on) { on = true; sx = x; } else if (!inside && on) { on = false; if (x - sx > 0.2) out.push([sx, sx - c, Math.min(x, x1), Math.min(x, x1) - c]); } } }
+  return out;
+}
+function s6AngleDeg(a, b, vertex) { const u = Math.atan2(a[1] - vertex[1], a[0] - vertex[0]), v = Math.atan2(b[1] - vertex[1], b[0] - vertex[0]); let d = Math.abs(u - v) * 180 / Math.PI; if (d > 180) d = 360 - d; return d; }
+function s6PickArc(list, x, y, maxD) { let best = null; for (const a of list || []) { const dd = Math.abs(Math.hypot(a.x - x, a.y - y) - (a.r || 0)); if (dd <= (maxD || 3.5) && (!best || dd < best.dd)) best = { ...a, dd }; } return best; }
+function s6Oblique(circles) {
+  /* holes whose axis is not along X, Y or Z: one entry per cylinder, not per end circle */
+  const seen = new Set();
+  for (const c of circles || []) {
+    if (c.n.findIndex((v) => Math.abs(Math.abs(v) - 1) < 1e-6) >= 0) continue;
+    const nn = Math.hypot(...c.n) || 1, n = c.n.map((v) => v / nn);
+    const e1 = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const a0 = [e1[1] * n[2] - e1[2] * n[1], e1[2] * n[0] - e1[0] * n[2], e1[0] * n[1] - e1[1] * n[0]];
+    const d0 = Math.hypot(...a0) || 1, u = a0.map((v) => v / d0), v0 = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
+    const pu = c.c[0] * u[0] + c.c[1] * u[1] + c.c[2] * u[2], pv = c.c[0] * v0[0] + c.c[1] * v0[1] + c.c[2] * v0[2];
+    seen.add([c.r.toFixed(2), ...n.map((v) => v.toFixed(3)), pu.toFixed(2), pv.toFixed(2)].join('|')); }
+  return seen.size;
+}
+function s6Section(R, shape, lo, hi, y0) {
+  /* cut the front half away in the kernel, then read the cut face itself as closed loops for the hatching */
+  const span = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) + 100;
+  const y = Math.min(hi[1] - 0.05, Math.max(lo[1] + 0.05, +y0));
+  const cut = shape.clone().cut(R.makeBox([lo[0] - span, lo[1] - span, lo[2] - span], [hi[0] + span, y, hi[2] + span]));
+  const pr = R.drawProjection(cut, 'front');
+  const bb = (d) => { try { const b = d.boundingBox; return { x: b.bounds[0][0], y: -b.bounds[1][1], w: b.width, h: b.height }; } catch (e) { return null; } };
+  const vis = pr.visible.toSVGPaths ? pr.visible.toSVGPaths() : pr.visible;
+  const loops = [];
+  for (const fc of cut.faces) { if (fc.geomType !== 'PLANE') continue;
+    let n0; try { const nn = fc.normalAt(); n0 = [nn.x, nn.y, nn.z]; } catch (e) { continue; }
+    if (Math.abs(Math.abs(n0[1]) - 1) > 1e-3) continue;   /* the cut face is the one facing the viewer, -Y */
+    const c0 = fc.center; if (Math.abs(c0.y - y) > 1e-2) continue;
+    let wires = []; try { wires = [fc.clone().outerWire(), ...fc.clone().innerWires()]; } catch (e) { continue; }
+    for (const w of wires) { const pts = [];
+      for (let i = 0; i < 160; i++) { const q = w.pointAt(i / 160); pts.push([q.x, -q.z]); }   /* the wire keeps its own edge order */
+      if (pts.length > 2) loops.push(pts); } }
+  return { visible: vis.flat ? vis.flat() : vis, hidden: [], box: bb(pr.visible), loops, y };
+}
+function s6TextRect(t) { const w = String(t.t).length * t.h * 0.58 + 1, h = t.h; let x = t.x; if (t.anchor === 'middle') x -= w / 2; else if (t.anchor === 'end') x -= w;
+  return t.rot ? { x: x - h / 2, y: t.y - h / 2, w: h, h: w } : { x, y: t.y - h * 0.85, w, h }; }
+function s6SegBox(x1, y1, x2, y2, b) {
+  /* Liang-Barsky: does the segment touch the text box? */
+  let t0 = 0, t1 = 1; const dx = x2 - x1, dy = y2 - y1;
+  const p = [-dx, dx, -dy, dy], q = [x1 - b.x, b.x + b.w - x1, y1 - b.y, b.y + b.h - y1];
+  for (let i = 0; i < 4; i++) { if (Math.abs(p[i]) < 1e-12) { if (q[i] < 0) return false; continue; }
+    const r = q[i] / p[i]; if (p[i] < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; } }
+  return t0 <= t1;
+}
+function s6Avoid(texts, lines) {
+  /* move a dimension text off the part outline; the number of texts still touching a line is reported */
+  const vis = lines.filter((l) => l.layer === 'VISIBLE' || l.layer === 'HATCH');
+  let moved = 0;
+  for (const t of texts) { if (!t.avoid) continue;
+    for (let i = 0; i < 14; i++) { const b = s6TextRect(t); if (!vis.some((l) => s6SegBox(l.x1, l.y1, l.x2, l.y2, b))) break; t.y -= 1.1; t.x += 0.5; moved++; } }
+  let hits = 0;
+  for (const t of texts) { if (!t.avoid) continue; const b = s6TextRect(t); if (vis.some((l) => s6SegBox(l.x1, l.y1, l.x2, l.y2, b))) hits++; }
+  return { moved, hits };
+}
+/* ---- end S6 helpers */
 /* ================= 7b. Part Drawing (A3) ================= */
 const ISO2768M = [[0.5, 3, 0.1], [3, 6, 0.1], [6, 30, 0.2], [30, 120, 0.3], [120, 400, 0.5], [400, 1000, 0.8], [1000, 2000, 1.2], [2000, 4000, 2.0]];   /* ISO 2768-1 Table 1, class m (= physics/iso2768.py) */
 const iso2768Note = (sizes) => 'ISO 2768-m: ' + [...new Set(sizes.map((L0) => ISO2768M.findIndex(([lo, hi]) => L0 > lo && L0 <= hi)).filter((i) => i >= 0))].sort((a, b) => a - b).map((i) => `${ISO2768M[i][0]}–${ISO2768M[i][1]}: ±${ISO2768M[i][2]}`).join(', ') + ' mm';
 const SCALES = [50, 20, 10, 5, 2, 1, 1 / 2, 1 / 5, 1 / 10, 1 / 20, 1 / 50, 1 / 100, 1 / 200];   /* ISO 5455 */
 const scaleText = (k) => k >= 1 ? `${k}:1` : `1:${Math.round(1 / k)}`;
 let sheetGeo = null;   /* bounds and volume of the drawing that is open: generated (worker) or feature-tree (browser) */
+let sheetCtx = null, s6ctx = null;   /* S6: section builder, kernel arcs and view segments of the drawing on screen */
 async function partDrawing(p) {
   if (!p) return say(para(L('Build or open a part first.', 'Bangun atau buka part dulu.'), 'm'));
+  s6ctx = { arcs: [], segs: {}, oblique: 0, section: null, make: null, mid: 0 };   /* S6: a generated part has no browser kernel to cut */
   say(para(L('Making the A3 drawing from the kernel’s projections…', 'Membuat gambar A3 dari proyeksi kernel…'), 'm'));
   let r, geo = null; try {
     if (p.gen) {
@@ -10632,6 +10937,16 @@ async function partDrawing(p) {
       const b0 = shape.boundingBox.bounds;
       r = { views: { front: views.front, top: views.bottom, left: views.right, iso: views.iso }, circles, planes };
       geo = { bounds: [[...b0[0]], [...b0[1]]], vol: partInfo ? partInfo.vol : R.measureVolume(shape) };
+      /* S6: every round kernel edge (fillets and bosses, not only full holes) for measured radius dimensions */
+      const arcs = [];
+      try { const oc = R.getOC();
+        for (const e of shape.edges) { if (e.geomType !== 'CIRCLE') continue; const a = new oc.BRepAdaptor_Curve(e.wrapped), c = a.Circle(), o = c.Location(), d = c.Axis().Direction();
+          arcs.push({ c: [o.X(), o.Y(), o.Z()], r: c.Radius(), n: [d.X(), d.Y(), d.Z()] }); a.delete(); } } catch (e) { /* no arcs: radius dimensions stay off */ }
+      const lo3 = [...b0[0]], hi3 = [...b0[1]], sec = p.drawing && p.drawing.section ? p.drawing.section : null;
+      const segs = { front: s6VecAll(views.front.visible), top: s6VecAll(views.bottom.visible), left: s6VecAll(views.right.visible) };
+      s6ctx = { arcs, segs, oblique: s6Oblique(circles), mid: (lo3[1] + hi3[1]) / 2,
+        section: sec && sec.on ? s6Section(R, shape, lo3, hi3, sec.y != null ? +sec.y : (lo3[1] + hi3[1]) / 2) : null,
+        make: async (y) => s6Section(R, shape, lo3, hi3, y) };
     }
   }
   catch (e) { return say(h('div', { class: 'warnbox bad' }, L('The drawing could not be made: ', 'Gambar tidak bisa dibuat: ') + e.message)); }
@@ -10653,7 +10968,8 @@ function drawHoles(circles) {
   }
   return out;
 }
-function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null) {
+function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null, section = null) {
+  const SEC = section || (sheetCtx && sheetCtx.section) || null;
   const GS = geo || sheetGeo || genRes;   /* S11-B1: the same sheet serves a generated part and a feature-tree part */
   const opt = p.drawing || {}, off = opt.off || {}, O = (n) => off[n] || [0, 0];   /* v65.1: engineer's edits, saved with the part */
   const W = 420, H = 297, FR = { x: 20, y: 10, w: 390, h: 277 }, IN = { x: 25, y: 15, x2: 405, y2: 282 };
@@ -10672,7 +10988,7 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null) 
   for (const ax of [2, 0, 1]) { const lv = [...new Set(planes.filter((q) => q.ax === ax).map((q) => +q.at.toFixed(3)))].sort((x0, y0) => x0 - y0)
       .filter((v, i, arr) => i === 0 || v - arr[i - 1] > 0.05).filter((v) => v > lo[ax] + 0.05 && v < hi[ax] - 0.05).slice(0, 4);
     const [v0, side, map] = STEPV[ax]; lv.forEach((v) => addDim(v0, side, map(lo[ax]), map(v))); }
-  const holes = drawHoles(circles).slice(0, 24), holeNote = [];
+  const holes = drawHoles(circles).slice(0, 24), holeNote = [], oblique = s6Oblique(circles);
   const groups = []; holes.forEach((h0) => { const g = groups.find((x) => x.ax === h0.ax && Math.abs(x.r - h0.r) < 0.01); g ? g.list.push(h0) : groups.push({ ax: h0.ax, r: h0.r, list: [h0] }); });
   let posCount = 0;
   for (const g of groups) {
@@ -10692,7 +11008,11 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null) 
   const user = (p.gen && p.gen.params || []).filter((q) => q.src === 'user');
   const notes = ['All dimensions in mm. Do not scale the drawing.', iso2768Note(sz) + ' (unless stated).', 'Geometry and every dimension come from the kernel model; nothing is estimated.'];
   if (user.length) notes.push('Sizes given by the engineer: ' + user.slice(0, 6).map((q) => `${q.en} ${r1(+q.v)}${q.unit ? ' ' + q.unit : ''}`).join(', ') + '.');
-  holeNote.forEach((n0) => notes.push(n0)); String(opt.notes || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 6).forEach((n0) => notes.push(n0.slice(0, 160)));
+  holeNote.forEach((n0) => notes.push(n0));
+  if (oblique) notes.push(`${oblique} oblique hole${oblique > 1 ? 's' : ''} not dimensioned (axis is not along X, Y or Z).`);
+  if (opt.finish) notes.push(`Surface finish ${String(opt.finish).slice(0, 40)} (ISO 21920/1302) — engineer input.`);
+  if (opt.tol) notes.push(`Special tolerance ${String(opt.tol).slice(0, 40)} — engineer input.`);
+  String(opt.notes || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 6).forEach((n0) => notes.push(n0.slice(0, 160)));
   const noteLines = []; notes.forEach((n0, i) => { let line = `${i + 1}.  `; for (const w0 of n0.split(' ')) { if ((line + w0).length > 82) { noteLines.push(line); line = '     '; } line += w0 + ' '; } noteLines.push(line, null); });
   NOTE.h = 9 + noteLines.filter((x) => x !== null).length * 3.6 + noteLines.filter((x) => x === null).length * 0.3; NOTE.y = TB.y - 4 - NOTE.h;
   /* v66: points an engineer may dimension: path ends and sharp corners of the kernel projection, and hole centres */
@@ -10705,14 +11025,29 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null) 
     marks[v].filter((m) => m.t === 'cross').forEach((m) => add(m.u, m.w)); snaps[v] = pts; });
   const onSnap = (v, q) => (snaps[v] || []).some((s0) => Math.abs(s0[0] - q[0]) < 0.01 && Math.abs(s0[1] - q[1]) < 0.01);
   let extraDropped = 0; const extraOk = [];
-  (opt.extra || []).forEach((e, i) => { if (!VN.includes(e.v) || !onSnap(e.v, e.p1) || !onSnap(e.v, e.p2)) { extraDropped++; return; } extraOk.push(i);
+  (opt.extra || []).forEach((e, i) => {
+    if (e.kind === 'radius') { if (!VN.includes(e.v) || !e.c || !(e.r > 0)) { extraDropped++; return; } extraOk.push(i);
+      const [cx, cy] = S(e.v, e.c[0], e.c[1]), rr = e.r * k, dx = Math.SQRT1_2, dy = -Math.SQRT1_2;
+      const ax0 = cx + rr * dx, ay0 = cy + rr * dy, lx = ax0 + 8, ly = ay0 - 8;
+      ln(ax0, ay0, lx, ly, 'DIM'); ln(lx, ly, lx + 7, ly, 'DIM'); arrows.push([ax0, ay0, -dx, -dy]);
+      tx(lx + 1, ly - 1.2, 'R' + r1(e.r), 3.5, { avoid: true }); return; }
+    if (e.kind === 'angle') { if (!VN.includes(e.v) || !e.vertex || !e.a || !e.b) { extraDropped++; return; } extraOk.push(i);
+      const vx = S(e.v, e.vertex[0], e.vertex[1]), A = S(e.v, e.a[0], e.a[1]), B = S(e.v, e.b[0], e.b[1]);
+      const a0 = Math.atan2(A[1] - vx[1], A[0] - vx[0]), a1 = Math.atan2(B[1] - vx[1], B[0] - vx[0]), R0 = 7;
+      ln(vx[0], vx[1], vx[0] + Math.cos(a0) * (R0 + 3), vx[1] + Math.sin(a0) * (R0 + 3), 'DIM'); ln(vx[0], vx[1], vx[0] + Math.cos(a1) * (R0 + 3), vx[1] + Math.sin(a1) * (R0 + 3), 'DIM');
+      let d0 = a1 - a0; while (d0 <= -Math.PI) d0 += 2 * Math.PI; while (d0 > Math.PI) d0 -= 2 * Math.PI;
+      for (let j = 0; j < 16; j++) { const t0 = a0 + d0 * j / 16, t1 = a0 + d0 * (j + 1) / 16; ln(vx[0] + Math.cos(t0) * R0, vx[1] + Math.sin(t0) * R0, vx[0] + Math.cos(t1) * R0, vx[1] + Math.sin(t1) * R0, 'DIM'); }
+      const mid = a0 + d0 / 2, deg = Math.abs(d0) * 180 / Math.PI;
+      tx(vx[0] + Math.cos(mid) * (R0 + 6), vx[1] + Math.sin(mid) * (R0 + 6), deg.toFixed(1) + '°', 3.5, { anchor: 'middle', avoid: true }); return; }
+    if (!VN.includes(e.v) || !onSnap(e.v, e.p1) || !onSnap(e.v, e.p2)) { extraDropped++; return; } extraOk.push(i);
     const bx = box3[e.v], cu = (bx[0][0] + bx[1][0]) / 2, cw = (bx[0][1] + bx[1][1]) / 2;
     if (e.axis === 'h') addDim(e.v, (e.p1[1] + e.p2[1]) / 2 < cw ? 'top' : 'bottom', e.p1[0], e.p2[0]); else addDim(e.v, (e.p1[0] + e.p2[0]) / 2 < cu ? 'left' : 'right', e.p1[1], e.p2[1]); });
   /* tiers: shorter dimensions closer to the view */
   const tiers = {}; VN.forEach((v) => { tiers[v] = {}; ['top', 'bottom', 'left', 'right'].forEach((sd) => { const l = dims[v].filter((d) => d.side === sd).sort((x, y) => (x.b - x.a) - (y.b - y.a)); l.forEach((d, i) => { d.tier = i; }); tiers[v][sd] = l.length; }); });
   const STEP0 = Math.min(16, Math.max(6, +opt.dimGap || 9)), STEP = Math.max(5, STEP0 - 2), mg = (v, sd) => tiers[v][sd] ? STEP0 + STEP * (tiers[v][sd] - 1) + 5 : 6;
   /* ---- layout: largest ISO scale where the three views + their dimensions fit and leave room for the iso view ---- */
-  const fr = vw.front.box, tp = vw.top.box, lf = vw.left.box, iso = vw.iso && vw.iso.box ? vw.iso : null;
+  const fr = vw.front.box, tp = vw.top.box, lf = vw.left.box;
+  const iso = SEC && SEC.box ? { visible: SEC.visible, hidden: [], box: SEC.box } : (vw.iso && vw.iso.box ? vw.iso : null);
   const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   const BLOCK = { x: NOTE.x - 4, y: NOTE.y - 4, w: 200, h: H - NOTE.y + 4 };
   const lay = (k, force) => {
@@ -10752,11 +11087,11 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null) 
     if (d.side === 'top' || d.side === 'bottom') {
       const x1 = S(v, d.a, 0)[0], x2 = S(v, d.b, 0)[0], edge = d.side === 'top' ? vy : vy + vh0, y = d.side === 'top' ? edge - off : edge + off, s0 = d.side === 'top' ? -1 : 1;
       ln(x1, edge + s0 * 1, x1, y + s0 * 2, 'DIM'); ln(x2, edge + s0 * 1, x2, y + s0 * 2, 'DIM'); ln(x1, y, x2, y, 'DIM'); arrows.push([x1, y, -1, 0], [x2, y, 1, 0]);
-      tx((x1 + x2) / 2, y - 1.2, d.txt, 3.5, { anchor: 'middle' });
+      tx((x1 + x2) / 2, y - 1.2, d.txt, 3.5, { anchor: 'middle', avoid: true });
     } else {
       const y1 = S(v, 0, d.a)[1], y2 = S(v, 0, d.b)[1], edge = d.side === 'left' ? vx : vx + vw0, x = d.side === 'left' ? edge - off : edge + off, s0 = d.side === 'left' ? -1 : 1;
       ln(edge + s0 * 1, y1, x + s0 * 2, y1, 'DIM'); ln(edge + s0 * 1, y2, x + s0 * 2, y2, 'DIM'); ln(x, y1, x, y2, 'DIM'); arrows.push([x, y1, 0, -1], [x, y2, 0, 1]);
-      tx(x - 1.2, (y1 + y2) / 2, d.txt, 3.5, { anchor: 'middle', rot: -90 });
+      tx(x - 1.2, (y1 + y2) / 2, d.txt, 3.5, { anchor: 'middle', rot: -90, avoid: true });
     }
   };
   VN.forEach((v) => dims[v].forEach((d) => dimLine(v, d)));
@@ -10769,6 +11104,10 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null) 
     else { const [ax, ay] = S(v, m.a[0], m.a[1]), [bx2, by2] = S(v, m.b[0], m.b[1]), L0 = Math.hypot(bx2 - ax, by2 - ay) || 1, ux = (bx2 - ax) / L0, uy = (by2 - ay) / L0;
       ln(ax - ux * 3, ay - uy * 3, bx2 + ux * 3, by2 + uy * 3, 'CENTER', LW.thin, CL); }
   }));
+  /* S6: the cutting line A-A and its arrows live on the view that sees the plane edge-on (top) */
+  if (SEC) { const b0 = place.top.v.box, y = S('top', 0, -SEC.y)[1], xa = S('top', b0.x, -SEC.y)[0] - 4, xb = S('top', b0.x + b0.w, -SEC.y)[0] + 4;
+    ln(xa, y, xb, y, 'CUT', 0.7, '8 2 1 2'); arrows.push([xa + 4, y, 0, -1], [xb - 4, y, 0, -1]);
+    tx(xa - 1, y - 2, 'A', 3.5, { anchor: 'middle' }); tx(xb + 1, y - 2, 'A', 3.5, { anchor: 'middle' }); }
   /* ---- border, zones and centring marks (ISO 5457) ---- */
   ln(FR.x, FR.y, FR.x + FR.w, FR.y, 'BORDER', LW.frame); ln(FR.x + FR.w, FR.y, FR.x + FR.w, FR.y + FR.h, 'BORDER', LW.frame); ln(FR.x + FR.w, FR.y + FR.h, FR.x, FR.y + FR.h, 'BORDER', LW.frame); ln(FR.x, FR.y + FR.h, FR.x, FR.y, 'BORDER', LW.frame);
   const ZC = 8, ZR = 6;
@@ -10810,6 +11149,7 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null) 
   tx(X0, Y0 - 1.5, 'IDRIS Design Studio · OpenCascade kernel', 2, { fill: '#555' });
   tx(NOTE.x, NOTE.y + 2, 'Notes', 3, { weight: 700 });
   let ny = NOTE.y + 7; noteLines.forEach((l0) => { if (l0 === null) { ny += 0.3; return; } tx(NOTE.x, ny, l0, 2.5); ny += 3.6; });
+  const avoid = s6Avoid(texts, lines);   /* S6c: a dimension text never sits on a visible line */
   /* ---- SVG ---- */
   const hitR = (v, b) => ui ? `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="#2a6df4" fill-opacity="0" stroke="none" pointer-events="all" class="dv-hit"/>` : '';
   const g = (v) => { const pl = place[v], b = pl.v.box; return (ui ? `<g data-view="${v}" class="dv">` : '') + `<g transform="translate(${pl.x.toFixed(2)} ${pl.y.toFixed(2)}) scale(${k}) translate(${(-b.x).toFixed(3)} ${(-b.y).toFixed(3)})" fill="none" stroke-linecap="round" stroke-linejoin="round">` +
@@ -10819,7 +11159,10 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null) 
   if (iso && Lo.isoR) { const R0 = Lo.isoR, ik = Math.min(k, (R0.w - 6) / iso.box.w, (R0.h - 12) / iso.box.h); if (ik > 0) {
     const ix = R0.x + (R0.w - iso.box.w * ik) / 2 + O('iso')[0], iy = R0.y + (R0.h - 8 - iso.box.h * ik) / 2 + O('iso')[1]; isoPl = { v: iso, x: ix, y: iy, k: ik };
     isoG = (ui ? '<g data-view="iso" class="dv">' : '') + `<g transform="translate(${ix.toFixed(2)} ${iy.toFixed(2)}) scale(${ik.toFixed(5)}) translate(${(-iso.box.x).toFixed(3)} ${(-iso.box.y).toFixed(3)})" fill="none" stroke="#000" stroke-width="${(0.35 / ik).toFixed(4)}" stroke-linejoin="round">${iso.visible.map((d) => `<path d="${d}"/>`).join('')}${hitR('iso', iso.box)}</g>` + (ui ? '</g>' : '');
-    tx(ix, iy + iso.box.h * ik + 6, 'Isometric view (reference, not to scale)', 2.5, { fill: '#333' }); } }
+    if (SEC) { const loops = SEC.loops.map((l0) => l0.map(([u, w]) => [ix + (u - iso.box.x) * ik, iy + (w - iso.box.y) * ik]));
+      s6Hatch(loops, 1.6).forEach(([ax0, ay0, bx0, by0]) => ln(ax0, ay0, bx0, by0, 'HATCH', 0.18));
+      tx(ix, iy + iso.box.h * ik + 6, 'Section A–A (cut at Y = ' + r1(SEC.y) + ' mm; hatching from the kernel cut face)', 2.5, { fill: '#333' }); }
+    else tx(ix, iy + iso.box.h * ik + 6, 'Isometric view (reference, not to scale)', 2.5, { fill: '#333' }); } }
   const svgL = lines.map((l) => `<line x1="${l.x1.toFixed(2)}" y1="${l.y1.toFixed(2)}" x2="${l.x2.toFixed(2)}" y2="${l.y2.toFixed(2)}" stroke="#000" stroke-width="${l.w}"${l.dash ? ` stroke-dasharray="${l.dash}"` : ''}/>`).join('');
   const svgA = arrows.map(([x, y, dx, dy]) => { const L0 = 2.8, W0 = 0.9, bx0 = x - dx * L0, by0 = y - dy * L0; return `<path d="M${x.toFixed(2)} ${y.toFixed(2)}L${(bx0 - dy * W0).toFixed(2)} ${(by0 + dx * W0).toFixed(2)}L${(bx0 + dy * W0).toFixed(2)} ${(by0 - dx * W0).toFixed(2)}z" fill="#000"/>`; }).join('');
   const svgT = texts.map((t) => t.circ ? `<circle cx="${t.x}" cy="${t.y}" r="${t.r}" fill="none" stroke="#000" stroke-width="0.25"/>` :
@@ -10833,7 +11176,8 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null) 
   const ov = (a0, b0) => Math.max(0, Math.min(a0.x + a0.w, b0.x + b0.w) - Math.max(a0.x, b0.x)) * Math.max(0, Math.min(a0.y + a0.h, b0.y + b0.h) - Math.max(a0.y, b0.y));
   const noteBox = { x: NOTE.x, y: NOTE.y - 2, w: NOTE.w, h: NOTE.h }, frameIn = { x: FR.x + 1, y: FR.y + 1, w: FR.w - 2, h: FR.h - 2 };
   let bad = 0; occ.forEach((r, i) => { bad += r.w * r.h - ov(r, frameIn) + ov(r, TB) + ov(r, noteBox); for (let j = i + 1; j < occ.length; j++) bad += ov(r, occ[j]); });
-  return { svg, bad, snaps, extraDropped, extraOk, scale: k, views: VN.map((v) => ({ name: v, ...place[v] })), iso: isoPl, lines, texts: texts.filter((t) => !t.circ), circs: texts.filter((t) => t.circ), arrows, sz, holes };
+  return { svg, bad, snaps, extraDropped, extraOk, scale: k, views: VN.map((v) => ({ name: v, ...place[v] })), iso: isoPl, lines, texts: texts.filter((t) => !t.circ), circs: texts.filter((t) => t.circ), arrows, sz, holes,
+    textHits: avoid.hits, textMoved: avoid.moved, oblique, section: SEC ? { y: SEC.y, loops: SEC.loops.length } : null };
 }
 function drawingDXF(p, sheet) {
   /* polylines sampled from the same SVG paths, in sheet millimetres (y up for DXF) */
@@ -10859,6 +11203,7 @@ function drawingDXF(p, sheet) {
 }
 function drawingDialog(p, vw, circles, planes = [], geo = null) {
   sheetGeo = geo || null;
+  sheetCtx = s6ctx;
   const old = $('#drawdlg'); if (old) old.remove();
   const close = () => { const d0 = $('#drawdlg'); if (d0) d0.remove(); };
   const dl = (data, name, type) => { const u = URL.createObjectURL(new Blob([data], { type })), a = h('a', { href: u, download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000); };
@@ -10877,9 +11222,36 @@ function drawingDialog(p, vw, circles, planes = [], geo = null) {
   const later = () => { if (!raf) raf = requestAnimationFrame(paint); };
   /* drag a view: front moves all three, top only up/down, left only sideways, iso anywhere */
   let drag = null;
-  let adding = false;
+  let addMode = null;
   const toSheet = (e) => { const svg = view.querySelector('svg'), m = svg && svg.getScreenCTM(); if (!m) return null; const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; return pt.matrixTransform(m.inverse()); };
   const pickAt = (e) => { const sp = toSheet(e); if (!sp) return; const k = sheet.scale; let best = null;
+    if (addMode === 'radius') { const list = [];
+      for (const a of (s6ctx && s6ctx.arcs) || []) { const ax0 = a.n.findIndex((v) => Math.abs(Math.abs(v) - 1) < 1e-6); if (ax0 < 0) continue;
+        const v0 = AXIS_VIEWS[ax0].round, pl0 = sheet.views.find((x) => x.name === v0); if (!pl0) continue; const b0 = pl0.v.box, [u, w] = DRAW_MAP[v0](a.c);
+        if (u < b0.x - 1 || u > b0.x + b0.w + 1 || w < b0.y - 1 || w > b0.y + b0.h + 1) continue;
+        list.push({ v: v0, c: [u, w], r: a.r, x: pl0.x + (u - b0.x) * k, y: pl0.y + (w - b0.y) * k }); }
+      const pick0 = s6PickArc(list, sp.x, sp.y, 3.5);
+      if (!pick0) { addMsg.textContent = L('No rounded edge there. Click on the outline of a fillet, a boss or a hole.', 'Tidak ada tepi bulat di situ. Klik garis fillet, boss, atau lubang.'); return; }
+      const d0 = D(); d0.extra = (d0.extra || []).concat([{ kind: 'radius', v: pick0.v, c: pick0.c, r: pick0.r }]).slice(-20);
+      addMsg.textContent = L(`Added R${r1d(pick0.r)} mm (measured from the kernel edge).`, `Ditambah R${r1d(pick0.r)} mm (diukur dari tepi kernel).`);
+      re(); listExtra(); save(); return; }
+    if (addMode === 'angle') { let best0 = null;
+      for (const pl0 of sheet.views) { const b0 = pl0.v.box; if (sp.x < pl0.x - 4 || sp.x > pl0.x + b0.w * k + 4 || sp.y < pl0.y - 4 || sp.y > pl0.y + b0.h * k + 4) continue;
+        for (const sg of (s6ctx && s6ctx.segs && s6ctx.segs[pl0.name]) || []) { const X1 = pl0.x + (sg[0] - b0.x) * k, Y1 = pl0.y + (sg[1] - b0.y) * k, X2 = pl0.x + (sg[2] - b0.x) * k, Y2 = pl0.y + (sg[3] - b0.y) * k;
+          const L0 = Math.hypot(X2 - X1, Y2 - Y1) || 1, tt = Math.max(0, Math.min(1, ((sp.x - X1) * (X2 - X1) + (sp.y - Y1) * (Y2 - Y1)) / (L0 * L0))), dd = Math.hypot(X1 + tt * (X2 - X1) - sp.x, Y1 + tt * (Y2 - Y1) - sp.y);
+          if (L0 > 3 && dd < 4 && (!best0 || dd < best0.dd)) best0 = { v: pl0.name, seg: sg.slice(), dd }; } }
+      if (!best0) { addMsg.textContent = L('No straight edge there. Click on a straight line of a view.', 'Tidak ada tepi lurus di situ. Klik garis lurus pada tampak.'); return; }
+      const d0 = D();
+      if (!d0._seg || d0._seg.v !== best0.v) { d0._seg = { v: best0.v, seg: best0.seg }; addMsg.textContent = L('First edge set. Click the second edge in the same view.', 'Tepi pertama dipilih. Klik tepi kedua di tampak yang sama.'); re(); return; }
+      const A = d0._seg.seg, B = best0.seg; delete d0._seg;
+      const dAx = A[2] - A[0], dAy = A[3] - A[1], dBx = B[2] - B[0], dBy = B[3] - B[1], den = dAx * dBy - dAy * dBx;
+      if (Math.abs(den) < 1e-9) { addMsg.textContent = L('The two edges are parallel; there is no angle between them.', 'Dua tepi itu sejajar; tidak ada sudut di antaranya.'); re(); return; }
+      const t0 = ((B[0] - A[0]) * dBy - (B[1] - A[1]) * dBx) / den, vx = A[0] + dAx * t0, vy = A[1] + dAy * t0;
+      const deg0 = s6AngleDeg([A[2], A[3]], [B[2], B[3]], [vx, vy]);
+      if (!(deg0 > 1 && deg0 < 179)) { addMsg.textContent = L('That angle is too small or too large to dimension.', 'Sudut itu terlalu kecil atau terlalu besar untuk didimensi.'); return; }
+      d0.extra = (d0.extra || []).concat([{ kind: 'angle', v: best0.v, vertex: [vx, vy], a: [A[2], A[3]], b: [B[2], B[3]], deg: deg0 }]).slice(-20);
+      addMsg.textContent = L(`Added ${deg0.toFixed(1)}° (measured between the two kernel edges).`, `Ditambah ${deg0.toFixed(1)}° (diukur antara dua tepi kernel).`);
+      re(); listExtra(); save(); return; }
     for (const pl of sheet.views) { const b = pl.v.box, u = b.x + (sp.x - pl.x) / k, w = b.y + (sp.y - pl.y) / k;
       for (const q of sheet.snaps[pl.name] || []) { const dd = Math.hypot(q[0] - u, q[1] - w) * k; if (dd < 4 && (!best || dd < best.dd)) best = { v: pl.name, p: q, dd }; } }
     if (!best) { addMsg.textContent = L('No corner, end point or hole centre there. Click closer to the outline.', 'Tidak ada sudut, ujung, atau pusat lubang di situ. Klik lebih dekat ke garis.'); return; }
@@ -10890,7 +11262,7 @@ function drawingDialog(p, vw, circles, planes = [], geo = null) {
     addMsg.textContent = L(`Added ${r1d(axis === 'h' ? du : dw)} mm (${axis === 'h' ? 'horizontal' : 'vertical'}, measured on the kernel projection).`, `Ditambah ${r1d(axis === 'h' ? du : dw)} mm (${axis === 'h' ? 'horizontal' : 'vertikal'}, diukur dari proyeksi kernel).`);
     const before = sheet.bad; sheet = drawingSheet(p, vw, circles, true, planes); if (sheet.bad > before + 0.5) addMsg.textContent += ' ' + L('It needs more room: move a view if it touches another.', 'Butuh ruang lebih: geser tampak bila menyentuh yang lain.'); listExtra(); later(); save(); };
   const r1d = (v) => String(+(+v).toFixed(2));
-  view.addEventListener('pointerdown', (e) => { if (adding) { e.preventDefault(); return pickAt(e); } const g0 = e.target.closest && e.target.closest('[data-view]'); if (!g0) return; const svg = view.querySelector('svg'), m = svg.getScreenCTM(); if (!m) return;
+  view.addEventListener('pointerdown', (e) => { if (addMode) { e.preventDefault(); return pickAt(e); } const g0 = e.target.closest && e.target.closest('[data-view]'); if (!g0) return; const svg = view.querySelector('svg'), m = svg.getScreenCTM(); if (!m) return;
     const v = g0.getAttribute('data-view'), o = (D().off = D().off || {}); drag = { v, x: e.clientX, y: e.clientY, s: m.a, o0: (o[v] || [0, 0]).slice() }; view.setPointerCapture(e.pointerId); view.classList.add('dragging'); e.preventDefault(); });
   view.addEventListener('pointermove', (e) => { if (!drag) return; const dx = (e.clientX - drag.x) / drag.s, dy = (e.clientY - drag.y) / drag.s;
     const prev = (D().off[drag.v] || [0, 0]).slice(), nx = drag.v === 'top' ? 0 : Math.round((drag.o0[0] + dx) * 2) / 2, nyy = drag.v === 'left' ? 0 : Math.round((drag.o0[1] + dy) * 2) / 2;
@@ -10915,13 +11287,30 @@ function drawingDialog(p, vw, circles, planes = [], geo = null) {
     if (v2 == null) { D().scale = null; re(); warn.textContent = ''; } else tryEdit(() => { D().scale = v2; }, () => { D().scale = prev; scaleSel.value = prev ? String(prev) : 'auto'; }, L(`At ${scaleText(v2)} the views do not fit on A3 without overlapping; the scale stays ${scaleText(sheet.scale)}.`, `Pada ${scaleText(v2)} tampak tidak muat di A3 tanpa bertumpuk; skala tetap ${scaleText(sheet.scale)}.`)); save(); } }, autoOpt, ...SCALES.map((k) => h('option', { value: String(k) }, scaleText(k))));
   const gap = h('input', { type: 'range', min: 6, max: 16, step: 1, value: (p.drawing && p.drawing.dimGap) || 9, oninput: (e) => { const prev = D().dimGap || 9, v2 = +e.target.value; tryEdit(() => { D().dimGap = v2; }, () => { D().dimGap = prev; gap.value = prev; }, L('Wider dimension spacing would make the views overlap.', 'Jarak dimensi lebih lebar akan membuat tampak bertumpuk.')); }, onchange: save });
   const addMsg = h('p', { class: 'm dr-addmsg', role: 'status' }), extraBox = h('div', { class: 'dr-extra' });
-  const addBtn = h('button', { class: 'chip', 'aria-pressed': 'false', onclick: () => { adding = !adding; addBtn.classList.toggle('primary', adding); addBtn.setAttribute('aria-pressed', String(adding)); view.classList.toggle('adding', adding); delete D()._pick; re();
-    addMsg.textContent = adding ? L('Click two points in one view: a corner, an end of an edge or a hole centre. The value is measured, not typed.', 'Klik dua titik di satu tampak: sudut, ujung tepi, atau pusat lubang. Nilainya diukur, tidak diketik.') : ''; } }, L('Add a dimension', 'Tambah dimensi'));
+  const addBtn = h('button', { class: 'chip', 'data-mode': 'dim', 'aria-pressed': 'false' }, L('Add a dimension', 'Tambah dimensi'));
+  const radBtn = h('button', { class: 'chip', 'data-mode': 'radius', 'aria-pressed': 'false' }, L('Add a radius', 'Tambah radius'));
+  const angBtn = h('button', { class: 'chip', 'data-mode': 'angle', 'aria-pressed': 'false' }, L('Add an angle', 'Tambah sudut'));
+  const setMode = (mode) => { addMode = addMode === mode ? null : mode;
+    [addBtn, radBtn, angBtn].forEach((b) => { const on = b.getAttribute('data-mode') === addMode; b.classList.toggle('primary', on); b.setAttribute('aria-pressed', String(on)); });
+    view.classList.toggle('adding', !!addMode); delete D()._pick; delete D()._seg; re();
+    addMsg.textContent = !addMode ? '' : addMode === 'radius' ? L('Click a rounded edge (fillet, boss or hole outline). R is measured from the kernel.', 'Klik tepi bulat (fillet, boss, atau garis lubang). R diukur dari kernel.')
+      : addMode === 'angle' ? L('Click two straight edges in one view. The angle between them is measured.', 'Klik dua tepi lurus di satu tampak. Sudutnya diukur.')
+      : L('Click two points in one view: a corner, an end of an edge or a hole centre. The value is measured, not typed.', 'Klik dua titik di satu tampak: sudut, ujung tepi, atau pusat lubang. Nilainya diukur, tidak diketik.'); };
+  addBtn.onclick = () => setMode('dim'); radBtn.onclick = () => setMode('radius'); angBtn.onclick = () => setMode('angle');
   const listExtra = () => { extraBox.innerHTML = ''; const ex = (p.drawing && p.drawing.extra) || [];
-    ex.forEach((e, i) => { const okd = sheet.extraOk.includes(i), val = r1d(Math.abs(e.axis === 'h' ? e.p2[0] - e.p1[0] : e.p2[1] - e.p1[1]));
-      extraBox.append(h('div', { class: 'dr-x' + (okd ? '' : ' off') }, h('span', null, `${val} mm · ${e.v} · ${e.axis === 'h' ? '↔' : '↕'}` + (okd ? '' : L(' · no longer on the model, not drawn', ' · tidak lagi di model, tidak digambar'))),
+    ex.forEach((e, i) => { const okd = sheet.extraOk.includes(i), val = e.kind === 'radius' ? 'R' + r1d(e.r) : e.kind === 'angle' ? (+e.deg).toFixed(1) + '°' : r1d(Math.abs(e.axis === 'h' ? e.p2[0] - e.p1[0] : e.p2[1] - e.p1[1]));
+      const sym = e.kind === 'radius' ? '' : e.kind === 'angle' ? '·' : e.axis === 'h' ? '↔' : '↕';
+      extraBox.append(h('div', { class: 'dr-x' + (okd ? '' : ' off') }, h('span', null, `${val}${e.kind === 'radius' || e.kind === 'angle' ? '' : ' mm'} · ${e.v}${sym ? ' · ' + sym : ''}` + (okd ? '' : L(' · no longer on the model, not drawn', ' · tidak lagi di model, tidak digambar'))),
         h('button', { class: 'x', 'aria-label': L('Remove', 'Hapus'), onclick: () => { D().extra.splice(i, 1); re(); listExtra(); save(); } }, '✕'))); }); };
   const today = new Date().toISOString().slice(0, 10);
+  const s6 = s6ctx || {};
+  const sec0 = p.drawing && p.drawing.section ? p.drawing.section : null, yMid = s6.mid || 0;
+  const yIn = h('input', { type: 'number', step: '0.5', value: sec0 && sec0.y != null ? sec0.y : yMid, disabled: !s6.make, onchange: async (e) => { if (!s6.make) return; const y = +e.target.value;
+    try { const sec = await s6.make(y); sheetCtx = { ...(sheetCtx || {}), section: sec }; D().section = { on: true, y }; re(); save(); } catch (err) { warn.textContent = String(err.message || err); } } });
+  const secChk = h('input', { type: 'checkbox', checked: !!(sec0 && sec0.on), disabled: !s6.make, onchange: async (e) => {
+    if (!s6.make) return;
+    if (!e.target.checked) { D().section = { on: false, y: +yIn.value }; sheetCtx = { ...(sheetCtx || {}), section: null }; re(); save(); return; }
+    try { const sec = await s6.make(+yIn.value); sheetCtx = { ...(sheetCtx || {}), section: sec }; D().section = { on: true, y: +yIn.value }; re(); save(); } catch (err) { e.target.checked = false; warn.textContent = String(err.message || err); } } });
   const side = h('div', { class: 'dr-side' },
     h('b', null, L('Title block', 'Kotak judul')),
     field('title', L('Title', 'Judul'), p.name || 'Part'), field('docNo', L('Drawing number', 'Nomor gambar'), 'IDR-' + String(p.id || '').toUpperCase()),
@@ -10929,7 +11318,14 @@ function drawingDialog(p, vw, circles, planes = [], geo = null) {
     field('createdBy', L('Created by', 'Dibuat oleh'), 'IDRIS (generated)'), field('approvedBy', L('Approved by', 'Disetujui oleh'), L('— not approved', '— belum disetujui')),
     h('label', { class: 'dr-f' }, h('span', null, L('Extra notes (one per line)', 'Catatan tambahan (satu per baris)')), h('textarea', { rows: 3, maxlength: 800, oninput: (e) => { D().notes = e.target.value; re(); }, onchange: save }, (p.drawing && p.drawing.notes) || '')),
     h('p', { class: 'm' }, L('Material, mass, scale and tolerances come from the model and are not edited here.', 'Material, massa, skala, dan toleransi berasal dari model dan tidak diedit di sini.')),
-    h('b', null, L('Dimensions', 'Dimensi')), addBtn, addMsg, extraBox,
+    h('b', null, L('Dimensions', 'Dimensi')), h('div', { class: 'dr-2' }, addBtn, radBtn, angBtn), addMsg, extraBox,
+    h('b', null, L('Section', 'Potongan')),
+    h('label', { class: 'dr-f' }, h('span', null, L('Section A–A (remove the front half)', 'Potongan A–A (buang separuh depan)')), secChk),
+    h('label', { class: 'dr-f' }, h('span', null, L('Cut at Y (mm, from the kernel bounds)', 'Potong di Y (mm, dari batas kernel)')), yIn),
+    h('p', { class: 'm' }, s6.make ? L('The section is cut in the kernel and hatched from the cut face; its outline and hatching go into SVG, DXF and the PDF.', 'Potongan dibuat di kernel dan diarsir dari muka potong; garis dan arsirnya masuk SVG, DXF, dan PDF.') : L('A section view needs a part built in this browser; this drawing comes from generated code.', 'Gambar potongan butuh part yang dibangun di browser ini; gambar ini dari kode yang dihasilkan.')),
+    h('b', null, L('Annotations (engineer input)', 'Anotasi (masukan engineer)')),
+    field('finish', L('Surface finish (ISO 21920/1302)', 'Kekasaran (ISO 21920/1302)'), 'Ra 3.2'),
+    field('tol', L('Special tolerance', 'Toleransi khusus'), 'Ø12 H7'),
     h('b', null, L('Layout', 'Tata letak')),
     h('label', { class: 'dr-f' }, h('span', null, L('Scale', 'Skala')), scaleSel),
     h('label', { class: 'dr-f' }, h('span', null, L('Dimension spacing', 'Jarak dimensi')), gap),
