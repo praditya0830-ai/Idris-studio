@@ -6450,7 +6450,15 @@ const N = (k, en, id, unit, def, extra = {}) => ({ k, en, id, unit, def, t: 'num
 const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
-const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
+const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
+/* ISO 261 coarse pitch per size, used by the cosmetic thread (the tap drill is the ISO 2306 value in TAP) */
+const M_PITCH = { M3: 0.5, M4: 0.7, M5: 0.8, M6: 1, M8: 1.25, M10: 1.5, M12: 1.75, M16: 2 };
+/* P1c: the sketches an existing part already has, as (id, label) pairs for the reference fields */
+function sketchOptions() {
+  const sk = (state.part ? state.part.features : []).map((f, i) => ({ f, i })).filter((x) => x.f && x.f.type === 'sketch');
+  if (!sk.length) return [['', [L('No sketch yet', 'Belum ada sketch'), L('No sketch yet', 'Belum ada sketch')]]];
+  return sk.map((x) => [x.f.id, [`${x.i + 1}. ${FEAT.sketch.label(x.f.p)}`, `${x.i + 1}. ${FEAT.sketch.label(x.f.p)}`]]);
+}
 const FEAT = {
   shape: { en: 'Shape', id: 'Shape', fields: [S('kind', 'Shape', 'Bentuk', [['box', ['Box', 'Balok']], ['cyl', ['Cylinder', 'Silinder']], ['tube', ['Tube', 'Tabung']], ['sphere', ['Sphere', 'Bola']]], 'box'),
       N('L', 'Length X', 'Panjang X', 'mm', 100, { show: (p) => p.kind === 'box' }), N('W', 'Width Y', 'Lebar Y', 'mm', 60, { show: (p) => p.kind === 'box' }),
@@ -6494,6 +6502,19 @@ const FEAT = {
       N('angle', 'Angle', 'Sudut', '\u00b0', 360, { min: 1, step: 1 }),
       S('op', 'Result', 'Hasil', OPS, 'add')],
     label: (p) => `${L('Revolve', 'Putar')} ${p.angle}\u00b0 \u00b7 ${p.axis}${p.op === 'cut' ? ' \u00b7 ' + L('cut', 'potong') : ''}` },
+  sweep: { en: 'Swept Boss/Base', id: 'Swept Boss/Base', get fields() {
+      const o = sketchOptions();
+      return [S('profile', 'Profile sketch', 'Sketch profil', o, o[0][0]), S('path', 'Path sketch', 'Sketch lintasan', o, o.length > 1 ? o[1][0] : o[0][0]), S('op', 'Result', 'Hasil', OPS, 'add')]; },
+    label: (p) => `${L('Sweep', 'Sapuan')} · ${p.op === 'cut' ? L('cut', 'potong') : L('add', 'tambah')}` },
+  loft: { en: 'Lofted Boss/Base', id: 'Lofted Boss/Base', get fields() {
+      const o = sketchOptions();
+      return [S('from', 'From sketch', 'Dari sketch', o, o[0][0]), S('to', 'To sketch', 'Ke sketch', o, o.length > 1 ? o[1][0] : o[0][0]), S('op', 'Result', 'Hasil', OPS, 'add')]; },
+    label: (p) => `${L('Loft', 'Loft')} · ${p.op === 'cut' ? L('cut', 'potong') : L('add', 'tambah')}` },
+  rib: { en: 'Rib', id: 'Rib', fields: [N('t', 'Thickness', 'Tebal', 'mm', 3, { min: 0.2 }), N('h', 'Height', 'Tinggi', 'mm', 20, { min: 0.2 }), S('op', 'Result', 'Hasil', OPS, 'add')],
+    label: (p) => `Rib ${p.t}×${p.h} mm` },
+  thread: { en: 'Thread', id: 'Thread', fields: [S('M', 'Thread', 'Ulir', Object.keys(TAP).map((k) => [k, [`${k} (pitch ${M_PITCH[k]} mm, tap drill Ø${TAP[k]})`, `${k} (pitch ${M_PITCH[k]} mm, bor Ø${TAP[k]})`]]), 'M8'),
+      N('depth', 'Engaged length', 'Panjang ulir', 'mm', 12, { min: 0.5 }), N('x', 'Position X', 'Posisi X', 'mm', 0), N('y', 'Position Y', 'Posisi Y', 'mm', 0)],
+    label: (p) => `${p.M} ${L('cosmetic thread', 'ulir kosmetik')}` },
   draft: { en: 'Draft', id: 'Draft', fields: [
       S('sides', 'Faces to taper', 'Muka yang dimiringkan', [['X', ['\u00b1X (front / back)', '\u00b1X (depan / belakang)']], ['Y', ['\u00b1Y (left / right)', '\u00b1Y (kiri / kanan)']], ['XY', ['All four sides', 'Keempat sisi']]], 'XY'),
       N('angle', 'Draft angle', 'Sudut draft', '\u00b0', 3, { min: 0.1 }),
@@ -6510,7 +6531,7 @@ const FEAT = {
     },
     label: (p) => `${p.param} = ${p.value}${p.param === 'n' ? '' : ' mm'}` },
 };
-const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'draft', 'dim', 'measure'];
+const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'draft', 'dim', 'measure'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
 const defaults = (type) => Object.fromEntries(FEAT[type].fields.map((x) => [x.k, x.def]));
 
@@ -6530,6 +6551,13 @@ async function buildPart(pArg) {
     const d = s.prof === 'rect' ? R.drawRectangle(+s.W, +s.Hh) : s.prof === 'circle' ? R.drawCircle(+s.D / 2) : s.prof === 'slot' ? R.drawRoundedRectangle(+s.W, +s.Hh, Math.min(+s.W, +s.Hh) / 2 - 1e-6) : R.drawPolysides(+s.D / 2, Math.max(3, Math.round(+s.n)));
     return d.translate(+s.u || 0, +s.v || 0); };
   const sketchAt = (s) => s.plane === 'XY' && s.at !== 'value' ? (body ? bb()[1][2] : 0) : (+s.off || 0);
+  /* P1c: a sketch named in a form field, with its Smart Dimension values and its own plane height */
+  const pickSketch = (id) => {
+    const f2 = p.features.find((x) => x.id === id);
+    if (!f2 || f2.type !== 'sketch') throw new Error(L('Pick an existing Sketch step in the form.', 'Pilih langkah Sketch yang sudah ada di form.'));
+    const s2 = { ...f2.p, ...(dims[f2.id] || {}) };
+    return { f: f2, s: s2, at: sketchAt(s2) };
+  };
   /* Smart Dimension: a dimension step drives one size of the sketch it points at, so the sketch is built with that value.
      Errors are kept in dimErr and raised in the dim step, because the loop below clears ft.err on every pass. */
   const dims = {}, dimErr = {};
@@ -6602,6 +6630,56 @@ async function buildPart(pArg) {
         catch (e) { throw new Error(L(`The kernel could not revolve this profile around ${q.axis}. Keep the profile clear of the axis and every size above 0 mm.`, `Kernel tidak bisa memutar profil ini mengelilingi ${q.axis}. Jaga profil supaya tidak menyentuh sumbu dan semua ukuran di atas 0 mm.`)); }
         if (Array.isArray(t)) { if (!t.length) throw new Error(L('The profile produced no solid when revolved.', 'Profil tidak menghasilkan solid saat diputar.')); t = t.length === 1 ? t[0] : t.reduce((a, b) => a.fuse(b)); }
         apply(t, q.op || 'add'); sketch.used = true; sketch = null;
+      } else if (ft.type === 'sweep') {
+        /* P1c: a named profile sketch swept along a named path sketch, read as a 3D wire on its own plane. The kernel
+           sweeps the profile wire along that wire and refuses a path that leaves no solid. */
+        const A = pickSketch(q.profile), B2 = pickSketch(q.path);
+        if (A.f.id === B2.f.id) throw new Error(L('Sweep needs two sketches: one for the profile, one for the path.', 'Sweep butuh dua sketch: satu profil, satu lintasan.'));
+        const pathDraw = p1PathDrawing(R, B2.s.ents || []);
+        if (!pathDraw) throw new Error(L('The path sketch needs one open chain of lines or arcs (no rectangle or circle): draw the path as lines.', 'Sketch lintasan butuh satu rangkaian terbuka dari garis atau busur (bukan persegi atau lingkaran): gambar lintasannya sebagai garis.'));
+        let t;
+        try {
+          const pathWire = pathDraw.sketchOnPlane(B2.s.plane, B2.at).wire;
+          t = R.genericSweep(profile(A.s).sketchOnPlane(A.s.plane, A.at).wire, pathWire, { withContact: false, transitionMode: 'right' });
+        } catch (e) { throw new Error(L('The kernel could not sweep this profile along that path. The path must be one open chain (lines or arcs) that does not double back, and the profile must stand square to the path where it starts.', 'Kernel tidak bisa menyapu profil ini sepanjang lintasan itu. Lintasan harus satu rangkaian terbuka (garis atau busur) yang tidak berbalik, dan profil harus tegak lurus lintasan di titik awalnya.')); }
+        if (!(R.measureVolume(t) > 0)) throw new Error(L('The sweep left no solid: the profile and the path do not meet.', 'Sapuan tidak menghasilkan solid: profil dan lintasan tidak bertemu.'));
+        apply(t, q.op || 'add'); ft.note = L('Profile swept along the path sketch; the swept volume is the kernel volume.', 'Profil disapu sepanjang sketch lintasan; volumenya volume kernel.');
+        if (sketch && sketch.s === A.s) { sketch.used = true; sketch = null; }
+      } else if (ft.type === 'loft') {
+        /* P1c: two sketches on their own planes, blended by the kernel. Both are named in the step, so the loft does
+           not depend on which sketch happens to be last. */
+        const A = pickSketch(q.from), B2 = pickSketch(q.to);
+        if (A.f.id === B2.f.id) throw new Error(L('Loft needs two different sketches, not the same one twice.', 'Loft butuh dua sketch berbeda, bukan sketch yang sama dua kali.'));
+        let t;
+        try { t = profile(A.s).sketchOnPlane(A.s.plane, A.at).loftWith(profile(B2.s).sketchOnPlane(B2.s.plane, B2.at)); }
+        catch (e) { throw new Error(L('The kernel could not loft between these two profiles. Keep both closed, on different planes, and not twisted.', 'Kernel tidak bisa me-loft dua profil ini. Jaga keduanya tertutup, di bidang berbeda, dan tidak terpuntir.')); }
+        if (Array.isArray(t)) { if (!t.length) throw new Error(L('The loft left no solid.', 'Loft tidak menghasilkan solid.')); t = t.length === 1 ? t[0] : t.reduce((a, b) => a.fuse(b)); }
+        if (!(R.measureVolume(t) > 0)) throw new Error(L('The loft left no solid: the two sketches are on the same plane.', 'Loft tidak menghasilkan solid: kedua sketch di bidang yang sama.'));
+        apply(t, q.op || 'add');
+        A.f.note = L(`Lofted to step ${p.features.indexOf(B2.f) + 1}.`, `Di-loft ke langkah ${p.features.indexOf(B2.f) + 1}.`);
+        if (sketch && (sketch.s === A.s || sketch.s === B2.s)) { sketch.used = true; sketch = null; }
+      } else if (ft.type === 'rib') {
+        /* P1c: one straight line in the sketch, thickness across it, height up from its plane. A rib is a flat wall, so
+           it is a box turned to the line rather than an offset of the sketch. */
+        if (!sketch) throw new Error(L('Rib needs a sketch with one straight line before it.', 'Rib butuh sketch dengan satu garis lurus sebelumnya.'));
+        if (sketch.s.plane !== 'XY') throw new Error(L('A rib is built from a sketch on XY in this build; the line is lifted by the height you give.', 'Rib dibangun dari sketch di XY pada build ini; garisnya dinaikkan setinggi nilai yang kamu beri.'));
+        const lines = (sketch.s.ents || []).filter((e) => e.t === 'line' && !e.c);
+        if (lines.length !== 1) throw new Error(L(`A rib takes exactly one straight line; this sketch has ${lines.length}. Draw one open line, then Rib.`, `Rib butuh tepat satu garis lurus; sketch ini punya ${lines.length}. Gambar satu garis terbuka, lalu Rib.`));
+        const e0 = lines[0], len = p1Length(e0), tMm = pos(q.t), h = pos(q.h);
+        if (!(len > 0)) throw new Error(L('The rib line has no length.', 'Garis rib tidak punya panjang.'));
+        const ang = Math.atan2(e0.b[1] - e0.a[1], e0.b[0] - e0.a[0]) * 180 / Math.PI;
+        const mid = [(e0.a[0] + e0.b[0]) / 2, (e0.a[1] + e0.b[1]) / 2];
+        const t = R.makeBox([-len / 2, -tMm / 2, 0], [len / 2, tMm / 2, h]).rotate(ang, [0, 0, 0], [0, 0, 1]).translate([mid[0], mid[1], sketch.at]);
+        apply(t, q.op || 'add'); ft.note = L(`Rib from a ${f(len, 2)} mm line: ${f(tMm, 2)} mm thick, ${f(h, 2)} mm high.`, `Rib dari garis ${f(len, 2)} mm: tebal ${f(tMm, 2)} mm, tinggi ${f(h, 2)} mm.`);
+        sketch.used = true; sketch = null;
+      } else if (ft.type === 'thread') {
+        /* P1c: cosmetic thread. The size comes from the ISO 261 pitch and the ISO 2306 tap drill already in the page;
+           no geometry is added, so the kernel volume does not move. */
+        if (!body) throw new Error(L('A thread annotates a body: build the part first.', 'Ulir menganotasi body: bangun part dulu.'));
+        const pitch = M_PITCH[q.M];
+        if (!(pitch > 0)) throw new Error(L('Pick a metric size from the table.', 'Pilih ukuran metrik dari tabel.'));
+        pos(q.depth);
+        ft.note = L(`${q.M}×${pitch} cosmetic thread over ${f(+q.depth, 1)} mm at ${f(+q.x, 1)}, ${f(+q.y, 1)}: ISO 261 pitch, ISO 2306 tap drill Ø${TAP[q.M]}. Not modelled, so the volume does not change.`, `Ulir kosmetik ${q.M}×${pitch} sepanjang ${f(+q.depth, 1)} mm di ${f(+q.x, 1)}, ${f(+q.y, 1)}: pitch ISO 261, bor tap ISO 2306 Ø${TAP[q.M]}. Tidak dimodelkan, jadi volume tidak berubah.`);
       } else if (ft.type === 'draft') {
         if (!body) throw new Error(L('Draft needs a body.', 'Draft butuh body.'));
         const ang = +q.angle; if (!(ang > 0 && ang <= 45)) throw new Error(L('The draft angle must be above 0\u00b0 and at most 45\u00b0.', 'Sudut draft harus di atas 0\u00b0 dan paling besar 45\u00b0.'));
@@ -6688,7 +6766,7 @@ function partTool(k, preset, label) {
   if (k === 'measure') { partArm = null; partSel = 'measure'; cadTab = 'design'; renderCad(); return; }
   const first = !state.part.features.some((f) => f.type === 'shape' || f.type === 'push');
   /* Push/Pull, Revolve and Smart Dimension all work on a sketch before there is a body */
-  if (first && !['shape', 'sketch', 'push', 'revolve', 'dim'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
+  if (first && !['shape', 'sketch', 'push', 'revolve', 'sweep', 'loft', 'rib', 'dim'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
   if (k === 'push' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Extrude needs a sketch: draw one first.', 'Extrude butuh sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'revolve' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Revolve needs a sketch: draw the profile first.', 'Revolve butuh sketch: buat profilnya dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'dim' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Smart Dimension drives a sketch size: draw a sketch first.', 'Smart Dimension mengatur ukuran sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
@@ -7174,6 +7252,20 @@ function p1bApply(ents, prop) {
   });
 }
 /* ---- end P1b helpers */
+
+/* ---- P1c: an open chain as a Drawing, for a sweep path (close() would shut the path, so it is not used) ---- */
+function p1PathDrawing(R, ents) {
+  const loops = p1Loops((ents || []).filter((e) => !e.c && e.t !== 'point'));
+  if (!loops.length) return null;
+  const walk = loops[0].ents, first = p1Start(walk[0]);
+  let pen = R.draw([first[0], first[1]]);
+  for (const e of walk) {
+    if (e.t === 'arc') { if (!p1ArcFrom3(e.s, e.m, e.e)) return null; pen = pen.threePointsArcTo([e.e[0], e.e[1]], [e.m[0], e.m[1]]); }
+    else pen = pen.lineTo([e.b[0], e.b[1]]);
+  }
+  return pen.done ? pen.done() : null;
+}
+/* ---- end P1c helpers */
 
 /* ---- S10 helpers: the sketch gesture, its snapping and the tool labels (lifted by tests/features.test.mjs) */
 function snapMM(v, fine) { const step = fine ? 0.1 : 1; return Math.round((+v || 0) / step) * step; }
@@ -7906,13 +7998,13 @@ const RIBBON = [
   ['feat', 'Features', 'Fitur', [
     ['Boss / Base', [T('Extruded Boss/Base', 'ext', 'on', 'Extrude the last sketch and add it to the body, one side or both.', 'Tarik sketch terakhir dan tambahkan ke body, satu sisi atau dua sisi.', 'Extrude, Pad', P('push', { op: 'add' })),
       T('Revolved Boss/Base', 'rev', 'on', 'Turn the last sketch around X, Y or Z, up to 360\u00b0.', 'Putar sketch terakhir mengelilingi X, Y, atau Z, sampai 360\u00b0.', 'Revolve, Shaft', P('revolve')),
-      T('Swept Boss/Base', 'sweep', 'mk1', 'Move a profile along a path.', 'Gerakkan profil sepanjang lintasan.', 'Sweep, Rib (CATIA)'),
-      T('Lofted Boss/Base', 'loft', 'mk1', 'Blend between two or more profiles.', 'Gabungan halus antar dua profil atau lebih.', 'Loft, Multi-section Solid'),
+      T('Swept Boss/Base', 'sweep', 'on', 'Sweep the last sketch along another sketch drawn as one open line or arc chain. The kernel builds it; the step stays in the tree.', 'Sapukan sketch terakhir sepanjang sketch lain yang digambar sebagai satu rangkaian garis atau busur terbuka. Kernel yang membangun; langkahnya tetap di pohon.', 'Sweep', P('sweep')),
+      T('Lofted Boss/Base', 'loft', 'on', 'Blend between two sketches on their own planes. Pick both in the form; the kernel lofts them.', 'Gabungkan dua sketch di bidangnya masing-masing. Pilih keduanya di form; kernel yang me-loft.', 'Loft, Multi-section Solid', P('loft')),
       T('Boundary Boss/Base', 'bound', 'no', 'Solid from boundary curves in two directions.', 'Solid dari kurva batas dua arah.', '')]],
     ['Cut', [T('Extruded Cut', 'cut', 'on', 'Extrude the last sketch and remove it from the body.', 'Tarik sketch terakhir dan buang dari body.', 'Pocket, Extrude Cut', P('push', { op: 'cut', dist: -5 })),
       T('Revolved Cut', 'rev', 'on', 'Cut by turning the last sketch around X, Y or Z, up to 360°. The kernel removes the volume it sweeps.', 'Potong dengan memutar sketch terakhir mengelilingi X, Y, atau Z, sampai 360°. Kernel membuang volume yang disapu.', 'Groove', P('revolve', { op: 'cut' })),
-      T('Swept Cut', 'sweep', 'mk1', 'Cut along a path.', 'Potong sepanjang lintasan.', 'Slot (CATIA)'),
-      T('Lofted Cut', 'loft', 'mk1', 'Cut between profiles.', 'Potong di antara profil.', 'Removed Multi-section'),
+      T('Swept Cut', 'sweep', 'on', 'Cut by sweeping the last sketch along another sketch. Same kernel sweep as the boss, removed from the body.', 'Potong dengan menyapu sketch terakhir sepanjang sketch lain. Sapuan kernel yang sama, dibuang dari body.', 'Slot (CATIA)', P('sweep', { op: 'cut' })),
+      T('Lofted Cut', 'loft', 'on', 'Cut by lofting between two sketches.', 'Potong dengan me-loft antara dua sketch.', 'Removed Multi-section', P('loft', { op: 'cut' })),
       T('Hole Wizard', 'hole', 'on', 'Simple, counterbore or tapped ISO M hole (tap drill, thread not modelled), through or to a depth.', 'Lubang biasa, counterbore, atau ulir ISO M (bor tap, ulir tidak dimodelkan), tembus atau sedalam nilai.', 'Hole, Threaded Hole', P('hole'))]],
     ['Primitives', [T('Box', 'box', 'on', 'Block by length, width, height.', 'Balok dengan panjang, lebar, tinggi.', 'Primitive Box', P('shape', { kind: 'box' })),
       T('Cylinder', 'cyl', 'on', 'Cylinder by diameter and height.', 'Silinder dengan diameter dan tinggi.', 'Primitive Cylinder', P('shape', { kind: 'cyl' })),
@@ -7923,10 +8015,12 @@ const RIBBON = [
       T('Variable Fillet', 'fillet', 'no', 'Fillet whose radius changes along the edge.', 'Fillet dengan radius berubah sepanjang tepi.', 'Face Fillet, Full Round'),
       T('Shell', 'shell', 'on', 'Hollow the body with an open top or bottom.', 'Kosongkan body dengan sisi atas atau bawah terbuka.', 'Shell', P('wall')),
       T('Draft', 'draft', 'on', 'Taper the \u00b1X or \u00b1Y faces about a neutral plane, so the part leaves the mould.', 'Miringkan muka \u00b1X atau \u00b1Y terhadap bidang netral, supaya part bisa lepas dari cetakan.', 'Draft Angle', P('draft')),
-      T('Rib', 'rib', 'mk1', 'Thin stiffening wall from a sketch line.', 'Dinding tipis penguat dari garis sketch.', 'Stiffener, Web'),
-      T('Thread', 'thread', 'no', 'Modelled or cosmetic thread. Today the hole gets the ISO tap drill size.', 'Ulir dimodelkan atau kosmetik. Saat ini lubang memakai ukuran bor tap ISO.', 'Cosmetic Thread', null, ['Use Hole Wizard → Tapped ISO M', 'Pakai Hole Wizard → Ulir ISO M', P('hole', { type: 'tap' })]),
+      T('Rib', 'rib', 'on', 'Thin stiffening wall from one open sketch line: thickness across the line, height up from its plane.', 'Dinding tipis penguat dari satu garis sketch terbuka: tebal melintang garis, tinggi naik dari bidangnya.', 'Stiffener, Web', P('rib')),
+      T('Thread', 'thread', 'on', 'Cosmetic metric thread: size, pitch (ISO 261) and tap drill (ISO 2306) recorded on the step. The thread is not modelled, so the volume does not change.', 'Ulir metrik kosmetik: ukuran, pitch (ISO 261), dan bor tap (ISO 2306) dicatat di langkahnya. Ulir tidak dimodelkan, jadi volume tidak berubah.', 'Cosmetic Thread', P('thread')),
       T('Dome', 'dome', 'no', 'Curved cap on a face.', 'Tudung melengkung di sebuah muka.', ''),
       T('Wrap / Emboss', 'wrap', 'no', 'Wrap or emboss a sketch onto a face.', 'Bungkus atau timbulkan sketch di muka.', 'Emboss')]],
+    ['Reference', [T('Reference Plane', 'rplane', 'no', 'A plane you pick as a sketch plane (offset, angle or three points). Sketches sit on XY, XZ or YZ only in this build, so a reference plane cannot host one yet.', 'Bidang yang bisa dipakai sebagai bidang sketch (offset, sudut, atau tiga titik). Sketch hanya bisa di XY, XZ, atau YZ pada build ini, jadi bidang rujukan belum bisa menampung sketch.', 'Plane, Datum Plane'),
+      T('Reference Axis', 'raxis', 'no', 'A named axis for patterns and mates. Patterns turn around a field value, not a named axis, so there is nothing to point a datum axis at yet.', 'Sumbu bernama untuk pola dan mate. Pola berputar mengelilingi nilai di form, bukan sumbu bernama, jadi belum ada yang bisa ditunjuk datum axis.', 'Axis, Datum Axis')]],
     ['Pattern', [T('Linear Pattern', 'lpat', 'on', 'Repeat the step before along X/Y.', 'Ulangi langkah sebelumnya sepanjang X/Y.', 'Rectangular Pattern', P('repeat', { kind: 'line' })),
       T('Circular Pattern', 'cpat', 'on', 'Repeat the step before around a centre.', 'Ulangi langkah sebelumnya mengelilingi pusat.', 'Polar Pattern', P('repeat', { kind: 'circle' })),
       T('Mirror', 'mirror', 'on', 'Mirror the step before about YZ or XZ.', 'Cerminkan langkah sebelumnya terhadap YZ atau XZ.', 'Symmetry', P('repeat', { kind: 'mirror' })),
@@ -12420,7 +12514,7 @@ async function asmExplode() {
     if (a === 'asmExplode') return asmExplode();
     return ra.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay } };
+window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
 })();
 </script>
 </body>
