@@ -10621,7 +10621,10 @@ async function jobFinish(job) {
   }
   if (r.answer) say(para(String(r.answer)));
 }
-const jobMeta = (o) => ({ fidelity: o.fidelity || null, validated: o.validated == null ? null : !!o.validated, target_check: o.target_check || null, not_checked: Array.isArray(o.not_checked) ? o.not_checked.map(String) : [] });
+const jobMeta = (o) => ({ fidelity: o.fidelity || null, validated: o.validated == null ? null : !!o.validated, target_check: o.target_check || null, not_checked: Array.isArray(o.not_checked) ? o.not_checked.map(String) : [],
+  /* v0.43 design ladder: which rung produced this, the failure report, and the sizes with their sources */
+  rung: o.rung || null, design_report: o.design_report && typeof o.design_report === 'object' ? o.design_report : null,
+  numbers: Array.isArray(o.numbers) ? o.numbers.filter((n) => n && typeof n === 'object') : [], has_preview: !!o.preview_cad });
 const statusDot = (s) => s === 'pass' ? 'ok' : s === 'fail' ? 'bad' : s === 'running' || s === 'waiting' ? 'run' : s === 'warn' ? 'warn' : 'muted';
 function renderJob() {
   const vp = $('#viewport'); let box = $('#jobPanel'); const job = designJob;
@@ -10676,7 +10679,10 @@ let chatResetNote = null;
     const hasModel = !!(typeof partShape !== 'undefined' && partShape);
     if (m && last) {
       if (m.references) last.append(refsBox(m.references));
-      if (hasModel && (m.fidelity || m.target_check || (m.not_checked && m.not_checked.length) || m.validated === false)) last.append(metaBox(m));
+      if (m.design_report) last.append(designReportCard(m.design_report, m, text));
+      /* v0.43: a rung only exists when geometry exists, so it is painted without waiting for the async build */
+      if (m.rung && m.rung !== 'failed') last.append(metaBox(m));
+      else if (hasModel && (m.fidelity || m.target_check || (m.not_checked && m.not_checked.length) || m.validated === false)) last.append(metaBox(m));
       else if (!hasModel && m.fidelity) last.append(h('div', { class: 'newnote' }, L('No model yet: this answer only asks for sizes, so it carries no design badge.', 'Belum ada model: jawaban ini hanya menanyakan ukuran, jadi tidak ada badge desain.')));
     }
     /* a free design shows the steps that really happen */
@@ -10706,10 +10712,53 @@ function clearDesignContext(reset) {
     const last = [...document.querySelectorAll('#chat .msg.ai .ai-body')].pop();
     if (last && !(noAI || state.chatOff) && !(lastChatMeta && lastChatMeta.budget) && !/daily ai budget/i.test(detail || '')) last.append(chips([{ label: L('Design it as a background job (no time limit)', 'Desain sebagai job latar (tanpa batas waktu)'), fn: () => startDesignJob(text) }]));
     return r; }; }
+const RUNG = {
+  features: ['ok', L('Built from features (editable)', 'Dibangun dari fitur (bisa diedit)')],
+  code: ['warn', L('Code (generated)', 'Kode (dihasilkan)')],
+  failed: ['bad', L('Failed — no design', 'Gagal — tanpa desain')],
+};
+/** The sizes and where each one came from: you / computed (with its method) / table (assumed until confirmed). */
+function assumptionsBox(numbers) {
+  const rows = (numbers || []).filter((n) => n && n.k && n.value != null);
+  if (!rows.length) return null;
+  const src = (n) => n.source === 'you' ? L('you', 'kamu')
+    : n.source === 'computed' ? L('computed', 'dihitung') + (n.method ? ` — ${String(n.method)}` : '')
+    : /^table:/.test(String(n.source || '')) ? L('table', 'tabel') + ' ' + String(n.source).slice(6) + (n.assumed ? L(' (assumed — confirm it)', ' (diasumsikan — konfirmasi)') : '')
+    : String(n.source || L('no source', 'tanpa sumber'));
+  return h('details', { class: 'gen-code', open: true }, h('summary', null, L('Sizes and their sources', 'Ukuran dan sumbernya')),
+    h('table', { class: 'grid' }, h('thead', null, h('tr', null, ...[L('Size', 'Ukuran'), L('Value', 'Nilai'), L('Source', 'Sumber')].map((t) => h('th', null, t)))),
+      h('tbody', null, rows.map((n) => h('tr', null, h('td', { style: 'text-align:left' }, String(n.k)),
+        h('td', null, `${n.value}${n.unit ? ' ' + n.unit : ''}`), h('td', { style: 'text-align:left' }, src(n)))))));
+}
+/** A failed design is a report, never a box: what was asked, what each rung said, and what would help. */
+function designReportCard(rep, meta, text) {
+  const r = rep && typeof rep === 'object' ? rep : {};
+  const tried = Array.isArray(r.rungs_tried) ? r.rungs_tried : [];
+  const missing = Array.isArray(r.missing_numbers) ? r.missing_numbers : [];
+  const box = h('div', { class: 'warnbox bad failed-card', role: 'alert' },
+    h('div', { class: 'badges' }, h('span', { class: 'badge bad' }, (RUNG.failed || ['bad', ''])[1])),
+    h('b', null, L('Could not build this part — no design was made', 'Part ini gagal dibuat — tidak ada desain yang dibuat')),
+    h('div', null, [r.part_name, r.part_id && r.part_id !== r.part_name ? `(${r.part_id})` : '', r.shape_class ? `· ${r.shape_class}` : ''].filter(Boolean).join(' ')),
+    tried.length ? h('div', null, h('b', null, L('What IDRIS tried', 'Yang dicoba IDRIS')), h('ul', null, tried.map((t) => h('li', null, `${t.rung}: ${String(t.error || '').slice(0, 240)}`)))) : null,
+    missing.length ? h('div', null, h('b', null, L('Sizes IDRIS needs', 'Ukuran yang dibutuhkan IDRIS')), h('ul', null, missing.map((q) => h('li', null, String(q.question || q.k))))) : null,
+    r.suggestion ? h('p', { class: 'm' }, String(r.suggestion)) : null,
+    meta && meta.has_preview ? h('p', { class: 'm' }, L('A local envelope was drawn as a failed preview; it is not a design.', 'Amplop lokal digambar sebagai pratinjau gagal; itu bukan desain.')) : null);
+  const jobId = meta && meta.job && meta.job.id;
+  if (jobId) box.append(h('div', { class: 'gen-var' }, h('button', { class: 'chip', onclick: async (e) => {
+    const b = e.target; b.disabled = true;
+    const res = await apiJSON(`/design/job/${encodeURIComponent(jobId)}/feedback`, { part_check: { design_report: r } }, 30000).catch((err) => ({ status: 0, d: { error: err.message } }));
+    b.textContent = res.ok ? L('Report sent to feedback', 'Laporan terkirim ke feedback') : L('Feedback refused: ', 'Feedback ditolak: ') + String((res.d && res.d.error) || ('HTTP ' + res.status)).slice(0, 160);
+  } }, L('Send the report to feedback', 'Kirim laporan ke feedback'))));
+  if (typeof startDesignJob === 'function' && text) box.append(h('div', { class: 'gen-var' },
+    h('button', { class: 'chip', onclick: () => startDesignJob(String(text)) }, L('Design it as a background job', 'Desain sebagai job latar'))));
+  return box;
+}
 function metaBox(m) {
   const box = h('div', { class: 'metabox' });
   const fid = { full: ['ok', L('Full design', 'Desain penuh')], simplified: ['warn', L('Simplified', 'Disederhanakan')], placeholder: ['bad', L('Placeholder', 'Pengganti')] }[m.fidelity];
-  if (fid || m.validated === false) box.append(h('div', { class: 'badges' }, fid ? h('span', { class: 'badge ' + fid[0] }, fid[1]) : null, m.validated === false ? h('span', { class: 'badge bad' }, L('Not validated', 'Belum divalidasi')) : null));
+  const rung = RUNG[m.rung];
+  if (fid || rung || m.validated === false) box.append(h('div', { class: 'badges' }, rung ? h('span', { class: 'badge ' + rung[0] }, rung[1]) : null, fid ? h('span', { class: 'badge ' + fid[0] }, fid[1]) : null, m.validated === false ? h('span', { class: 'badge bad' }, L('Not validated', 'Belum divalidasi')) : null));
+  const ab = assumptionsBox(m.numbers); if (ab) box.append(ab);
   const tc = m.target_check; if (tc && typeof tc === 'object') box.append(h('div', { class: 'warnbox' + (tc.verdict === 'not_achievable_by_this_part' ? ' bad' : '') }, h('b', null, L('Target check: ', 'Cek target: ') + String(tc.verdict || '').replace(/_/g, ' ')),
     tc.reason ? h('div', null, String(tc.reason)) : null, tc.what_is_checkable ? h('div', { class: 'm' }, L('What IDRIS can check: ', 'Yang bisa dicek IDRIS: ') + (Array.isArray(tc.what_is_checkable) ? tc.what_is_checkable.join('; ') : String(tc.what_is_checkable))) : null, tc.note ? h('div', { class: 'm' }, String(tc.note)) : null));
   if (m.not_checked && m.not_checked.length) box.append(h('div', { class: 'notchk' }, h('b', null, L('Not checked by IDRIS', 'Tidak dicek oleh IDRIS')), h('ul', null, m.not_checked.map((x) => h('li', null, String(x))))));
@@ -12688,7 +12737,7 @@ async function asmExplode() {
     if (a === 'asmExplode') return asmExplode();
     return ra.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
+window.__idris = { state, parseText, viewer, frameFit, chat: (t) => chatAI(t), partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
 })();
 </script>
 </body>
