@@ -6450,7 +6450,63 @@ const N = (k, en, id, unit, def, extra = {}) => ({ k, en, id, unit, def, t: 'num
 const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
-const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
+const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', member: 'ext', endcap: 'shell', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
+/* ---- P1d: welded frames. Profile numbers come from the standards named on each row; nothing is invented. ---- */
+const WELD_PROFILES = {
+  'SHS 40x40x3': { kind: 'shs', w: 40, t: 3, src: 'EN 10219-2 SHS 40×40×3' },
+  'SHS 50x50x3': { kind: 'shs', w: 50, t: 3, src: 'EN 10219-2 SHS 50×50×3' },
+  'CHS 42.4x3.2': { kind: 'chs', d: 42.4, t: 3.2, src: 'EN 10219-2 CHS 42,4×3,2' },
+  'L 40x40x4': { kind: 'angle', w: 40, t: 4, src: 'EN 10056-1 L 40×40×4' },
+  'UPN 80': { kind: 'upn', h: 80, b: 45, tw: 6, tf: 8, src: 'EN 10365 UPN 80' },
+  'IPE 100': { kind: 'ipe', h: 100, b: 55, tw: 4.1, tf: 5.7, src: 'EN 10365 IPE 100' },
+};
+const weldWidth = (p) => p.w || p.d;
+/* section area in mm², from the standard's own dimensions (UPN/IPE: web + two flanges, no root radius) */
+const weldArea = (p) => p.kind === 'shs' ? p.w ** 2 - (p.w - 2 * p.t) ** 2
+  : p.kind === 'chs' ? Math.PI / 4 * (p.d ** 2 - (p.d - 2 * p.t) ** 2)
+    : p.kind === 'angle' ? 2 * p.w * p.t - p.t ** 2
+      : p.h * p.tw + 2 * p.b * p.tf - 2 * p.tw * p.tf;
+/** the member solid in its own frame: x from 0 to len, section centred on the line. Kernel, not a formula. */
+function weldMemberSolid(R, p, len) {
+  if (p.kind === 'chs') return R.makeCylinder(p.d / 2, len, [0, 0, 0], [1, 0, 0]).cut(R.makeCylinder(p.d / 2 - p.t, len + 2, [-1, 0, 0], [1, 0, 0]));
+  const box = (y0, y1, z0, z1) => R.makeBox([0, y0, z0], [len, y1, z1]);
+  const secs = p.kind === 'shs' ? [[-p.w / 2, p.w / 2, -p.w / 2, p.w / 2]]
+    : p.kind === 'angle' ? [[-p.w / 2, p.w / 2, -p.w / 2, -p.w / 2 + p.t], [-p.w / 2, -p.w / 2 + p.t, -p.w / 2, p.w / 2]]
+      : [[-p.tw / 2, p.tw / 2, -p.h / 2, p.h / 2], [-p.b / 2, p.b / 2, p.h / 2 - p.tf, p.h / 2], [-p.b / 2, p.b / 2, -p.h / 2, -p.h / 2 + p.tf]];
+  let s = null;
+  for (const [y0, y1, z0, z1] of secs) { const b = box(y0, y1, z0, z1); s = s ? s.fuse(b) : b; }
+  if (p.kind === 'shs') s = s.cut(box(-(p.w / 2 - p.t), p.w / 2 - p.t, -(p.w / 2 - p.t), p.w / 2 - p.t));
+  return s;
+}
+/** the cut list: one row per profile and length, quantities counted from the members the kernel built */
+function weldCutList(features) {
+  const rows = new Map();
+  for (const f of features || []) {
+    if (!f || f.type !== 'member' || f.off || !Array.isArray(f.cut)) continue;
+    for (const c of f.cut) {
+      const pr = WELD_PROFILES[c.profile]; if (!pr) continue;
+      const len = Math.round(c.len * 10) / 10, key = c.profile + '|' + len;
+      const r = rows.get(key) || { profile: c.profile, len, qty: 0, src: pr.src, area: weldArea(pr) };
+      r.qty++; rows.set(key, r);
+    }
+  }
+  return [...rows.values()].map((r) => ({ ...r, mass: r.area * r.len * 7.85e-3 })).sort((a, b) => a.profile.localeCompare(b.profile) || b.len - a.len);
+}
+/* P1d: the Cut List toolbar item prints the same list the panel shows */
+function weldCutListShow() {
+  const p = state.part;
+  if (!p) return say(para(L('Build a part with structural members first.', 'Bangun part dengan structural member dulu.'), 'm'));
+  const rows = weldCutList(p.features);
+  if (!rows.length) return say(para(L('No structural members yet: pick Weldments → Structural Member and run it along a sketch.', 'Belum ada structural member: pilih Weldments → Structural Member dan jalankan sepanjang sketch.'), 'm'));
+  const txt = rows.map((r) => `${r.qty}× ${r.profile} ${f(r.len, 1)} mm — ${f(r.mass, 2)} g  (${r.src})`).join('\n');
+  say(para(L(`Cut list:\n${txt}`, `Daftar potong:\n${txt}`), 'm'));
+}
+/* the sketches a weldment step may point at */
+function weldSketchOptions() {
+  const sk = (state.part ? state.part.features : []).map((f, i) => ({ f, i })).filter((x) => x.f && x.f.type === 'sketch');
+  if (!sk.length) return [['', [L('No sketch yet', 'Belum ada sketch'), L('No sketch yet', 'Belum ada sketch')]]];
+  return sk.map((x) => [x.f.id, [`${x.i + 1}. ${FEAT.sketch.label(x.f.p)}`, `${x.i + 1}. ${FEAT.sketch.label(x.f.p)}`]]);
+}
 const FEAT = {
   shape: { en: 'Shape', id: 'Shape', fields: [S('kind', 'Shape', 'Bentuk', [['box', ['Box', 'Balok']], ['cyl', ['Cylinder', 'Silinder']], ['tube', ['Tube', 'Tabung']], ['sphere', ['Sphere', 'Bola']]], 'box'),
       N('L', 'Length X', 'Panjang X', 'mm', 100, { show: (p) => p.kind === 'box' }), N('W', 'Width Y', 'Lebar Y', 'mm', 60, { show: (p) => p.kind === 'box' }),
@@ -6494,6 +6550,16 @@ const FEAT = {
       N('angle', 'Angle', 'Sudut', '\u00b0', 360, { min: 1, step: 1 }),
       S('op', 'Result', 'Hasil', OPS, 'add')],
     label: (p) => `${L('Revolve', 'Putar')} ${p.angle}\u00b0 \u00b7 ${p.axis}${p.op === 'cut' ? ' \u00b7 ' + L('cut', 'potong') : ''}` },
+  member: { en: 'Structural Member', id: 'Structural Member', get fields() {
+      return [S('profile', 'Profile', 'Profil', Object.keys(WELD_PROFILES).map((k) => [k, [`${k} — ${WELD_PROFILES[k].src}`, `${k} — ${WELD_PROFILES[k].src}`]]), 'SHS 40x40x3'),
+        S('trim', 'Ends', 'Ujung', [['none', ['To the sketch line (no trim)', 'Sampai garis sketch (tanpa potong)']], ['miter', ['Trimmed at shared corners (half the profile each end)', 'Dipotong di sudut bersama (setengah profil tiap ujung)']]], 'none'),
+        S('op', 'Result', 'Hasil', OPS, 'add')]; },
+    label: (p) => `${p.profile}${p.trim === 'miter' ? ' · ' + L('trimmed', 'dipotong') : ''}` },
+  endcap: { en: 'End Cap', id: 'End Cap', get fields() {
+      const o = weldSketchOptions();
+      return [S('sketch', 'Sketch', 'Sketch', o, o[0][0]), S('profile', 'Profile', 'Profil', Object.keys(WELD_PROFILES).map((k) => [k, [`${k} — ${WELD_PROFILES[k].src}`, `${k} — ${WELD_PROFILES[k].src}`]]), 'SHS 40x40x3'),
+        N('t', 'Plate thickness', 'Tebal pelat', 'mm', 3, { min: 0.5 }), S('op', 'Result', 'Hasil', OPS, 'add')]; },
+    label: (p) => `${L('End caps', 'Tutup ujung')} ${p.t} mm · ${p.profile}` },
   draft: { en: 'Draft', id: 'Draft', fields: [
       S('sides', 'Faces to taper', 'Muka yang dimiringkan', [['X', ['\u00b1X (front / back)', '\u00b1X (depan / belakang)']], ['Y', ['\u00b1Y (left / right)', '\u00b1Y (kiri / kanan)']], ['XY', ['All four sides', 'Keempat sisi']]], 'XY'),
       N('angle', 'Draft angle', 'Sudut draft', '\u00b0', 3, { min: 0.1 }),
@@ -6510,7 +6576,7 @@ const FEAT = {
     },
     label: (p) => `${p.param} = ${p.value}${p.param === 'n' ? '' : ' mm'}` },
 };
-const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'draft', 'dim', 'measure'];
+const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'member', 'endcap', 'draft', 'dim', 'measure'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
 const defaults = (type) => Object.fromEntries(FEAT[type].fields.map((x) => [x.k, x.def]));
 
@@ -6602,6 +6668,54 @@ async function buildPart(pArg) {
         catch (e) { throw new Error(L(`The kernel could not revolve this profile around ${q.axis}. Keep the profile clear of the axis and every size above 0 mm.`, `Kernel tidak bisa memutar profil ini mengelilingi ${q.axis}. Jaga profil supaya tidak menyentuh sumbu dan semua ukuran di atas 0 mm.`)); }
         if (Array.isArray(t)) { if (!t.length) throw new Error(L('The profile produced no solid when revolved.', 'Profil tidak menghasilkan solid saat diputar.')); t = t.length === 1 ? t[0] : t.reduce((a, b) => a.fuse(b)); }
         apply(t, q.op || 'add'); sketch.used = true; sketch = null;
+      } else if (ft.type === 'member') {
+        /* P1d: one solid per straight sketch line, from the sourced profile table. The kernel builds the section
+           (square tube, round tube, angle, channel, I), so the volume and the cut list come from geometry. */
+        const prof = WELD_PROFILES[q.profile];
+        if (!prof) throw new Error(L('Pick a profile from the table.', 'Pilih profil dari tabel.'));
+        if (!sketch) throw new Error(L('A structural member needs a sketch with straight lines before it.', 'Structural member butuh sketch dengan garis lurus sebelumnya.'));
+        if (sketch.s.plane !== 'XY') throw new Error(L('Members run along sketch lines on XY in this build; the cut list carries the length.', 'Member mengikuti garis sketch di XY pada build ini; daftar potong membawa panjangnya.'));
+        const lines = (sketch.s.ents || []).filter((e) => e.t === 'line' && !e.c);
+        if (!lines.length) throw new Error(L('This sketch has no straight line to run a member along.', 'Sketch ini tidak punya garis lurus untuk member.'));
+        const allEnds = lines.flatMap((e) => [e.a, e.b]);
+        const sharedEnd = (pt) => allEnds.filter((o) => Math.hypot(o[0] - pt[0], o[1] - pt[1]) < 1e-6).length > 1;
+        const at = sketch.at, cut = [];
+        let made = 0;
+        for (const e0 of lines) {
+          const dx = e0.b[0] - e0.a[0], dy = e0.b[1] - e0.a[1], len0 = Math.hypot(dx, dy);
+          if (!(len0 > 1e-6)) continue;
+          const ux = dx / len0, uy = dy / len0, w = weldWidth(prof);
+          const ca = q.trim === 'miter' && sharedEnd(e0.a) ? w / 2 : 0;
+          const cb = q.trim === 'miter' && sharedEnd(e0.b) ? w / 2 : 0;
+          const len = len0 - ca - cb;
+          if (!(len > 0.5)) throw new Error(L(`A ${f(len0, 1)} mm member is shorter than its trims (${f(ca + cb, 1)} mm): use a smaller profile or no trim.`, `Member ${f(len0, 1)} mm lebih pendek dari potongannya (${f(ca + cb, 1)} mm): pakai profil lebih kecil atau tanpa potong.`));
+          const t = weldMemberSolid(R, prof, len)
+            .rotate(Math.atan2(dy, dx) * 180 / Math.PI, [0, 0, 0], [0, 0, 1])
+            .translate([e0.a[0] + ux * ca, e0.a[1] + uy * ca, at]);
+          apply(t, q.op || 'add'); made++; cut.push({ profile: q.profile, len });
+        }
+        if (!made) throw new Error(L('No member was built from this sketch.', 'Tidak ada member yang terbangun dari sketch ini.'));
+        ft.cut = cut; ft.note = L(`${made} member(s) from ${q.profile} (${prof.src}).`, `${made} member dari ${q.profile} (${prof.src}).`);
+        sketch.used = true; sketch = null;
+      } else if (ft.type === 'endcap') {
+        /* P1d: a plate of the profile's own size at both ends of every member in the named sketch */
+        const prof = WELD_PROFILES[q.profile];
+        const f2 = p.features.find((x) => x.id === q.sketch);
+        if (!prof) throw new Error(L('Pick a profile from the table.', 'Pilih profil dari tabel.'));
+        if (!f2 || f2.type !== 'sketch') throw new Error(L('Pick the sketch the members run along.', 'Pilih sketch tempat member berjalan.'));
+        const s2 = { ...f2.p, ...(dims[f2.id] || {}) };
+        const at2 = sketchAt(s2), tMm = pos(q.t), w = weldWidth(prof);
+        const lines = (s2.ents || []).filter((e) => e.t === 'line' && !e.c);
+        if (!lines.length) throw new Error(L('That sketch has no straight line to cap.', 'Sketch itu tidak punya garis lurus untuk ditutup.'));
+        if (s2.plane !== 'XY') throw new Error(L('End caps follow members on XY in this build.', 'Tutup ujung mengikuti member di XY pada build ini.'));
+        let n = 0;
+        for (const e0 of lines) {
+          for (const end of [e0.a, e0.b]) {
+            const plate = prof.kind === 'chs' ? R.makeCylinder(prof.d / 2, tMm, [-tMm / 2, 0, 0], [1, 0, 0]) : R.makeBox([-tMm / 2, -w / 2, -w / 2], [tMm / 2, w / 2, w / 2]);
+            apply(plate.translate([end[0], end[1], at2]), q.op || 'add'); n++;
+          }
+        }
+        ft.note = L(`${n} end cap(s), ${q.t} mm plate, ${q.profile}.`, `${n} tutup ujung, pelat ${q.t} mm, ${q.profile}.`);
       } else if (ft.type === 'draft') {
         if (!body) throw new Error(L('Draft needs a body.', 'Draft butuh body.'));
         const ang = +q.angle; if (!(ang > 0 && ang <= 45)) throw new Error(L('The draft angle must be above 0\u00b0 and at most 45\u00b0.', 'Sudut draft harus di atas 0\u00b0 dan paling besar 45\u00b0.'));
@@ -7540,6 +7654,14 @@ function renderPartCad() {
     h('button', { class: 'pfx', title: ft.off ? L('Turn on', 'Nyalakan') : L('Suppress (keep, but skip)', 'Nonaktifkan (disimpan, dilewati)'), 'aria-label': ft.off ? L('Turn on', 'Nyalakan') : L('Suppress', 'Nonaktifkan'), onclick: () => { ft.off = !ft.off; rebuildPart(); } }, ft.off ? '○' : '◉'),
     h('button', { class: 'pfx', title: L('Delete this step', 'Hapus langkah ini'), 'aria-label': L('Delete step', 'Hapus langkah'), onclick: () => { p.features.splice(i, 1); partSel = null; rebuildPart(); } }, '×')))
     : [h('li', { class: 'pempty' }, L('Empty. Pick a tool in the toolbar above: a primitive (Box, Cylinder…) or Sketch.', 'Kosong. Pilih alat di toolbar atas: primitive (Box, Cylinder…) atau Sketch.'))]));
+  /* P1d: cut list for the structural members, from the lengths the kernel built */
+  { const cut = weldCutList(p.features);
+    if (cut.length) {
+      lf.append(h('div', { class: 'lphdrow' }, h('span', null, L('Cut list', 'Daftar potong')), h('small', null, `${cut.reduce((n, r) => n + r.qty, 0)} ${L('pieces', 'potong')}`)));
+      lf.append(h('table', { class: 'cutlist' }, h('tr', null, h('th', null, L('Profile', 'Profil')), h('th', null, L('Length', 'Panjang')), h('th', null, 'Qty'), h('th', null, L('Mass each', 'Massa/potong'))),
+        ...cut.map((r) => h('tr', null, h('td', { title: r.src }, r.profile), h('td', null, `${f(r.len, 1)} mm`), h('td', null, String(r.qty)), h('td', null, `${f(r.mass, 2)} g`)))));
+      lf.append(h('p', { class: 'hint' }, L('Mass each = section area from the standard dimensions × length × 7.85 kg/dm³. The part mass in Checks is the kernel solid.', 'Massa/potong = luas penampang dari dimensi standar × panjang × 7,85 kg/dm³. Massa part di Checks adalah solid kernel.')));
+    } }
   lf.append(h('div', { class: 'lpsep' }));
   lf.append(lpProperties());
   /* right: properties */
@@ -7850,10 +7972,10 @@ const RIBBON = [
       T('Corner Relief', 'relief', 'mk1', 'Relief cuts where bends meet.', 'Potongan relief di pertemuan tekukan.', 'Closed Corner'),
       T('Forming Tool', 'form', 'no', 'Louvres, embosses, lances.', 'Louvre, emboss, lance.', 'Punch'), T('Convert to Sheet Metal', 'flat', 'no', 'Turn a solid into sheet metal.', 'Ubah solid menjadi sheet metal.', '')]]]],
   ['weld', 'Weldments', 'Weldment', [
-    ['Frame', [T('Structural Member', 'member', 'mk1', 'Standard profiles (tube, angle, channel, I-beam) along sketch lines.', 'Profil standar (pipa, siku, kanal, I-beam) sepanjang garis sketch.', 'Frame Generator'),
-      T('Trim/Extend', 'trim', 'mk1', 'Trim members against each other.', 'Potong member satu sama lain.', 'Notch, Miter'), T('End Cap', 'endcap', 'mk1', 'Close an open tube end.', 'Tutup ujung pipa yang terbuka.', ''),
-      T('Gusset', 'gusset', 'mk1', 'Triangular plate in a corner.', 'Pelat segitiga di sudut.', ''), T('Weld Bead', 'weld', 'no', 'Weld geometry and symbol.', 'Geometri dan simbol las.', 'Fillet Weld'),
-      T('Cut List', 'list', 'mk1', 'Lengths and profiles for the shop.', 'Panjang dan profil untuk bengkel.', '')]]]],
+    ['Frame', [T('Structural Member', 'member', 'on', 'Standard profiles along straight sketch lines: SHS and CHS (EN 10219), L (EN 10056), UPN and IPE (EN 10365), each row naming its standard. Ends are cut at shared corners on request.', 'Profil standar sepanjang garis sketch lurus: SHS dan CHS (EN 10219), L (EN 10056), UPN dan IPE (EN 10365), tiap baris menyebut standarnya. Ujung dipotong di sudut bersama bila diminta.', 'Frame Generator', P('member')),
+      T('Trim/Extend', 'trim', 'no', 'Trim members against each other. Today the member step cuts its own ends at shared corners (half the profile each end); trimming one member against another is not built.', 'Potong member satu sama lain. Saat ini langkah member memotong ujungnya sendiri di sudut bersama (setengah profil tiap ujung); memotong member terhadap member lain belum ada.', 'Notch, Miter'), T('End Cap', 'endcap', 'on', 'A plate of the profile size at both ends of every member in the sketch.', 'Pelat seukuran profil di kedua ujung tiap member pada sketch.', '', P('endcap')),
+      T('Gusset', 'gusset', 'no', 'A triangular plate in a corner. The kernel builds flat plates, not the triangle between two members yet, so it is grey until the corner is picked in the viewport.', 'Pelat segitiga di sudut. Kernel membangun pelat datar, belum segitiga antara dua member, jadi abu-abu sampai sudutnya bisa diklik di viewport.', ''), T('Weld Bead', 'weld', 'no', 'Weld geometry and symbol.', 'Geometri dan simbol las.', 'Fillet Weld'),
+      T('Cut List', 'list', 'on', 'Profile, length, quantity and mass for the shop, read from the members the kernel built.', 'Profil, panjang, jumlah, dan massa untuk bengkel, dibaca dari member yang dibangun kernel.', '', 'weldCutListShow')]]]],
   ['mold', 'Mold', 'Mold', [
     ['Mold', [T('Draft Analysis', 'draft', 'on', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.', '', 'dfmDraft'), T('Parting Line', 'split', 'no', 'Where the mould opens.', 'Garis tempat cetakan terbuka.', ''),
       T('Shut-off Surfaces', 'fill', 'no', 'Close through-holes for the mould.', 'Tutup lubang tembus untuk cetakan.', ''), T('Core / Cavity', 'comb', 'no', 'Split the mould block into core and cavity.', 'Bagi blok cetakan menjadi core dan cavity.', 'Tooling Split'),
@@ -11996,6 +12118,7 @@ try { renderRibbon(); } catch (e) { /* not drawn yet */ }
     if (a === 'pipeFlow') return pipeTool();
     if (a === 'expAP242') return exportAP242(!state.part && !!asmJob);
     if (a === 'expSW') return exportSWMacro();
+    if (a === 'weldCutListShow') return weldCutListShow();
     if (a === 'drawing') return state.part ? partDrawing(state.part) : say(para(L('Open a part first.', 'Buka part dulu.'), 'm'));
     return ra.apply(this, arguments); }; }
 { const ht = handleText; handleText = async function (text, opt = {}) { const t = String(text || '').trim().toLowerCase();
@@ -12114,7 +12237,7 @@ async function asmExplode() {
     if (a === 'asmExplode') return asmExplode();
     return ra.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay } };
+window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
 })();
 </script>
 </body>
