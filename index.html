@@ -1829,9 +1829,9 @@ class Viewer {
     }
 
     const parts = this.parts || [], multi = parts.length > 1, mode = this.housingMode || 'glass';
-    const KIND = { part: [0.72, 0.75, 0.80], sketch: [0.25, 0.50, 0.95], housing: [0.80, 0.83, 0.87], gear: [0.34, 0.37, 0.42], shaft: [0.74, 0.76, 0.79], bearing: [0.30, 0.52, 0.86], fastener: [0.24, 0.26, 0.30], seal: [0.82, 0.42, 0.16], plug: [0.80, 0.64, 0.26] };
+    const KIND = { part: [0.72, 0.75, 0.80], sketch: [0.25, 0.50, 0.95], housing: [0.80, 0.83, 0.87], gear: [0.34, 0.37, 0.42], shaft: [0.74, 0.76, 0.79], bearing: [0.30, 0.52, 0.86], fastener: [0.24, 0.26, 0.30], seal: [0.82, 0.42, 0.16], plug: [0.80, 0.64, 0.26], placeholder: [0.86, 0.60, 0.20] };
     const cm = this.colorMode || 'material', hm = String(this.housingMat || '');
-    const MAT = { part: [0.72, 0.75, 0.80], sketch: [0.25, 0.50, 0.95], housing: /steel|gg-|iron|cast/i.test(hm) ? [0.50, 0.52, 0.55] : [0.80, 0.83, 0.87], gear: [0.46, 0.48, 0.52], shaft: [0.62, 0.64, 0.67], bearing: [0.68, 0.70, 0.74], fastener: [0.24, 0.26, 0.29], seal: [0.36, 0.22, 0.18], plug: [0.80, 0.64, 0.26] };
+    const MAT = { part: [0.72, 0.75, 0.80], sketch: [0.25, 0.50, 0.95], housing: /steel|gg-|iron|cast/i.test(hm) ? [0.50, 0.52, 0.55] : [0.80, 0.83, 0.87], gear: [0.46, 0.48, 0.52], shaft: [0.62, 0.64, 0.67], bearing: [0.68, 0.70, 0.74], fastener: [0.24, 0.26, 0.29], seal: [0.36, 0.22, 0.18], plug: [0.80, 0.64, 0.26], placeholder: [0.86, 0.60, 0.20] };
     const hsl = (hh, ss, ll) => { const f = (n) => { const k = (n + hh / 30) % 12, a = ss * Math.min(ll, 1 - ll); return ll - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); }; return [f(0), f(8), f(4)]; };
     const col = (p, i) => { let c = cm === 'metal' ? (p.kind === 'fastener' ? [0.42, 0.44, 0.48] : [0.72, 0.75, 0.79]) : cm === 'part' ? hsl((i * 137.508 + 205) % 360, 0.55, 0.58) : (MAT[p.kind] || KIND[p.kind] || [0.70, 0.74, 0.80]);
       if (!multi && p.kind === 'housing' && cm !== 'part') c = dark ? [0.64, 0.69, 0.76] : [0.70, 0.74, 0.80];
@@ -11252,19 +11252,72 @@ function asmOpenPart(pt) {
   genLastText = `${asmJob.request} — ${pt.name}`; genAnswered = true; genLib = null; genConcepts = null; lastChatMeta = { fidelity: pt.fidelity || null, validated: false, target_check: null, not_checked: [] };
   genFromAI(pt.cad); const p = state.part; if (p && p.gen) { p.gen.reviewNext = 0; p.gen.asmPart = { job: asmJob.id, id: pt.id }; savePart(); }
 }
+/* A standard/library part has no `cad.code`, so the kernel cannot build it. Instead of leaving the assembly looking
+ * incomplete (the hydraulic unit and the pivot pins simply missing), such a part is placed as a plain block at its
+ * frame and named "<name> (standard)". The block is a placeholder, NOT real geometry: it is never sent to the
+ * interference check, and every row that mentions it says so. */
+const ASM_STD_NOTHING = () => L('Nothing to build yet: every part here is a standard/library part (no 3D geometry). Design at least one custom part, or open each standard part from the library.',
+  'Belum ada yang bisa dibangun: semua part di sini standar/dari library (tanpa geometri 3D). Desain minimal satu part custom, atau buka tiap part standar dari library.');
+/** The block size: the plan's own size for this part when it has one, else the largest size the plan fixed at an
+ *  interface this part takes part in. No size in the plan -> no block (reported, never invented). */
+function asmStdSize(pt, a) {
+  const dims = pt.bbox_mm || pt.size_mm || pt.dims_mm;
+  if (Array.isArray(dims) && dims.length === 3 && dims.every((x) => Number(x) > 0)) return dims.map(Number);
+  if (dims && typeof dims === 'object') {
+    const v = [dims.x ?? dims.width_mm, dims.y ?? dims.height_mm, dims.z ?? dims.depth_mm].map((x) => Number(x));
+    if (v.every((x) => x > 0)) return v;
+  }
+  const nums = [];
+  ((a.plan && a.plan.interfaces) || []).forEach((x) => {
+    if (!(x.between || []).includes(pt.id)) return;
+    Object.entries(x.params || {}).forEach(([k, v]) => {
+      const n = Number(v);
+      if (n > 0 && /mm|dia|width|height|length|stroke|bore|radius|thick|\bod\b|\bid\b/.test(String(k))) nums.push(n);
+    });
+  });
+  if (nums.length) { const e = Math.max(...nums); return [e, e, e]; }
+  return null;
+}
+/** A box around a frame origin, in the same millimetre frame as the built parts (CAD Z-up, turned for the viewer). */
+function asmBoxSTL(at, size) {
+  const h = size.map((x) => Number(x) / 2), v = new Float32Array(24); let i = 0;
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) { v[i++] = at[0] + sx * h[0]; v[i++] = at[1] + sy * h[1]; v[i++] = at[2] + sz * h[2]; }
+  const q = (x, y, z) => (x ? 4 : 0) + (y ? 2 : 0) + (z ? 1 : 0), t = [];
+  const quad = (a2, b2, c2, d2) => t.push(a2, b2, c2, a2, c2, d2);
+  quad(q(0, 0, 0), q(0, 1, 0), q(1, 1, 0), q(1, 0, 0)); quad(q(0, 0, 1), q(1, 0, 1), q(1, 1, 1), q(0, 1, 1));
+  quad(q(0, 0, 0), q(1, 0, 0), q(1, 0, 1), q(0, 0, 1)); quad(q(0, 1, 0), q(0, 1, 1), q(1, 1, 1), q(1, 1, 0));
+  quad(q(0, 0, 0), q(0, 0, 1), q(0, 1, 1), q(0, 1, 0)); quad(q(1, 0, 0), q(1, 1, 0), q(1, 1, 1), q(1, 0, 1));
+  return meshToSTL(zUp({ vertices: v, triangles: t }));
+}
+function asmStdBlocks(a, frames) {
+  const out = { parts: [], skipped: [] };
+  (a.parts || []).forEach((pt) => {
+    if (pt.cad && pt.cad.code) return;
+    const name = String(pt.name || pt.id);
+    if (!frames[pt.id]) { out.skipped.push(`${name}: no frame in the plan`); return; }
+    const size = asmStdSize(pt, a);
+    if (!size) { out.skipped.push(`${name}: no size in the plan`); return; }
+    out.parts.push({ buf: asmBoxSTL(frames[pt.id], size), kind: 'placeholder', name: `${name} (standard)` });
+  });
+  return out;
+}
 async function asmAssemble() {
   const a = asmJob, frames = {}, rots = {}; let derived = 0;
   ((a.assembly && a.assembly.parts) || []).forEach((x) => { frames[x.id] = x.origin_mm || [0, 0, 0]; const rr = frameRotation(x); if (rr) rots[x.id] = rr; if (x.x_axis_source === 'derived') derived++; });
   a.derivedX = derived;
   const items = (a.parts || []).filter((pt) => pt.cad && pt.cad.code).map((pt) => ({ id: pt.id, code: pt.cad.code, params: Object.fromEntries((pt.cad.params || []).filter((q) => q && q.k).map((q) => [q.k, +q.value])), t: frames[pt.id] || [0, 0, 0], rot: rots[pt.id] || null }));
-  if (!items.length) return;
+  const std = asmStdBlocks(a, frames);
+  /* the button used to do nothing at all here: a standard-only assembly stopped silently */
+  if (!items.length) { a.built = { error: String(ASM_STD_NOTHING()) }; return renderAsm(); }
   a.assembling = true; renderAsm();
   try { await genWorker(); const r = await genCall({ t: 'asm', items }, 240000);
     if (state.part) savePart(); leavePart && state.part && leavePart();
     const cols = r.parts.filter((x) => x.ok);
-    viewer.setParts(cols.map((x) => ({ buf: meshToSTL(zUp({ vertices: x.mesh.v, triangles: x.mesh.t })), kind: 'part', name: ((a.parts || []).find((pt) => pt.id === x.id) || {}).name || x.id }))); frameFit && frameFit();
+    const placed = cols.map((x) => ({ buf: meshToSTL(zUp({ vertices: x.mesh.v, triangles: x.mesh.t })), kind: 'part', name: ((a.parts || []).find((pt) => pt.id === x.id) || {}).name || x.id }));
+    viewer.setParts([...placed, ...std.parts]); frameFit && frameFit();
     const ve = $('#vempty'); if (ve) ve.classList.add('hide');
-    a.built = { ok: cols.length, failed: r.parts.filter((x) => !x.ok).map((x) => `${x.id}: ${x.err}`), clashes: r.clashes, framesComplete: a.assembly ? a.assembly.frames_complete : null }; }
+    a.built = { ok: cols.length, failed: r.parts.filter((x) => !x.ok).map((x) => `${x.id}: ${x.err}`), clashes: r.clashes, framesComplete: a.assembly ? a.assembly.frames_complete : null,
+      standard: std.parts.length, stdSkipped: std.skipped }; }
   catch (e) { a.built = { error: e.message }; }
   a.assembling = false; renderAsm();
 }
@@ -11315,6 +11368,10 @@ function renderAsm() {
       else box.append(h('ul', { class: 'gen-checks' }, h('li', null, h('span', { class: 'cdot ' + (b.failed.length ? 'warn' : 'ok'), 'aria-hidden': 'true' }), h('div', null, h('b', null, L(`${b.ok} parts placed at their frames`, `${b.ok} part ditempatkan di frame-nya`)), b.failed.length ? h('span', null, ' · ' + b.failed.join('; ')) : null)),
         h('li', null, h('span', { class: 'cdot ' + (b.clashes.length ? 'bad' : 'ok'), 'aria-hidden': 'true' }), h('div', null, h('b', null, b.clashes.length ? L(`${b.clashes.length} interference(s)`, `${b.clashes.length} interferensi`) : L('No interference', 'Tidak ada interferensi')),
           h('span', null, b.clashes.length ? ' · ' + b.clashes.map((c) => `${c.a} ↔ ${c.b}: ${f(c.vol / 1000, 2)} cm³`).join('; ') : L(' (common volume of every pair, OpenCascade)', ' (volume bersama tiap pasang, OpenCascade)')))),
+        b.standard ? h('li', null, h('span', { class: 'cdot warn', 'aria-hidden': 'true' }), h('div', null, h('b', { id: 'asmStdLine' }, L(`${b.standard} standard parts shown as blocks (no real geometry)`, `${b.standard} part standar ditampilkan sebagai blok (bukan geometri nyata)`)), h('span', null, L(' · placeholder bbox, not real geometry — not in the interference check', ' · placeholder bbox, bukan geometri nyata — tidak ikut cek interferensi'))))
+        : null,
+        b.stdSkipped && b.stdSkipped.length ? h('li', null, h('span', { class: 'cdot warn', 'aria-hidden': 'true' }), h('div', null, h('b', { id: 'asmStdSkipped' }, L(`${b.stdSkipped.length} standard part(s) have no frame or size in the plan, so no block is drawn`, `${b.stdSkipped.length} part standar tidak punya frame atau ukuran di rencana, jadi tidak digambar`)), h('span', null, ' · ' + b.stdSkipped.join('; '))))
+        : null,
         b.framesComplete === false ? h('li', null, h('span', { class: 'cdot warn', 'aria-hidden': 'true' }), h('div', null, h('b', null, L('Some parts have no frame in the plan', 'Sebagian part tidak punya frame di rencana')), h('span', null, L(' · they sit at the origin', ' · diletakkan di titik asal'))))
         : null)); }
   }
@@ -12514,7 +12571,7 @@ async function asmExplode() {
     if (a === 'asmExplode') return asmExplode();
     return ra.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
+window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), asm: { setJob: (a) => { asmJob = a; renderAsm(); }, job: () => asmJob, assemble: () => asmAssemble(), render: () => renderAsm() }, vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
 })();
 </script>
 </body>
