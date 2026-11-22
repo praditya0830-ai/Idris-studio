@@ -8048,6 +8048,8 @@ const RIBBON = [
       T('Edge Flange', 'flange', 'mk1', 'Bend a wall up from an edge.', 'Tekuk dinding naik dari sebuah tepi.', 'Flange'), T('Miter Flange', 'flange', 'mk1', 'Flange along several edges with mitred corners.', 'Flange sepanjang beberapa tepi dengan sudut miter.', 'Contour Flange'),
       T('Hem', 'hem', 'mk1', 'Fold an edge back on itself.', 'Lipat tepi ke dirinya sendiri.', ''), T('Jog', 'jog', 'mk1', 'Two bends from a sketch line.', 'Dua tekukan dari garis sketch.', '')]],
     ['Bends', [T('Sketched Bend', 'bend', 'mk1', 'Bend along a sketch line.', 'Tekuk sepanjang garis sketch.', 'Bend'), T('Unfold / Fold', 'unfold', 'mk1', 'Open bends to add features, then fold back.', 'Buka tekukan untuk menambah fitur, lalu lipat lagi.', ''),
+      T('Bend Allowance', 'bend', 'on', 'One bend: BA = θ·(R + K·t), the setback and the straight length, with the K-factor labelled a workshop default. Opens in the Edit page of the left panel.', 'Satu tekukan: BA = θ·(R + K·t), setback, dan panjang lurus, dengan K-factor disebut default bengkel. Terbuka di halaman Edit panel kiri.', 'Sheet Metal Bend, Bend Deduction', 'sheetMetalBend'),
+      T('Flat Pattern', 'flat', 'on', 'The flat length of this bend chain and a DXF of the flat part with its bend line. Opens in the Edit page of the left panel.', 'Panjang bentangan rangkaian tekuk ini dan DXF part datar dengan garis tekuknya. Terbuka di halaman Edit panel kiri.', 'Unfold, Flat Pattern DXF', 'sheetMetalFlat'),
       T('Flatten', 'flat', 'mk1', 'Flat pattern with bend lines, for laser cutting.', 'Pola datar dengan garis tekuk, untuk laser cutting.', 'Flat Pattern'),
       T('Corner Relief', 'relief', 'mk1', 'Relief cuts where bends meet.', 'Potongan relief di pertemuan tekukan.', 'Closed Corner'),
       T('Forming Tool', 'form', 'no', 'Louvres, embosses, lances.', 'Louvre, emboss, lance.', 'Punch'), T('Convert to Sheet Metal', 'flat', 'no', 'Turn a solid into sheet metal.', 'Ubah solid menjadi sheet metal.', '')]]]],
@@ -8137,6 +8139,7 @@ function ribAct(a, name) {
   if (a === 'bearingAny') { if (state.part) return bearingPanel(); const g = gbRunner('gbCheck'); return g ? g() : bearingPanel(); }
   if (a === 'expStep' || a === 'expStl') { if (partShape) return exportPart(a === 'expStep' ? 'step' : 'stl'); return say(para(L('Build a part first, then export it.', 'Bangun part dulu, lalu ekspor.'), 'm')); }
   if (a === 'rename') { if (state.part) return renamePart(); return say(para(L('Open a part first.', 'Buka part dulu.'), 'm')); }
+  if (a === 'sheetMetalBend' || a === 'sheetMetalFlat') return sheetMetalEdit(a === 'sheetMetalFlat' ? 'flat' : 'bend');
   const g = gbRunner(a); if (g) return g();
 }
 function ribRunnable(t) { return t.st === 'on' || (t.st === 'gb' && !!gbRunner(t.act)); }
@@ -12583,12 +12586,38 @@ function sheetMetalPanel() {
   document.body.append(dlg); render();
   return window.__lastFlat;
 }
+/* P1e on S14: the ribbon opens the same sheet-metal panel in the Edit page of the left panel. The form, its input
+ * listeners and the numbers are the ones sheetMetalPanel just built; only the dialog wrapper is dropped. */
+function sheetMetalEdit(focus) {
+  sheetMetalPanel();
+  const dlg = $('#smdlg'), page = $('#lppEdit');
+  const inner = dlg && dlg.querySelector('.lib-in');
+  if (!inner || !page) return window.__lastFlat;
+  const head = inner.querySelector('.lib-h'); if (head) head.remove();
+  dlg.remove();
+  page.innerHTML = '';
+  page.append(h('div', { class: 'lphdrow' }, h('span', null, 'Sheet Metal'),
+      h('small', null, L('bend allowance · flat pattern', 'bend allowance · flat pattern'))),
+    h('div', { class: 'sm-in-panel', id: 'smdlg' }, inner));
+  setLpTab('edit');
+  if (focus === 'flat') { const b = $('#sm-dxf'); if (b && b.scrollIntoView) b.scrollIntoView({ block: 'nearest' }); }
+  return window.__lastFlat;
+}
 { const st3 = document.createElement('style');
   st3.textContent = `.sm-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;margin-bottom:8px}
  .sm-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;color:#cfe2ee}
  .sm-in{width:84px;background:#0a141c;border:1px solid #2b4252;color:#dcecf5;border-radius:5px;padding:4px 6px;font-size:11.5px}
  .sm-f{display:flex;flex-direction:column;gap:3px;font-size:12px;border:1px solid #263c4c;border-radius:8px;padding:8px;background:#0d1720}
- .sm-flat{font-weight:600;color:#a8e3c1}`;
+ .sm-flat{font-weight:600;color:#a8e3c1}
+ .sm-in-panel{padding:8px 12px 18px}
+ #smdlg.sm-in-panel .sm-form{grid-template-columns:1fr}
+ #smdlg.sm-in-panel .sm-in{width:92px}
+ #smdlg.sm-in-panel .lib-in{max-width:none;padding:0;background:none;border-radius:0;box-shadow:none;overflow:visible;width:100%}
+ #smdlg.sm-in-panel .tool-in{width:100%}
+ #smdlg.sm-in-panel .sm-row{color:var(--text)}
+ #smdlg.sm-in-panel .sm-in{background:var(--white);border-color:var(--line2);color:var(--text)}
+ #smdlg.sm-in-panel .sm-f{color:#dbe7f0;min-width:0}
+ #smdlg.sm-in-panel .sm-f div{overflow-wrap:anywhere}`;
   document.head.append(st3); }
 
 window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, sheetMetal: sheetMetalPanel, bendAllowance, flatPattern, bendSetback, setback: bendSetback, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };

@@ -65,6 +65,30 @@ check('the flat pattern DXF carries the outline, a BEND line and its numbers', (
   eq('idris-flat-pattern.dxf', dl.suggestedFilename(), 'filename');
 });
 if (process.env.SHOT !== '0') await page.screenshot({ path: `${root}/${OUT}/t33-sheet-metal-${VP[0]}.png`, fullPage: false });
+/* S14 ribbon: the Sheet Metal tab carries the two buttons, and Bend Allowance opens the panel in the left Edit page. */
+await page.evaluate(() => { const d = document.querySelector('#smdlg'); if (d) d.remove(); });
+const home = page.getByRole('button', { name: 'Open the workspace' });
+if (await home.count()) { await home.first().click(); await page.waitForTimeout(900); }
+await page.evaluate(() => { const b = [...document.querySelectorAll('#xrib .xr-tabs button')].find((x) => x.textContent.trim() === 'Sheet Metal'); if (b) b.click(); });
+await page.waitForTimeout(400);
+const ribNames = await page.evaluate(() => [...document.querySelectorAll('#xrib .xr-t .xr-n')].map((e) => e.textContent.trim()));
+check('the Sheet Metal ribbon tab carries Bend Allowance and Flat Pattern', () => {
+  if (!ribNames.includes('Bend Allowance')) throw new Error('no Bend Allowance: ' + ribNames.join(' | '));
+  if (!ribNames.includes('Flat Pattern')) throw new Error('no Flat Pattern: ' + ribNames.join(' | '));
+});
+await page.evaluate(() => { const b = [...document.querySelectorAll('#xrib .xr-t')].find((x) => x.textContent.trim() === 'Bend Allowance'); if (!b) throw new Error('button not clickable'); b.click(); });
+await page.waitForTimeout(500);
+const panel = await page.evaluate(() => ({
+  tab: (document.querySelector('#lpTabs button[aria-selected="true"]') || {}).dataset?.lptab || null,
+  ba: (document.querySelector('#lppEdit #smdlg .sm-f') || { getAttribute: () => null }).getAttribute('data-ba'),
+  text: (document.querySelector('#lppEdit #smdlg') || { innerText: '' }).innerText,
+}));
+check('Bend Allowance opens in the left Edit page with BA 4.524 mm', () => {
+  eq('edit', panel.tab, 'left tab');
+  eq('4.524', panel.ba, 'BA in the left panel');
+  if (!/Bend allowance BA = θ·\(R \+ K·t\) = 4\.524 mm/.test(panel.text)) throw new Error(panel.text);
+});
+if (process.env.SHOT !== '0') await page.screenshot({ path: `${root}/${OUT}/t33-sheet-metal-ribbon-${VP[0]}.png`, fullPage: false });
 await browser.close();
 const bad = results.filter((r) => !r[0]);
 bad.forEach((r) => console.log('  FAILED: ' + r[1] + (r[2] ? ' — ' + r[2].message : '')));
