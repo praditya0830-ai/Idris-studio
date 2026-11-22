@@ -29,6 +29,9 @@ async function boot(page) {
   await page.waitForSelector('#cv', { state: 'attached', timeout: 30000 });
   const home = page.getByRole('button', { name: 'Open the workspace' });
   if (await home.count()) { await home.first().click(); await page.waitForTimeout(900); }
+  /* S14: Saved parts (and New part) live on the Library tab of the left panel */
+  await page.evaluate(() => { const b = document.querySelector('#lpTabLib'); if (b) b.click(); });
+  await page.waitForTimeout(300);
   const newPart = page.locator('#tree').getByRole('button', { name: 'New part' }).first();
   if (!(await newPart.isVisible().catch(() => false))) { await page.locator('#cTree').click().catch(() => {}); await page.waitForTimeout(500); }
   await newPart.click({ timeout: 20000 });
@@ -49,6 +52,10 @@ const panel = (page) => page.evaluate(() => {
     hasCadLeft: !!document.querySelector('#lpScroll #cadLeft'),
     hasTree: !!document.querySelector('#lpScroll #tree'),
     xOverflow: s ? s.scrollWidth - s.clientWidth : null,
+    overflowX: s ? getComputedStyle(s).overflowX : null,
+    pages: document.querySelectorAll('#lpTrack > .lppage').length,
+    active: (document.querySelector('#lpTabs button[aria-selected="true"]') || {}).dataset?.lptab || null,
+    tabBar: document.querySelector('#lpTabs') ? getComputedStyle(document.querySelector('#lpTabs')).display : null,
     docScroll: document.documentElement.scrollWidth - innerWidth,
     title: (document.querySelector('#lpTitle') || {}).textContent || '',
     inPaneDoc: !!pane.querySelector('.cdoc'),
@@ -69,10 +76,12 @@ for (const [label, width, height] of [['1366x768', 1366, 768], ['1280x800', 1280
   page.on('pageerror', (e) => errors.push(String(e)));
   await boot(page);
   const p = await panel(page);
-  check('the pane is one scroll area', () => eq(p.scrollers.filter((x) => x === 'lpScroll').length, 1, 'one #lpScroll'));
-  check('nothing else in the pane scrolls by itself', () => eq(p.scrollers.length, 1, JSON.stringify(p.scrollers)));
-  check('the feature tree and the CAD column share that area', () => { if (!p.hasCadLeft || !p.hasTree) throw new Error(JSON.stringify(p)); });
-  check('no horizontal scroll in the panel', () => { if (p.xOverflow > 1) throw new Error('scrollWidth - clientWidth = ' + p.xOverflow); });
+  check('the left panel is four pages on one track', () => eq(p.pages, 4, 'pages'));
+  check('the tab bar shows in the CAD layout', () => { if (p.tabBar !== 'flex') throw new Error('tab bar is ' + p.tabBar); });
+  check('the feature tree and the CAD column are pages of it', () => { if (!p.hasCadLeft || !p.hasTree) throw new Error(JSON.stringify(p)); });
+  check('a tab is selected', () => { if (!p.active) throw new Error('no aria-selected tab'); });
+  /* S14: the track is wider than the pane on purpose (it slides); the pane clips it and cannot be scrolled sideways */
+  check('no horizontal scroll in the panel', () => { if (p.xOverflow > 1 && p.overflowX !== 'hidden') throw new Error(`overflow ${p.xOverflow}, overflow-x ${p.overflowX}`); });
   check('the page itself does not scroll sideways', () => { if (p.docScroll > 1) throw new Error('doc overflow ' + p.docScroll); });
   check('the design title is the part name', () => { if (!p.title.trim()) throw new Error('empty title'); });
   check('the column starts with the design name and a feature-tree heading', () => { if (!p.header) throw new Error('no title/heading block'); });
@@ -82,20 +91,22 @@ for (const [label, width, height] of [['1366x768', 1366, 768], ['1280x800', 1280
   check('Properties sits below the tree with a heading', () => { if (!p.propsTitle || !/Properties/i.test(p.props)) throw new Error(p.props.slice(0, 120)); });
   check('document settings are out of the column', () => { if (p.inPaneDoc) throw new Error('.cdoc is still in the panel'); });
 
-  /* the column as it opens: title, feature tree, Properties of the part */
-  await page.evaluate(() => { document.querySelector('#lpScroll').scrollTop = 0; if (document.activeElement) document.activeElement.blur(); });
+  /* the Tree page as it opens: title, feature tree, Properties of the part */
+  await page.evaluate(() => { document.querySelector('#lpTabTree').click(); document.querySelector('#lppTree').scrollTop = 0; if (document.activeElement) document.activeElement.blur(); });
   await page.waitForTimeout(300);
-  await page.evaluate(() => { document.querySelector('#lpScroll').scrollTop = 0; });
   await page.screenshot({ path: `${root}${OUT}/lp-${TAG}-${label}.png` });
 
-  /* selecting a feature shows its numbers under Properties */
+  /* selecting a feature moves to Edit and shows its numbers */
   await page.locator('#cadLeft .pfn').first().click();
-  await page.waitForTimeout(400);
+  await page.waitForSelector('#cadProps .pform', { timeout: 10000 });
   const sel = await panel(page);
+  check('a feature click opens Edit with its form', () => { if (sel.active !== 'edit') throw new Error('tab is ' + sel.active); });
   check('the selected feature shows its properties', () => { if (!/Feature/i.test(sel.props)) throw new Error(sel.props.slice(0, 160)); });
 
   await page.screenshot({ path: `${root}${OUT}/lp-${TAG}-selected-${label}.png` });
-  /* double-click edits: the form opens */
+  /* double-click on the Tree page edits in place too */
+  await page.evaluate(() => document.querySelector('#lpTabTree').click());
+  await page.waitForTimeout(350);
   await page.locator('#cadLeft .pfn').first().dblclick();
   await page.waitForSelector('#cadProps .pform', { timeout: 10000 });
   check('double-click opens the feature form', () => { if (!page) throw new Error('no page'); });
@@ -124,7 +135,7 @@ for (const [label, width, height] of [['1366x768', 1366, 768], ['1280x800', 1280
       await page.waitForTimeout(500);
       const wide = await panel(page);
       check('dragging the grip widens the panel', () => { if (!(wide.width > before + 40)) throw new Error(`${before} -> ${wide.width}`); });
-      check('the wider panel still has no horizontal scroll', () => { if (wide.xOverflow > 1) throw new Error('overflow ' + wide.xOverflow); });
+      check('the wider panel still has no horizontal scroll', () => { if (wide.xOverflow > 1 && wide.overflowX !== 'hidden') throw new Error(`overflow ${wide.xOverflow}, overflow-x ${wide.overflowX}`); });
       await page.locator('#lpGrip').dblclick();
       await page.waitForTimeout(400);
       const reset = (await panel(page)).width;
