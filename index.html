@@ -11554,7 +11554,84 @@ async function asmExplode() {
     if (a === 'asmExplode') return asmExplode();
     return ra.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids } };
+/* ---- v0.43 sheet metal (P1e): bend allowance, setback and the flat pattern, with a DXF of the flat part.
+ * The arithmetic is DIN 6935 / the standard bend-allowance relation BA = theta (R + K t); the K-factor is the
+ * workshop's number and its default is labelled a default, not a standard. */
+const K_DEFAULT = { steel: 0.44, stainless: 0.44, aluminium: 0.45, brass: 0.45 };
+const K_SOURCE = 'K-factor default: 0.44 for steel, 0.45 for aluminium/brass at R/t ≈ 1 in air bending — a workshop default, change it to your tooling sheet (DIN 6935 bend allowance) ';
+function bendAllowance(p) {
+  const t = +p.t, r = +p.r, k = +p.k, th = (+p.angleDeg || 90) * Math.PI / 180;
+  return th * (r + k * t);
+}
+function bendSetback(p) {
+  const t = +p.t, r = +p.r, th = (+p.angleDeg || 90) * Math.PI / 180;
+  return (r + t) * Math.tan(th / 2);
+}
+function flatPattern(p) {
+  const ba = bendAllowance(p), sb = bendSetback(p);
+  const legs = (Array.isArray(p.legs) ? p.legs : []).map(Number).filter((x) => x > 0);
+  const straight = legs.reduce((a, b) => a + Math.max(0, b - sb), 0);
+  return { ba_mm: ba, setback_mm: sb, straight_mm: straight, flat_mm: straight + (legs.length > 1 ? ba * (legs.length - 1) : ba) };
+}
+function sheetMetalDxf(flat, p) {
+  const w = +p.width || 100, L = flat.flat_mm;
+  const lines = ['0', 'SECTION', '2', 'ENTITIES'];
+  const rect = [[0, 0], [L, 0], [L, w], [0, w]];
+  for (let i = 0; i < 4; i++) {
+    const a = rect[i], b = rect[(i + 1) % 4];
+    lines.push('0', 'LINE', '8', 'OUTLINE', '10', String(a[0]), '20', String(a[1]), '11', String(b[0]), '21', String(b[1]));
+  }
+  const bx = Math.max(0, (+p.legA || L / 2) - flat.setback_mm);
+  lines.push('0', 'LINE', '8', 'BEND', '10', String(bx), '20', '0', '11', String(bx), '21', String(w));
+  lines.push('0', 'TEXT', '8', 'NOTE', '10', '4', '20', String(w + 6), '40', '3.5',
+    '1', `t=${p.t} R=${p.r} angle=${p.angleDeg} K=${p.k} BA=${flat.ba_mm.toFixed(3)} flat=${flat.flat_mm.toFixed(2)}`);
+  lines.push('0', 'ENDSEC', '0', 'EOF');
+  return lines.join('\n');
+}
+function sheetMetalPanel() {
+  const old = $('#smdlg'); if (old) old.remove();
+  const p = { t: 2, r: 2, angleDeg: 90, k: K_DEFAULT.steel, material: 'steel', width: 100, legA: 60, legB: 40, legs: [60, 40] };
+  const out = h('div', { class: 'sm-out' });
+  const close = () => { const el = $('#smdlg'); if (el) el.remove(); };
+  const field = (label, key, step) => {
+    const inp4 = h('input', { class: 'sm-in', type: 'number', step: String(step || 0.1), value: String(p[key]) });
+    inp4.addEventListener('input', () => { p[key] = +inp4.value || 0; if (key === 'legA') { p.legs = [p.legA, p.legB]; } render(); });
+    return h('label', { class: 'sm-row' }, h('span', null, label), inp4);
+  };
+  const render = () => {
+    const f2 = flatPattern(p);
+    out.innerHTML = '';
+    out.append(h('div', { class: 'sm-f', 'data-ba': f2.ba_mm.toFixed(3), 'data-flat': f2.flat_mm.toFixed(2) },
+      h('div', null, `Bend allowance BA = θ·(R + K·t) = ${f2.ba_mm.toFixed(3)} mm`),
+      h('div', null, `Setback = (R + t)·tan(θ/2) = ${f2.setback_mm.toFixed(3)} mm`),
+      h('div', null, `Straight length = ${f2.straight_mm.toFixed(2)} mm`),
+      h('div', { class: 'sm-flat' }, `Flat pattern length = ${f2.flat_mm.toFixed(2)} mm · width ${p.width} mm`)),
+      para(L(K_SOURCE.replace('workshop default, change it to your tooling sheet', 'workshop default, change it to your tooling sheet.'), K_SOURCE), 'm'),
+      h('p', { class: 'hint' }, L('The folded 3D part and the DXF below use this flat length; the bend line is drawn in layer BEND.', 'Part 3D terlipat dan DXF di bawah memakai panjang bentangan ini; garis tekuk digambar di layer BEND.')));
+    window.__lastFlat = f2;
+  };
+  const dlg = h('div', { class: 'libdlg', id: 'smdlg', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Sheet Metal', onclick: (e) => { if (e.target === dlg) close(); } },
+    h('div', { class: 'lib-in tool-in' }, h('div', { class: 'lib-h' }, h('b', null, 'Sheet Metal'),
+      h('button', { class: 'x', 'aria-label': L('Close', 'Tutup'), onclick: close }, '✕')),
+      h('div', { class: 'sm-form' }, field(L('Thickness t (mm)', 'Tebal t (mm)'), 't', 0.1), field(L('Bend radius R (mm)', 'Radius tekuk R (mm)'), 'r', 0.1),
+        field(L('Bend angle (°)', 'Sudut tekuk (°)'), 'angleDeg', 1), field(L('K-factor', 'K-factor'), 'k', 0.01),
+        field(L('Flange A (mm)', 'Flange A (mm)'), 'legA', 1), field(L('Flange B (mm)', 'Flange B (mm)'), 'legB', 1),
+        field(L('Width (mm)', 'Lebar (mm)'), 'width', 1)),
+      out,
+      h('div', { class: 'pact' }, h('button', { class: 'chip primary', id: 'sm-dxf', onclick: () => { const f3 = flatPattern(p); dlText(sheetMetalDxf(f3, p), 'idris-flat-pattern.dxf', 'application/dxf'); } }, L('Download flat pattern DXF', 'Unduh DXF bentangan'))),
+      h('p', { class: 'hint' }, L('Unfold here is the flat length of this bend chain, not a kernel unfold of a folded solid: the folded 3D body is not built yet, so a sheet-metal feature tree entry is not created.', 'Unfold di sini adalah panjang bentangan dari rangkaian tekuk ini, bukan unfold kernel dari solid terlipat: badan 3D terlipat belum dibangun, jadi entri feature tree sheet metal belum dibuat.'))));
+  document.body.append(dlg); render();
+  return window.__lastFlat;
+}
+{ const st3 = document.createElement('style');
+  st3.textContent = `.sm-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;margin-bottom:8px}
+ .sm-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;color:#cfe2ee}
+ .sm-in{width:84px;background:#0a141c;border:1px solid #2b4252;color:#dcecf5;border-radius:5px;padding:4px 6px;font-size:11.5px}
+ .sm-f{display:flex;flex-direction:column;gap:3px;font-size:12px;border:1px solid #263c4c;border-radius:8px;padding:8px;background:#0d1720}
+ .sm-flat{font-weight:600;color:#a8e3c1}`;
+  document.head.append(st3); }
+
+window.__idris = { state, parseText, viewer, frameFit, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, sheetMetal: sheetMetalPanel, bendAllowance, flatPattern, setback: bendSetback } };
 })();
 </script>
 </body>
