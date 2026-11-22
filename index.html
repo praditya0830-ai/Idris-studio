@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>IDRIS Design Studio</title>
 <meta name="description" content="AI-native engineering design studio: describe a requirement, get physics-checked design variants.">
@@ -787,6 +788,8 @@ body.at-home .learn{display:none}
 .sknext span{min-width:0}
 /* P1a: the sketch overlay and its panel */
 .sksvg{position:absolute;inset:0;width:100%;height:100%;z-index:7;pointer-events:none;overflow:visible}
+.skangle{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:8;background:var(--warn);color:#fff;font:600 11.5px/1.2 var(--sans);padding:5px 10px;border-radius:6px;pointer-events:none;max-width:calc(100% - 24px);text-align:center}
+.skangle[hidden]{display:none}
 .sksvg .skent{fill:none;stroke:var(--accent);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
 .sksvg .skent.con{stroke-dasharray:5 4;stroke:var(--dim)}
 .sksvg .skent.sel{stroke:var(--warn);stroke-width:2.6}
@@ -1114,6 +1117,7 @@ if(t==="system")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"lig
           <button data-view="front" title="Front" disabled><svg class="i"><use href="#i-front"/></svg></button>
           <button data-view="top" title="Top" disabled><svg class="i"><use href="#i-top"/></svg></button>
           <button data-view="right" title="Right" disabled><svg class="i"><use href="#i-right"/></svg></button>
+          <button id="bNormal" title="Normal To: look straight at the sketch plane" aria-label="Normal To" disabled>⊥</button>
           <span class="sep"></span>
           <button id="bSolid" class="on" title="Shaded with edges" disabled><svg class="i"><use href="#i-solid"/></svg></button>
           <button id="bWire" title="Wireframe" disabled><svg class="i"><use href="#i-wire"/></svg></button>
@@ -1129,6 +1133,7 @@ if(t==="system")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"lig
         </div>
         <div class="ovl" id="ovl" aria-hidden="true"></div>
         <div class="vlabel" id="vlabel"></div>
+        <div class="skangle" id="skAngle" role="status" hidden></div>
         <div class="vinfo" id="vinfo" hidden></div>
         <div class="legend" id="legend" hidden></div>
         <svg class="triad" id="triad" viewBox="0 0 74 74"></svg>
@@ -1182,6 +1187,7 @@ class Viewer {
     this.yaw = 0.62; this.pitch = 0.42; this.dist = 560; this.fov = 32 * Math.PI / 180;
     this.model = null; this.parts = []; this.housingMode = "glass"; this.highlight = -1; this.wire = false; this.section = false;
     this.dirty = true; this.pointers = new Map(); this.pinch = 0; this.onView = null; this.anim = null;
+    this.ortho = false; this.planeGrid = null;
     const gl = canvas.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: false });
     if (!gl) return;
     this.gl = gl; this.ok = true;
@@ -1573,6 +1579,33 @@ class Viewer {
     }
     this.dirty = true;
   }
+  /** S13: this draw's projection. A sketch is looked at straight on and drawn orthographically, so equal millimetres
+   *  stay equal on screen and a rectangle drawn on the plane is a rectangle in the part. */
+  _proj(aspect, nearK, farK, view) {
+    const d = this.dist;
+    if (!this.ortho) { const proj = Viewer.perspective(this.fov, aspect, Math.max(0.01, d * nearK), d * farK); return view ? Viewer.mul(proj, view) : proj; }
+    const hh = Math.tan(this.fov / 2) * d;
+    const proj = Viewer.ortho(hh * aspect, hh, -d * 30, d * 30);
+    return view ? Viewer.mul(proj, view) : proj;
+  }
+  /** S13: a grid lying in the sketch plane, drawn along the plane's two axes (CAD u,v), centred on the model. */
+  setPlaneGrid(plane, at) {
+    const gl = this.gl;
+    if (this.planeGrid) { for (const k of ['pos', 'a', 'axisPos', 'axisA']) if (this.planeGrid[k]) gl.deleteBuffer(this.planeGrid[k]); this.planeGrid = null; }
+    if (!plane || !this.ok) { this.dirty = true; return; }
+    const step = 10, n = 24, half = step * n, c = this.center || [0, 0, 0], A = [], Al = [], X = [], Xl = [];
+    const map = (u, v) => plane === 'XY' ? [u - c[0], at - c[1], -v - c[2]] : plane === 'XZ' ? [u - c[0], v - c[1], -at - c[2]] : [at - c[0], v - c[1], -u - c[2]];
+    for (let i = -n; i <= n; i++) {
+      const p = i * step, fade = Math.max(0, 1 - Math.abs(p) / (half * 1.15));
+      let a = map(p, -half), b = map(p, half); A.push(...a, ...b); Al.push(fade, fade);
+      a = map(-half, p); b = map(half, p); A.push(...a, ...b); Al.push(fade, fade);
+    }
+    const o = map(-half, 0), o2 = map(half, 0), o3 = map(0, -half), o4 = map(0, half);
+    X.push(...o, ...o2, ...o3, ...o4); Xl.push(1, 1, 1, 1);
+    this.planeGrid = { pos: this._buf(new Float32Array(A)), a: this._buf(new Float32Array(Al)), n: A.length / 3,
+      axisPos: this._buf(new Float32Array(X)), axisA: this._buf(new Float32Array(Xl)), axisN: X.length / 3 };
+    this.dirty = true;
+  }
   /** Project a world point to CSS pixels of the canvas; null when behind the camera. */
   project(p) {
     if (!this._mvp) return null; const m = this._mvp;
@@ -1683,17 +1716,21 @@ class Viewer {
     const view = Viewer.lookAt(eye, T, up);
     if (this.onView) this.onView(view);
     const m = this.model;
-    if (!m) { const em = Viewer.mul(Viewer.perspective(this.fov, W / H, d * 0.02, d * 20), view); this._mvp = em; this._drawEmpty(em);
+    if (!m) { const em = this._proj(W / H, 0.02, 20, view); this._mvp = em; this._drawEmpty(em);
       if (this.preview) for (const g of this.preview) {
         this._mesh(g, [0.25, 0.50, 0.95], 0.45, em, view, Viewer.I);
         gl.useProgram(this.pLine); this._lines(this.pLine, em, g.feat, g.featA, g.featN, [0.12, 0.36, 0.95, 1], true, Viewer.I);
       }
       return; }
-    const proj = Viewer.perspective(this.fov, W / H, d * 0.05, d * 12);
+    const proj = this._proj(W / H, 0.05, 12);
     const mvp = Viewer.mul(proj, view); this._mvp = mvp;
     const de = document.documentElement, dark = de.dataset.vpdark ? de.dataset.vpdark === '1' : de.dataset.theme === 'dark';
     gl.useProgram(this.pLine);
     if (!this.noGrid) this._lines(this.pLine, mvp, m.grid, m.gridA, m.gridN, dark ? [0.45, 0.58, 0.78, 0.30] : [0.32, 0.40, 0.52, 0.32]);
+    /* S13: the grid of the sketch plane, along the plane's own axes */
+    if (this.planeGrid) { gl.lineWidth(1.3);
+      this._lines(this.pLine, mvp, this.planeGrid.pos, this.planeGrid.a, this.planeGrid.n, dark ? [0.52, 0.66, 0.92, 0.42] : [0.23, 0.36, 0.62, 0.38]);
+      this._lines(this.pLine, mvp, this.planeGrid.axisPos, this.planeGrid.axisA, this.planeGrid.axisN, dark ? [0.95, 0.64, 0.28, 0.85] : [0.72, 0.36, 0.06, 0.8]); gl.lineWidth(1); }
     const I = Viewer.I, mot = new Map();
     if (this.motion) for (const q of this.motion) mot.set(q.i, Viewer.rotAbout(q.axis, q.c, q.w * (this.spinT || 0)));
     if (this.explode && this.explodeT > 0) for (const [i, v] of this.explode) { const t = new Float32Array(I); t[12] = v[0] * this.explodeT; t[13] = v[1] * this.explodeT; t[14] = v[2] * this.explodeT; mot.set(i, mot.has(i) ? Viewer.mul(t, mot.get(i)) : t); }
@@ -1855,6 +1892,10 @@ class Viewer {
   static perspective(fovy, aspect, near, far) {
     const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
     return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0]);
+  }
+  static ortho(hw, hh, near, far) {
+    const nf = 1 / (near - far);
+    return new Float32Array([1 / hw, 0, 0, 0, 0, 1 / hh, 0, 0, 0, 0, 2 * nf, 0, 0, 0, (far + near) * nf, 1]);
   }
   static lookAt(e, c, up) {
     let zx = e[0] - c[0], zy = e[1] - c[1], zz = e[2] - c[2]; let l = Math.hypot(zx, zy, zz); zx /= l; zy /= l; zz /= l;
@@ -6930,6 +6971,9 @@ function planeRay(clientX, clientY) {
   const right = nrm([f[1] * upW[2] - f[2] * upW[1], f[2] * upW[0] - f[0] * upW[2], f[0] * upW[1] - f[1] * upW[0]]);
   const up = [right[1] * f[2] - right[2] * f[1], right[2] * f[0] - right[0] * f[2], right[0] * f[1] - right[1] * f[0]];
   const asp = Math.max(1, r.width) / Math.max(1, r.height), hh = Math.tan(viewer.fov / 2), hw = hh * asp;
+  /* S13: in an orthographic sketch view every ray is parallel to the view direction; the pixel only moves its origin,
+   * at the same scale the perspective ray had at the target distance. */
+  if (viewer.ortho) return { eye: [T[0] + right[0] * nx * hw * d + up[0] * ny * hh * d, T[1] + right[1] * nx * hw * d + up[1] * ny * hh * d, T[2] + right[2] * nx * hw * d + up[2] * ny * hh * d], dir: f };
   return { eye, dir: nrm([f[0] + right[0] * nx * hw + up[0] * ny * hh, f[1] + right[1] * nx * hw + up[1] * ny * hh, f[2] + right[2] * nx * hw + up[2] * ny * hh]) };
 }
 function planePoint(clientX, clientY, p) {
@@ -6937,7 +6981,10 @@ function planePoint(clientX, clientY, p) {
   const axis = p.plane === 'XY' ? 1 : p.plane === 'XZ' ? 2 : 0;
   const fixed = axis === 1 ? at - c[1] : axis === 2 ? -at - c[2] : at - c[0];
   if (Math.abs(dir[axis]) < 1e-9) return null;
-  const t = (fixed - eye[axis]) / dir[axis]; if (!(t > 0)) return null;
+  const t = (fixed - eye[axis]) / dir[axis];
+  /* S13: an orthographic view has no eye point, so a plane behind the target is still on screen; only a perspective
+   * ray that starts past the plane is rejected. */
+  if (!(t > -1e-6) && !viewer.ortho) return null;
   const w = [eye[0] + dir[0] * t, eye[1] + dir[1] * t, eye[2] + dir[2] * t];
   return axis === 1 ? [w[0] + c[0], -(w[2] + c[2])] : axis === 2 ? [w[0] + c[0], w[1] + c[1]] : [-(w[2] + c[2]), w[1] + c[1]];
 }
@@ -7050,7 +7097,10 @@ function openSketchSession(tool, editId) {
   partSel = null; skSel = []; skPtr = null; cadTab = 'design';
   /* on a wide screen the session panel takes the left column; on a phone/tablet the tree stays a drawer */
   if (!narrow()) document.body.classList.add('sketching');
-  if (narrow() || document.body.classList.contains('hide-chat')) setChat(true);
+  /* S13: the session panel lives in the left column, so on a tablet the chat must not open over the canvas you draw
+   * on; on a wide screen with the chat hidden there is nothing to cover. */
+  if (!narrow() && document.body.classList.contains('hide-chat')) setChat(true);
+  if (typeof sketchView === 'function') sketchView(p.plane);
   renderCad(); requestAnimationFrame(() => { skOverlay();
     /* the tool list starts at the top: no focus scroll, and the pane is reset after the render */
     const pane = document.querySelector('#cadProps'); if (pane) pane.scrollTop = 0;
@@ -7152,11 +7202,76 @@ function skSave() {
   else state.part.features.push({ id: Date.now().toString(36), type: 'sketch', p });
   partArm = null; skSel = []; skPtr = null; viewer.setPreview(null); hideSkLabel(); document.body.classList.remove('sketching');
   const old = document.getElementById('skSvg'); if (old) old.remove();
+  if (typeof sketchViewExit === 'function') sketchViewExit();
   rebuildPart(state.part.features.length === 1);
 }
 function skCancel() {
-  partArm = null; skSel = []; skPtr = null; document.body.classList.remove('sketching'); const old = document.getElementById('skSvg'); if (old) old.remove(); renderCad();
+  partArm = null; skSel = []; skPtr = null; document.body.classList.remove('sketching'); const old = document.getElementById('skSvg'); if (old) old.remove();
+  if (typeof sketchViewExit === 'function') sketchViewExit();
+  renderCad();
 }
+/* ---- S13: a sketch is drawn looking straight at its plane --------------------------------------------------------
+ * Entering a sketch tool (or Edit sketch in the tree) animates the camera Normal To the plane, switches the view to
+ * orthographic and lays a grid along the plane's own axes; Save / Cancel / Esc put the camera back. Horizontal and
+ * vertical relations are then the plane's axes, because every entity is stored in plane (u,v) coordinates. */
+/* exact normals, not the 1.55 rad of the standard Top button: in an orthographic view a ray that starts behind the
+ * plane never meets it, so the camera has to be exactly on the normal. */
+const SK_PLANE_VIEW = { XY: [0, Math.PI / 2], XZ: [0, 0], YZ: [Math.PI / 2, 0] };
+const SK_PLANE_N = { XY: [0, 1, 0], XZ: [0, 0, 1], YZ: [1, 0, 0] };
+let skViewSaved = null;
+function sketchPlaneOf() {
+  const a = skSession(); if (a) return a.p.plane || 'XY';
+  const f = state.part && typeof partSel === 'number' ? state.part.features[partSel] : null;
+  if (f && f.type === 'sketch' && f.p) return f.p.plane || 'XY';
+  const last = state.part ? [...state.part.features].reverse().find((x) => x.type === 'sketch') : null;
+  return last && last.p ? (last.p.plane || 'XY') : 'XY';
+}
+function sketchPlaneAtOf() {
+  const a = skSession(); if (a) return sketchPlaneAt(a.p);
+  const f = state.part && typeof partSel === 'number' ? state.part.features[partSel] : null;
+  return f && f.type === 'sketch' && f.p ? sketchPlaneAt(f.p) : (sketchPlaneOf() === 'XY' ? partTopZ() : 0);
+}
+/** how far the current view is from the plane's normal, in degrees */
+function normalAngle(plane) {
+  const n = SK_PLANE_N[plane || sketchPlaneOf()]; if (!n) return 0;
+  const d = viewer.dist, cp = Math.cos(viewer.pitch), T = viewer.target || [0, 0, 0];
+  const eye = [T[0] + d * cp * Math.sin(viewer.yaw), T[1] + d * Math.sin(viewer.pitch), T[2] + d * cp * Math.cos(viewer.yaw)];
+  const v = [eye[0] - T[0], eye[1] - T[1], eye[2] - T[2]], l = Math.hypot(v[0], v[1], v[2]) || 1;
+  const dot = Math.abs((v[0] * n[0] + v[1] * n[1] + v[2] * n[2]) / l);
+  return Math.acos(Math.min(1, Math.max(-1, dot))) * 180 / Math.PI;
+}
+function updateNormalHint() {
+  const el = document.getElementById('skAngle'); if (!el) return;
+  const f = state.part && typeof partSel === 'number' ? state.part.features[partSel] : null;
+  const on = !!skSession() || !!(f && f.type === 'sketch');
+  const a = on ? normalAngle() : 0;
+  el.hidden = !(on && a > 30);
+  if (!el.hidden) el.textContent = L('Viewing at an angle: points land on the sketch plane', 'Melihat dari sudut: titik jatuh di bidang sketch');
+}
+function sketchView(plane) {
+  const pl = plane || sketchPlaneOf(), V = SK_PLANE_VIEW[pl]; if (!V || !viewer.ok) return;
+  if (!skViewSaved) skViewSaved = { yaw: viewer.yaw, pitch: viewer.pitch, dist: viewer.dist, ortho: !!viewer.ortho, target: (viewer.target || [0, 0, 0]).slice() };
+  viewer.ortho = true; viewer.goTo(V[0], V[1]);
+  viewer.setPlaneGrid(pl, sketchPlaneAtOf());
+  updateNormalHint();
+}
+function sketchViewExit() {
+  if (skViewSaved) viewer.goTo(skViewSaved.yaw, skViewSaved.pitch, skViewSaved.dist, skViewSaved.target);
+  viewer.ortho = skViewSaved ? !!skViewSaved.ortho : false; skViewSaved = null;
+  viewer.setPlaneGrid(null); updateNormalHint();
+}
+/* the Normal To button in the view bar: straight at the sketch plane, or back to the view you came from */
+{ const b = document.getElementById('bNormal');
+  if (b) b.onclick = () => { if (skViewSaved && normalAngle() < 1) return sketchViewExit(); sketchView(); }; }
+/* Esc leaves the sketch: the first Esc ends the running chain, the next one cancels the session and restores the view */
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || !skSession()) return;
+  const a = skSession();
+  if ((a.pen && a.pen.length) || (a.pend && a.pend.length)) { e.preventDefault(); return skFinishChain(); }
+  e.preventDefault(); skCancel();
+});
+/* orbiting away from the plane raises the angle hint; it comes down as soon as the view is normal again */
+{ const pv = viewer.onView; viewer.onView = (m) => { if (pv) pv(m); if (typeof updateNormalHint === 'function') updateNormalHint(); }; }
 function renderSketchPanel(pr) {
   const a = skSession(), p = a.p, ents = p.ents || [], dof = p1DOF(ents, p.rels || [], p.dims || []), loop = p1OuterLoop(ents);
   const tools = [['line', L('Line', 'Garis')], ['cline', L('Centerline', 'Centerline')], ['arc3', L('Arc 3-point', 'Busur 3 titik')],
@@ -7167,9 +7282,9 @@ function renderSketchPanel(pr) {
   pr.append(h('div', { class: 'sktools', role: 'toolbar', 'aria-label': L('Sketch tools', 'Alat sketch') },
     tools.map(([k, label]) => h('button', { class: 'chip' + (a.tool === k ? ' primary' : ''), 'aria-pressed': a.tool === k ? 'true' : 'false', onclick: () => { a.tool = k; a.pend = []; a.pen = []; skSel = []; a.note = null; renderCad(); requestAnimationFrame(skOverlay); } }, label))));
   const row = (label, input) => h('label', { class: 'skrow' }, h('span', null, label), input);
-  const plane = h('select', { onchange: (e) => { p.plane = e.target.value; renderCad(); requestAnimationFrame(skOverlay); } },
+  const plane = h('select', { onchange: (e) => { p.plane = e.target.value; if (typeof sketchView === 'function') sketchView(p.plane); renderCad(); requestAnimationFrame(skOverlay); } },
     [['XY', 'XY'], ['XZ', 'XZ'], ['YZ', 'YZ']].map(([v, t]) => h('option', { value: v, selected: p.plane === v }, t)));
-  const off = h('input', { type: 'number', step: 'any', value: p.off || 0, oninput: (e) => { p.off = e.target.value; requestAnimationFrame(skOverlay); } });
+  const off = h('input', { type: 'number', step: 'any', value: p.off || 0, oninput: (e) => { p.off = e.target.value; viewer.setPlaneGrid(p.plane, sketchPlaneAt(p)); requestAnimationFrame(skOverlay); } });
   pr.append(h('div', { class: 'skform' }, row(L('Plane', 'Bidang'), plane), row(L('Offset (mm)', 'Offset (mm)'), off),
     row(L('Fillet radius (mm)', 'Radius fillet (mm)'), h('input', { type: 'number', min: 0.1, step: 'any', value: a.rad, oninput: (e) => { a.rad = e.target.value; } })),
     row(L('Offset distance (mm)', 'Jarak offset (mm)'), h('input', { type: 'number', step: 'any', value: a.dist, oninput: (e) => { a.dist = e.target.value; } })),
@@ -11554,7 +11669,7 @@ async function asmExplode() {
     if (a === 'asmExplode') return asmExplode();
     return ra.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids } };
+window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay } };
 })();
 </script>
 </body>
