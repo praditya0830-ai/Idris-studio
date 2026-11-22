@@ -9308,6 +9308,21 @@ function feaBody(p, mesh, s) {
   if (+s.defl > 0) b.max_deflection_mm = +s.defl; if (+s.elem > 0) b.element_size_mm = +s.elem;
   return b;
 }
+/** S8: is the part in compression under a dominant axial load? Uses the solver's principal stresses and the sum of
+ * the load vectors; the member length offered to buckling is the part's extent along that load axis. */
+function feaCompression(sm, loads, bounds) {
+  const num = (o, ks) => catNum(o, ks);
+  const s1 = num(sm, ['max_principal_mpa', 'max_principal_MPa']), s3 = num(sm, ['min_principal_mpa', 'min_principal_MPa']);
+  const F = [0, 1, 2].map((k) => (loads || []).reduce((a, x) => a + (+[x.fx, x.fy, x.fz][k] || 0), 0));
+  const fk = [0, 1, 2].reduce((b, k) => (Math.abs(F[k]) > Math.abs(F[b]) ? k : b), 0);
+  const lax = bounds && Math.abs(F[fk]) > 0 ? Math.abs(bounds[1][fk] - bounds[0][fk]) : null;
+  return { s1, s3, load_N: F[fk], axis: 'XYZ'[fk], lax,
+    compression: s1 != null && s3 != null && s3 < 0 && Math.abs(s3) > Math.max(s1, 0) && Math.abs(F[fk]) > 0 };
+}
+/** S8: open the buckling check with the length and material copied from the part; section and ends stay empty. */
+function buckPrefill(p, mm) {
+  p.buck = { ...(p.buck || {}), L: String(+mm.toFixed(3)), mat: p.material, pre: 'part' }; savePart(); bucklingTool();
+}
 async function feaPoll(endpoint, body, onStage) {
   let r = await fetch(API + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (r.status === 404) { const e = new Error('not available'); e.notReady = true; throw e; }
@@ -9327,7 +9342,9 @@ async function feaSolve(p, mesh, s, onStage) {
   const sm = res.summary || res, mat = res.material || {}, num = (o, ks) => catNum(o, ks);
   const ys = num(mat, ['yield_mpa', 'sy_mpa', 'yield']) ?? num(res, ['yield_mpa']), vmax = num(sm, ['max_von_mises_mpa']) ?? vm[argmax(vm)], p995 = num(sm, ['von_mises_p995_mpa']), dmax = num(sm, ['max_displacement_mm']) ?? dm[argmax(dm)];
   const sf = num(sm, ['min_safety_factor', 'min_sf']) ?? (ys ? ys / Math.max(p995 || vmax, 1e-9) : null);
-  return { res, surf, vm, dm, vmax, p995, dmax, sf, yield: ys, mass: num(sm, ['mass_kg']), mos: num(sm, ['margin_of_safety']) };
+  /* S8: principal stresses decide whether the part is in compression, and the extent along the load axis gives the
+   * member length to offer the buckling check. Both come from the solver/mesh; nothing is guessed. */
+  return { res, surf, vm, dm, vmax, p995, dmax, sf, yield: ys, mass: num(sm, ['mass_kg']), mos: num(sm, ['margin_of_safety']), ...feaCompression(sm, s.loads, mesh.bounds) };
 }
 function feaContour(out) {
   /* solver frame = part frame (Z up); the viewer is Y up */
@@ -9384,6 +9401,8 @@ function feaPanel() {
         li('ok', `von Mises ${o.p995 != null ? `p99.5 ${f(o.p995, 1)} · ` : ''}max ${f(o.vmax, 1)} MPa`, o.p995 != null && o.vmax > 1.3 * o.p995 ? L('The max is a local peak (sharp corner or support) and depends on the mesh; p99.5 is the steadier value.', 'Nilai maks adalah puncak lokal (sudut tajam atau tumpuan) dan bergantung mesh; p99,5 lebih stabil.') : null),
         li(+s.defl > 0 && o.dmax > +s.defl ? 'bad' : 'ok', L(`Displacement max ${f(o.dmax, 3)} mm`, `Defleksi maks ${f(o.dmax, 3)} mm`), +s.defl > 0 ? L(`limit ${s.defl} mm`, `batas ${s.defl} mm`) : null),
         o.mass != null ? li('ok', L(`Mass ${f(o.mass * 1000, 1)} g`, `Massa ${f(o.mass * 1000, 1)} g`), null) : null,
+        o.compression ? li('warn', L('This part is in compression: check buckling of the member', 'Part ini tertekan: cek tekuk batangnya'),
+          L(`most compressive principal stress ${f(Math.abs(o.s3), 1)} MPa against ${f(Math.max(o.s1, 0), 1)} MPa in tension, load ${f(Math.abs(o.load_N), 0)} N along ${o.axis}`, `tegangan utama paling tekan ${f(Math.abs(o.s3), 1)} MPa terhadap ${f(Math.max(o.s1, 0), 1)} MPa tarik, beban ${f(Math.abs(o.load_N), 0)} N sepanjang ${o.axis}`) + '. ' + L('The mesh is not used for the buckling number.', 'Mesh tidak dipakai untuk angka tekuk.')) : null,
         catNum(vol, ['error_pct', 'voxel_error_pct']) != null ? li(Math.abs(catNum(vol, ['error_pct', 'voxel_error_pct'])) < 5 ? 'ok' : 'warn', L('Voxel volume error', 'Error volume voxel') + ` ${f(catNum(vol, ['error_pct', 'voxel_error_pct']), 2)} %`, null) : null,
         catNum(R, ['equilibrium_error']) != null ? li(catNum(R, ['equilibrium_error']) < 1e-3 ? 'ok' : 'bad', L('Equilibrium (reaction = load)', 'Kesetimbangan (reaksi = beban)'), `error ${catNum(R, ['equilibrium_error']).toExponential(1)}`) : null,
         ...chk.map((c) => li((c.ok ?? c.pass) === false ? 'bad' : 'ok', String(c.name || c.label || c.check || ''), c.message || c.detail || (c.value != null ? String(c.value) : null))),
@@ -9391,7 +9410,11 @@ function feaPanel() {
         para(`${R.label || 'screening'}${R.method ? ' · ' + (typeof R.method === 'string' ? R.method : JSON.stringify(R.method)) : ''}`, 'm'),
         ...[].concat(R.warnings || []).map((w) => h('div', { class: 'warnbox' }, String(typeof w === 'object' ? w.message || JSON.stringify(w) : w))),
         ...(R.limitations ? [h('details', { class: 'gen-code' }, h('summary', null, L('Limitations', 'Batasan')), h('ul', null, [].concat(R.limitations).map((x) => h('li', null, String(x)))))] : []),
-        h('div', { class: 'gen-var' }, h('button', { class: 'chip' + (feaShow ? ' primary' : ''), onclick: () => { feaShow = !feaShow; if (feaShow) feaContour(o); else feaHideContour(); renderCad(); } }, feaShow ? L('Hide contour', 'Sembunyikan kontur') : L('Show contour', 'Tampilkan kontur')))); } }
+        h('div', { class: 'gen-var' }, o.compression && o.lax ? h('button', { class: 'chip', onclick: () => {
+          /* length and material come from the part; the section and the end conditions stay the engineer's */
+          buckPrefill(p, o.lax);
+        } }, L('Check buckling of the member', 'Cek tekuk batangnya')) : null,
+          h('button', { class: 'chip' + (feaShow ? ' primary' : ''), onclick: () => { feaShow = !feaShow; if (feaShow) feaContour(o); else feaHideContour(); renderCad(); } }, feaShow ? L('Hide contour', 'Sembunyikan kontur') : L('Show contour', 'Tampilkan kontur')))); } }
   if (feaExplore) pr.append(feaExploreView());
 }
 /* ---- variant loop: the solver proposes parameter sets, the browser builds each, the solver checks each */
@@ -12112,6 +12135,7 @@ function bucklingTool() {
   const row = (lab, el) => h('label', { class: 'dr-f' }, h('span', null, lab), el);
   toolDlg('buckdlg', L('Column buckling (slender member)', 'Tekuk kolom (batang ramping)'),
     h('p', { class: 'hint' }, L('Linear Euler buckling of a straight prismatic bar under axial compression. It is an idealised member, not your part’s mesh: give the member’s own length, section and end conditions.', 'Tekuk Euler linear batang prismatik lurus dengan tekan aksial. Ini batang ideal, bukan mesh part-mu: isi panjang, penampang, dan kondisi ujung batang itu sendiri.')),
+    st.pre === 'part' ? h('div', { class: 'warnbox' }, L('Length and material were copied from the part (extent along the load axis and the part material). Check the length against the real member, then give the section and both end conditions — they are not taken from the part.', 'Panjang dan material disalin dari part (bentang sepanjang sumbu beban dan material part). Cek panjangnya terhadap batang sebenarnya, lalu isi penampang dan kedua kondisi ujung — itu tidak diambil dari part.')) : null,
     h('div', { class: 'tool-grid' }, row(L('Length (mm)', 'Panjang (mm)'), Lm), row(L('Section', 'Penampang'), sec), row('Ø (mm)', D), row(L('Width (mm)', 'Lebar (mm)'), W), row(L('Height (mm)', 'Tinggi (mm)'), H), row(L('Material (E)', 'Material (E)'), matS), row(L('End 1', 'Ujung 1'), le), row(L('End 2', 'Ujung 2'), ri), row(L('Your axial load (N)', 'Beban aksialmu (N)'), Fd)),
     h('div', { class: 'gen-var' }, h('button', { class: 'chip primary', onclick: run }, L('Solve', 'Hitung'))), out);
   showSec();
@@ -12514,7 +12538,7 @@ async function asmExplode() {
     if (a === 'asmExplode') return asmExplode();
     return ra.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
+window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
 })();
 </script>
 </body>
