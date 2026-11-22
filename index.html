@@ -815,6 +815,8 @@ body.at-home .learn{display:none}
 .pdoc{font-size:12px;color:var(--muted);padding:4px 2px}
 /* v0.40 design brief: the card in the chat panel, editable field by field */
 .briefcard{flex:0 0 auto;max-height:50%;overflow:auto;border-bottom:1px solid var(--line);background:var(--white);padding:8px 12px;display:flex;flex-direction:column;gap:6px}
+/* v0.40.3: the features the engineer accepted are part of the brief, so the card lists them */
+.bc-f{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;font-size:11px} .bc-f>b{font-weight:600}
 .bc-h{display:flex;align-items:center;gap:8px;font-size:12.5px} .bc-h b{font-size:13px}
 .bc-st{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border:1px solid var(--line2);border-radius:999px;padding:1px 7px}
 .bc-h .linkbtn{margin-left:auto}
@@ -9644,6 +9646,9 @@ function briefStart(b, n) {
 /* ---- end brief helpers */
 
 let chatBrief = null, briefReply = null, briefEditing = false, briefDone = false;
+/* the chip the engineer just pressed: sent once, with the message it produced, so the solver can record the feature by
+ * the id it suggested (never by text the browser made up) */
+let briefAnswer = null;
 const BRIEF_KEY = 'idris-brief';
 const loadBrief = () => { try { const b = JSON.parse(localStorage.getItem(BRIEF_KEY) || 'null'); return b && typeof b === 'object' && !Array.isArray(b) ? b : null; } catch (e) { return null; } };
 const saveBrief = (b) => { try { if (b) localStorage.setItem(BRIEF_KEY, JSON.stringify(b)); else localStorage.removeItem(BRIEF_KEY); } catch (e) { /* storage unavailable */ } };
@@ -9679,6 +9684,8 @@ function renderBriefCard() {
   if (assumed.length) body.append(h('div', { class: 'bc-a' }, h('b', null, L('Assumed', 'Asumsi')),
     ...assumed.map((a) => h('span', { class: 'bc-tag', title: String(a.why || '') }, `${a.what}: ${a.value}`))));
   if (open.length) body.append(h('div', { class: 'bc-o' }, h('b', null, L('Still open', 'Masih terbuka')), ...open.map((t) => h('span', { class: 'bc-tag' }, t))));
+  const feats = (Array.isArray(b.features) ? b.features : []).map((f) => (typeof f === 'string' ? f : f && f.text)).filter(Boolean);
+  if (feats.length) body.append(h('div', { class: 'bc-f' }, h('b', null, L('Added', 'Ditambahkan')), ...feats.map((t) => h('span', { class: 'bc-tag' }, t))));
   el.append(body);
   if (b.ready) {
     const st = briefStart(b, 3), go = h('div', { class: 'bc-go' });
@@ -9706,8 +9713,8 @@ function briefChips(j, box) {
   sug.forEach((s) => {
     if (!s || !s.text) return;
     const row = h('div', { class: 'bsg' }, h('span', null, '+ ' + s.text + (s.why ? ' — ' + s.why : '')),
-      h('button', { class: 'chip', onclick: () => { row.remove(); handleText('add: ' + s.text); } }, L('+ add', '+ tambah')),
-      h('button', { class: 'chip', onclick: () => row.remove() }, L('no thanks', 'tidak')));
+      h('button', { class: 'chip', onclick: () => { row.remove(); briefAnswer = { type: 'add', suggestion_id: String(s.id || '') }; handleText('add: ' + s.text); } }, L('+ add', '+ tambah')),
+      h('button', { class: 'chip', onclick: () => { row.remove(); briefAnswer = { type: 'decline', suggestion_id: String(s.id || '') }; handleText('no thanks: ' + s.text); } }, L('no thanks', 'tidak')));
     wrap.append(row);
   });
   box.append(wrap);
@@ -9717,7 +9724,12 @@ function briefChips(j, box) {
   renderBriefCard(); }
 { const f3 = window.fetch; window.fetch = async function (url, opt) {
     const isChat = typeof url === 'string' && url === API + '/chat' && opt && typeof opt.body === 'string' && !(opt.headers && opt.headers['X-Idris-Brief']);
-    if (isChat && chatBrief) { try { const b = JSON.parse(opt.body); b.context = { ...(b.context || {}), brief: chatBrief }; opt = { ...opt, body: JSON.stringify(b) }; } catch (e) { /* unchanged */ } }
+    if (isChat && chatBrief) { try { const b = JSON.parse(opt.body), ans = briefAnswer; briefAnswer = null;
+      /* the brief and `brief_turn` travel with EVERY message while it is open (a choice chip, a suggestion chip, a
+       * typed answer or a question), so the solver never reads one of them as a fresh requirement */
+      b.context = { ...(b.context || {}), brief: chatBrief, brief_turn: true };
+      if (ans && ans.suggestion_id) b.context.brief_answer = ans;
+      opt = { ...opt, body: JSON.stringify(b) }; } catch (e) { /* unchanged */ } }
     const r = await f3(url, opt);
     if (isChat) { try { const j = await r.clone().json();
       if (j && j.brief && typeof j.brief === 'object') { chatBrief = j.brief; saveBrief(chatBrief); if (j.route && j.route.route === 'brief') briefDone = false; renderBriefCard(); }
