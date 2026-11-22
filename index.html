@@ -59,6 +59,10 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .doc b{color:#e8edf4;font-weight:500}
 .spacer{flex:1}
 .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#b6c3d4;white-space:nowrap}
+/* AI spend guard: GET /ai/usage as one small badge. Numbers are the solver's; the colour only repeats its state. */
+.ai-badge{padding:2px 8px;border-radius:999px;border:1px solid #3a4d63;background:#18242f;color:#c9dcec;font-size:11px;font-variant-numeric:tabular-nums;cursor:default}
+.ai-badge.hot{background:#3a2410;border-color:#8a5a1c;color:#ffd9a8}
+.ai-badge.blocked{background:#3b1216;border-color:#8d2b33;color:#ffc2c2;font-weight:600}
 .dot{width:7px;height:7px;border-radius:50%;background:#f0b429}
 .pill.on .dot{background:#34d399} .pill.off .dot{background:#f87171}
 .pill.off{cursor:pointer}
@@ -1105,6 +1109,7 @@ if(t==="system")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"lig
     <button class="tbtn" id="soundBtn" title="Status sounds off — click to turn on" aria-label="Status sounds" aria-pressed="false">🔇</button>
     <button class="tbtn" id="themeBtn" title="Switch light / dark theme" aria-label="Switch theme"><svg class="i"><use href="#i-moon"/></svg></button>
     <button class="tbtn" id="apxBtn" title="Appearance: theme, accent colour, viewport, model colour, density" aria-label="Appearance settings" aria-expanded="false"><svg class="i"><use href="#i-sliders"/></svg></button>
+    <span class="pill ai-badge" id="aiBadge" hidden></span>
     <div class="pill" id="engine"><span class="dot"></span><span id="engineTxt">Engine: connecting…</span></div>
   </header>
 
@@ -2409,6 +2414,7 @@ async function checkEngine() {
 }
 $('#engine').addEventListener('click', () => { if (!$('#engine').classList.contains('on')) checkEngine(); });
 checkEngine();
+setTimeout(() => { aiUsageRefresh(); }, 1200);      // after the engine check: the badge waits for a real answer
 
 
 
@@ -2502,6 +2508,7 @@ async function chatAI(text) {
   } catch (e) { netErr = e.name === 'AbortError' ? 'timed out' : 'unreachable'; }
   finally { clearTimeout(to); clearTimeout(slow); clearTimeout(slow2); state.busy = false; setBusy(false); }
   state.lastChat = { request: body, response: d, error: netErr };
+  aiUsageRefresh(true);                       // every answer may have spent AI calls: show the new count
   via.innerHTML = '';
   if (netErr || (d && d.success === false && d.fallback)) {
     box.closest('.msg').remove();
@@ -5441,6 +5448,34 @@ function renderAppearance() {
  * invented: the total is shown and the assumed-price providers are listed. About shows whether search and the
  * reference database are configured and which provider is used — never a key. */
 let aiUsageCache = null, aiUsageAt = 0, refsStatusCache = null, refsStatusAt = 0;
+/* The same GET /ai/usage, as the small badge in the corner (Arya: the AI bill must be visible, not buried). It is
+ * read when the studio starts and after each chat answer — never on a timer — and every label is the solver's. */
+function aiBadgePaint() {
+  const el = $('#aiBadge'); if (!el) return;
+  const d = aiUsageCache;
+  if (!d || d.calls_today == null) { el.hidden = true; return; }
+  const cap = d.calls_today_cap != null ? d.calls_today_cap : null;
+  const left = d.calls_today_left != null ? d.calls_today_left : (cap != null ? Math.max(0, cap - d.calls_today) : null);
+  el.hidden = false;
+  el.textContent = L(`AI today: ${fi(d.calls_today)}${cap != null ? ' / ' + fi(cap) : ''}`, `AI hari ini: ${fi(d.calls_today)}${cap != null ? ' / ' + fi(cap) : ''}`);
+  const near = left != null && cap != null && left <= Math.max(1, Math.round(cap * 0.1));
+  el.classList.toggle('blocked', !!d.blocked);
+  el.classList.toggle('hot', !d.blocked && near);
+  const tip = [d.blocked ? String(d.blocked) : '',
+    d.calls_today_left != null ? L(`${fi(d.calls_today_left)} AI calls left today`, `Sisa ${fi(d.calls_today_left)} panggilan AI hari ini`) : '',
+    d.estimated_cost_usd_today != null ? L(`Estimated cost today: $${d.estimated_cost_usd_today}`, `Perkiraan biaya hari ini: $${d.estimated_cost_usd_today}`) : '',
+    d.monthly_budget_usd != null ? L(`Monthly budget: $${d.monthly_budget_usd} · $${d.monthly_budget_left_usd} left`, `Anggaran bulan ini: $${d.monthly_budget_usd} · sisa $${d.monthly_budget_left_usd}`) : '',
+    d.price_source ? String(d.price_source) : '', d.note ? String(d.note) : ''].filter(Boolean);
+  el.title = tip.join('\n');
+  el.setAttribute('aria-label', el.textContent + (d.blocked ? ' · ' + String(d.blocked) : ''));
+}
+async function aiUsageRefresh(force) {
+  if (!force && aiUsageCache && Date.now() - aiUsageAt < 30000) return aiUsageCache;
+  try { const r = await apiJSON('/ai/usage', undefined, 15000);
+    if (r && r.ok && r.d && r.d.success !== false) { aiUsageCache = r.d; aiUsageAt = Date.now(); } }
+  catch (e) { /* the badge keeps the last number it was given */ }
+  aiBadgePaint(); return aiUsageCache;
+}
 const kv = (label, value, cls) => h('div', { class: 'apx-kv' + (cls ? ' ' + cls : '') }, h('span', null, label), h('b', null, value));
 function aiUsageBox() {
   const box = h('div', { id: 'aiUsage' }, h('p', { class: 'apx-sub' }, L('Reading GET /ai/usage…', 'Membaca GET /ai/usage…')));
@@ -13510,7 +13545,7 @@ async function manufacturingPanel() {
     if (/^(manufacturing|sambungan|produksi|joining)$/.test(t)) { addUser(text); return manufacturingPanel(); }
     return ht2.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), asm: { setJob: (a) => { asmJob = a; renderAsm(); }, job: () => asmJob, assemble: () => asmAssemble(), render: () => renderAsm() }, vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, sheetMetal: sheetMetalPanel, bendAllowance, flatPattern, bendSetback, setback: bendSetback, manufacturingPanel, manufacturing: manufacturingPanel, manufacturingFromParts, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
+window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), asm: { setJob: (a) => { asmJob = a; renderAsm(); }, job: () => asmJob, assemble: () => asmAssemble(), render: () => renderAsm() }, vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, aiUsageRefresh, aiBadgePaint, sheetMetal: sheetMetalPanel, bendAllowance, flatPattern, bendSetback, setback: bendSetback, manufacturingPanel, manufacturing: manufacturingPanel, manufacturingFromParts, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
 })();
 </script>
 </body>
