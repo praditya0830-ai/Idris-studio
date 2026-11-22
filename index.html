@@ -11513,6 +11513,67 @@ function renderAsm() {
   box.append(h('div', { class: 'notchk' }, h('b', null, L('Not checked by IDRIS', 'Tidak dicek oleh IDRIS')), h('ul', null, [].concat(nc).map((x) => h('li', null, String(x))))));
 }
 
+/* ---- v0.44 review gate before the assembly build (brief 22 Nov, part 4): a part that failed, was never designed, or
+ * was designed as feature steps the assembly build cannot send to the kernel is listed by name before anything is
+ * assembled — and Assemble stays disabled until every one of them is designed again.
+ * Before this, asmAssemble filtered on `pt.cad.code` and returned without a word: the assembly was quietly missing a
+ * part, which is worse than refusing to build it. */
+function asmReviewBlocked(a) {
+  const parts = a && Array.isArray(a.parts) ? a.parts : [];
+  return parts.filter((pt) => pt && pt.status !== 'standard' && !(pt.status === 'done' && pt.cad && pt.cad.code));
+}
+function asmReviewReason(pt) {
+  if (!pt) return '';
+  if (pt.status === 'failed') return String(pt.error || L('the design failed', 'desainnya gagal'));
+  if (pt.status === 'done' && pt.cad && !pt.cad.code) {
+    return L('designed as feature steps, not code: the assembly build needs code for this part',
+      'didesain sebagai langkah fitur, bukan kode: build rakitan butuh kode untuk part ini');
+  }
+  return L(`not designed yet (${pt.status || 'unknown'})`, `belum didesain (${pt.status || 'tidak diketahui'})`);
+}
+function asmReviewCard(blocked) {
+  return h('div', { class: 'warnbox bad asm-review', id: 'asmReview' },
+    h('b', null, L(`Review ${blocked.length} part(s) before assembling`, `Tinjau ${blocked.length} part sebelum merakit`)),
+    h('ul', { class: 'asm-review-list' }, blocked.map((pt) => h('li', { 'data-part': String(pt.id || pt.name) },
+      h('div', null, h('b', null, String(pt.name || pt.id)), h('span', null, ' · ' + asmReviewReason(pt))),
+      h('button', { class: 'chip', onclick: () => asmRedesign(pt) }, L('Redesign', 'Desain ulang'))))),
+    h('p', { class: 'hint' }, L('Assemble is blocked until every part here is designed again: an assembly with a part missing is not an assembly.',
+      'Rakit diblokir sampai semua part di sini didesain ulang: rakitan yang kehilangan satu part bukan rakitan.')));
+}
+{ const st5 = document.createElement('style');
+  st5.textContent = `.asm-review{margin:6px 0}
+ .asm-review-list{margin:4px 0 0 14px;padding:0;font-size:11.5px;display:flex;flex-direction:column;gap:6px}
+ .asm-review-list b{color:#ffd7d7}`;
+  document.head.append(st5); }
+{ const ra4 = renderAsm; renderAsm = function () {
+    const r = ra4.apply(this, arguments);
+    const a = asmJob, box = $('#asmPanel');
+    if (!a || !box) return r;
+    const old = $('#asmReview'); if (old) old.remove();
+    if (a.stage !== 'design') return r;
+    const blocked = asmReviewBlocked(a);
+    if (!blocked.length) return r;
+    const card = asmReviewCard(blocked);
+    const rows = box.querySelectorAll('.gen-var'), row = rows.length ? rows[rows.length - 1] : null;
+    if (row) row.before(card); else box.append(card);
+    const btn = [...box.querySelectorAll('button')].find((b) => /^(Assemble|Rakit)$/.test(b.textContent.trim()));
+    if (btn) { btn.disabled = true; btn.title = L('Design the parts in Review first.', 'Desain dulu part di Tinjau.'); }
+    return r;
+  }; }
+{ const aa4 = asmAssemble; asmAssemble = async function () {
+    const blocked = asmReviewBlocked(asmJob);
+    if (blocked.length) {
+      renderAsm();
+      const msg = L(`Assemble is waiting on ${blocked.length} part(s): ${blocked.map((p) => p.name || p.id).join(', ')}. Design them again in Review, then assemble.`,
+        `Rakit menunggu ${blocked.length} part: ${blocked.map((p) => p.name || p.id).join(', ')}. Desain ulang di Tinjau, lalu rakit.`);
+      const last = [...document.querySelectorAll('#chat .msg.ai .ai-body')].pop();
+      const note = h('div', { class: 'warnbox', id: 'asmBlockedNote' }, msg);
+      if (last) last.append(note); else say(note);
+      return null;
+    }
+    return aa4.apply(this, arguments);
+  }; }
+
 /* ================= 6. Shape families for a goal ================= */
 async function shapeObjectives(request) {
   const r = await apiJSON('/shape/objectives', { request }, 20000).catch(() => null);
