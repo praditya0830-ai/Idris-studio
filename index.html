@@ -11741,7 +11741,112 @@ function renderColleague(j) {
     try { renderColleague(colleagueLast); } catch (e) { /* UI only */ }
     return r; }; }
 
-window.__idris = { state, parseText, viewer, frameFit, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids } };
+/* ---- v0.42 manufacturing panel (solver `joining.py`): the assembly goes to POST /join/plan, and what comes back
+ * is the workshop's view — the geometry checks with the parts they name, then BOM, cut list, weld list, bolt list
+ * and the assembly order, each downloadable as CSV. Nothing is computed here: every number is the solver's, and
+ * every weld size carries the table it came from. */
+const MFG_TABLES = [
+  ['bom', 'BOM', [['part', 'Part'], ['process', 'Process'], ['stock', 'Stock'], ['qty', 'Qty'], ['mass_kg', 'Mass kg'], ['material', 'Material']]],
+  ['cut_list', 'Cut list', [['part', 'Part'], ['stock', 'Stock'], ['length_mm', 'Length mm'], ['width_mm', 'Width mm'], ['angle_deg', 'Angle °'], ['qty', 'Qty']]],
+  ['welds', 'Welds', [['between', 'Between'], ['kind', 'Kind'], ['leg_mm', 'Leg mm'], ['length_mm', 'Length mm'], ['source', 'Size source']]],
+  ['bolts', 'Bolts', [['between', 'Between'], ['size', 'Size'], ['length_mm', 'Length mm'], ['clamp_mm', 'Clamp mm'], ['source', 'Source']]],
+];
+function mfgCell(v) {
+  if (Array.isArray(v)) return v.join(' + ');
+  if (v == null || v === '') return '—';
+  if (typeof v === 'number') return f(v, Math.abs(v) < 10 ? 2 : 1);
+  return String(v);
+}
+function mfgCsv(name, cols, rows) {
+  const esc = (x) => '"' + String(Array.isArray(x) ? x.join(' + ') : x == null ? '' : x).replace(/"/g, '""') + '"';
+  const text = [cols.map((c) => c[0]).join(','), ...rows.map((r) => cols.map((c) => esc(r[c[0]])).join(','))].join('\n');
+  dlText(text, 'idris-' + name + '.csv', 'text/csv');
+}
+function mfgTables(d) {
+  const box = h('div', { class: 'mfg-box' });
+  const checks = h('div', { class: 'mfg-checks' });
+  (d.checks || []).forEach((c) => {
+    const cls = c.status === 'pass' ? 'ok' : c.status === 'fail' ? 'bad' : 'warn';
+    checks.append(h('div', { class: 'mfg-chk ' + cls }, `${c.check}: ${mfgCell(c.value_mm3 != null ? c.value_mm3 : (c.value_mm != null ? c.value_mm : c.value))}`
+      + (c.parts && c.parts.length ? ' · ' + (Array.isArray(c.parts) ? c.parts.join(' + ') : String(c.parts)) : '')));
+  });
+  if ((d.fixes || []).length) box.append(h('div', { class: 'mfg-fix' }, h('b', null, L('Fixed by IDRIS', 'Diperbaiki IDRIS')), h('ul', null, d.fixes.map((x) => h('li', null, String(x))))));
+  box.append(checks);
+  MFG_TABLES.forEach(([key, title, cols]) => {
+    const rows = Array.isArray(d[key]) ? d[key] : [];
+    if (!rows.length) return;
+    const table = h('table', { class: 'grid mfg-t', 'data-t': key },
+      h('thead', null, h('tr', null, ...cols.map((c) => h('th', null, L(c[1], c[1]))))),
+      h('tbody', null, rows.map((r) => h('tr', null, ...cols.map((c) => h('td', { style: 'text-align:left' }, mfgCell(r[c[0]])))))));
+    box.append(h('div', { class: 'mfg-sec' }, h('div', { class: 'mfg-h' }, h('b', null, L(title, title)),
+      h('button', { class: 'chip', onclick: () => mfgCsv(key, cols, rows) }, L('CSV', 'CSV'))), table));
+  });
+  if ((d.assembly_order || []).length) {
+    box.append(h('div', { class: 'mfg-sec' }, h('b', null, L('Assembly order', 'Urutan rakit')),
+      h('ol', { class: 'mfg-order' }, d.assembly_order.map((s) => h('li', null, `${s.what}: ${s.detail || ''}`)))));
+  }
+  if ((d.joint_strength || []).length) {
+    box.append(h('p', { class: 'hint' }, L('Joint strength: ', 'Kekuatan sambungan: ')
+      + d.joint_strength.map((j) => `${(j.joint || []).join('+')}: ${j.status}`).join(' · ')));
+  }
+  (d.notes || []).forEach((n) => box.append(h('p', { class: 'hint' }, String(n))));
+  return box;
+}
+async function manufacturingFromParts(parts, interfaces) {
+  const old = $('#mfgdlg'); if (old) old.remove();
+  const out = h('div', { class: 'tool-out' }, para(L('Checking the joints…', 'Memeriksa sambungan…'), 'm'));
+  const close = () => { const el = $('#mfgdlg'); if (el) el.remove(); };
+  const dlg = h('div', { class: 'libdlg', id: 'mfgdlg', role: 'dialog', 'aria-modal': 'true', 'aria-label': L('Manufacturing', 'Manufacturing'), onclick: (e) => { if (e.target === dlg) close(); } },
+    h('div', { class: 'lib-in tool-in' }, h('div', { class: 'lib-h' }, h('b', null, L('Manufacturing', 'Manufacturing')),
+      h('button', { class: 'x', 'aria-label': L('Close', 'Tutup'), onclick: close }, '✕')), out));
+  document.body.append(dlg);
+  try {
+    const d = await api('/join/plan', { parts, interfaces: interfaces || [] }, 60000);
+    out.innerHTML = '';
+    out.append(para(L('Every joint, stock, cut and weld below comes from the solver; a number is never estimated here.',
+      'Setiap sambungan, stok, potongan dan las di bawah berasal dari solver; tidak ada angka yang diperkirakan di sini.'), 'm'));
+    out.append(mfgTables(d));
+    window.__lastMfg = d;
+    return d;
+  } catch (e) {
+    out.innerHTML = '';
+    out.append(para(L('The engine did not answer: ', 'Mesin tidak menjawab: ') + (e && e.message ? e.message : 'error'), 'm'));
+    return null;
+  }
+}
+async function manufacturingPanel() {
+  const a = state.assy2, ok = a && (a.info || []).filter((x) => x.ok);
+  if (!ok || !ok.length) return say(para(L('Insert and build components first (Insert Component), then Manufacturing. Each part goes to the solver as its bounding box.', 'Masukkan dan bangun komponen dulu (Insert Component), lalu Manufacturing. Tiap part dikirim ke solver sebagai bounding box-nya.'), 'm'));
+  const parts = [];
+  for (const inf of ok) {
+    const c = a.comps.find((q) => q.cid === inf.cid) || {};
+    try {
+      const m = inf.shape.mesh({ tolerance: 1.2, angularTolerance: 0.7 });
+      const v = m.vertices; let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < v.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], v[i + k]); mx[k] = Math.max(mx[k], v[i + k]); }
+      parts.push({ name: c.name || inf.cid, material: String(c.material || 'steel').toLowerCase(),
+        shape: { type: 'box', size: [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]], at: [(mx[0] + mn[0]) / 2, (mx[1] + mn[1]) / 2, (mx[2] + mn[2]) / 2] } });
+    } catch (e) { /* a part without a mesh is left out and reported by the solver's part count */ }
+  }
+  return manufacturingFromParts(parts);
+}
+{ const st2 = document.createElement('style');
+  st2.textContent = `.mfg-box{display:flex;flex-direction:column;gap:10px;max-height:62vh;overflow:auto}
+ .mfg-chk{font-size:11.5px;padding:3px 6px;border-radius:5px;border:1px solid #2b4252;margin:2px 0}
+ .mfg-chk.ok{border-color:#2f6b4d;color:#a8e3c1}.mfg-chk.bad{border-color:#8a3a3a;color:#f3b6b6;background:#1c1012}
+ .mfg-chk.warn{border-color:#7a6528;color:#e8d79a}
+ .mfg-sec{border:1px solid #263c4c;border-radius:8px;padding:6px 8px}
+ .mfg-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+ .mfg-t{font-size:11px}
+ .mfg-order{font-size:11.5px;margin:4px 0 0 16px;padding:0}
+ .mfg-fix{border:1px solid #2f6b4d;border-radius:8px;padding:6px 8px;font-size:11.5px;color:#a8e3c1}`;
+  document.head.append(st2); }
+{ const ht2 = handleText; handleText = async function (text, opt = {}) {
+    const t = String(text || '').trim().toLowerCase();
+    if (/^(manufacturing|sambungan|produksi|joining)$/.test(t)) { addUser(text); return manufacturingPanel(); }
+    return ht2.apply(this, arguments); }; }
+
+window.__idris = { state, parseText, viewer, frameFit, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, manufacturing: manufacturingPanel, manufacturingFromParts } };
 })();
 </script>
 </body>
