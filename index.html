@@ -6452,7 +6452,7 @@ const N = (k, en, id, unit, def, extra = {}) => ({ k, en, id, unit, def, t: 'num
 const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
-const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
+const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', mold: 'move', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
 /* ---- P1d: welded frames. Two numbers on every row come from its standard's table: A (mm²) and the mass
  * per metre (kg/m). The kernel builds a SIMPLIFIED section — sharp corners, no corner or root radius — so its
  * area and the table area differ; the difference is shown, never hidden. No table value is guessed: a size
@@ -6581,6 +6581,10 @@ const FEAT = {
       N('angle', 'Angle', 'Sudut', '\u00b0', 360, { min: 1, step: 1 }),
       S('op', 'Result', 'Hasil', OPS, 'add')],
     label: (p) => `${L('Revolve', 'Putar')} ${p.angle}\u00b0 \u00b7 ${p.axis}${p.op === 'cut' ? ' \u00b7 ' + L('cut', 'potong') : ''}` },
+  mold: { en: 'Core / Cavity', id: 'Core / Cavity', fields: [
+      N('margin', 'Block margin around the part', 'Margin blok di sekeliling part', 'mm', 10, { min: 0 }),
+      N('parting', 'Parting plane Z', 'Bidang pisah Z', 'mm', 0)],
+    label: (p) => `${L('Split at Z =', 'Bagi di Z =')} ${p.parting} mm · ${p.margin} mm ${L('block', 'blok')}` },
   member: { en: 'Structural Member', id: 'Structural Member', get fields() {
       return [S('profile', 'Profile', 'Profil', weldProfileOptions(), 'SHS 40x40x3'),
         S('trim', 'Ends', 'Ujung', [['none', ['To the sketch line (no trim)', 'Sampai garis sketch (tanpa potong)']], ['miter', ['Trimmed at shared corners (half the profile each end)', 'Dipotong di sudut bersama (setengah profil tiap ujung)']]], 'none'),
@@ -6620,7 +6624,7 @@ const FEAT = {
     },
     label: (p) => `${p.param} = ${p.value}${p.param === 'n' ? '' : ' mm'}` },
 };
-const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'draft', 'dim', 'measure'];
+const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'mold', 'draft', 'dim', 'measure'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
 const defaults = (type) => Object.fromEntries(FEAT[type].fields.map((x) => [x.k, x.def]));
 
@@ -6719,6 +6723,20 @@ async function buildPart(pArg) {
         catch (e) { throw new Error(L(`The kernel could not revolve this profile around ${q.axis}. Keep the profile clear of the axis and every size above 0 mm.`, `Kernel tidak bisa memutar profil ini mengelilingi ${q.axis}. Jaga profil supaya tidak menyentuh sumbu dan semua ukuran di atas 0 mm.`)); }
         if (Array.isArray(t)) { if (!t.length) throw new Error(L('The profile produced no solid when revolved.', 'Profil tidak menghasilkan solid saat diputar.')); t = t.length === 1 ? t[0] : t.reduce((a, b) => a.fuse(b)); }
         apply(t, q.op || 'add'); sketch.used = true; sketch = null;
+      } else if (ft.type === 'mold') {
+        /* P4: the two mould halves, cut in the kernel. The block is the part's own box plus the margin; the core is the
+           block below the parting plane minus the part, the cavity the block above minus the part. The part body is not
+           touched: a mould split prepares two tools, it does not change the design. */
+        if (!body) throw new Error(L('A mould split needs a part to split around.', 'Pemisahan cetakan butuh part untuk dipisah.'));
+        const [mn, mx] = bb(), m = +q.margin, z = +q.parting;
+        if (!(m >= 0)) throw new Error(L('The block margin cannot be negative.', 'Margin blok tidak boleh negatif.'));
+        if (!(z > mn[2] && z < mx[2])) throw new Error(L(`The parting plane must cut through the part: Z ${f(mn[2], 2)} to ${f(mx[2], 2)} mm, not ${f(z, 2)} mm.`, `Bidang pisah harus memotong part: Z ${f(mn[2], 2)} sampai ${f(mx[2], 2)} mm, bukan ${f(z, 2)} mm.`));
+        const block = (z0, z1) => R.makeBox([mn[0] - m, mn[1] - m, z0], [mx[0] + m, mx[1] + m, z1]);
+        const core = block(mn[2] - m, z).cut(body), cavity = block(z, mx[2] + m).cut(body);
+        const vc = R.measureVolume(core), vv = R.measureVolume(cavity);
+        if (!(vc > 0) || !(vv > 0)) throw new Error(L('One of the two halves came out empty: move the parting plane inside the part.', 'Salah satu belahan kosong: pindahkan bidang pisah ke dalam part.'));
+        ft.mold = { core: vc, cavity: vv, margin: m, parting: z };
+        ft.note = L(`Core ${f(vc / 1000, 1)} cm3, cavity ${f(vv / 1000, 1)} cm3, ${f(m, 1)} mm block margin, split at Z = ${f(z, 1)} mm. The part body is unchanged: this step prepares the two mould halves.`, `Core ${f(vc / 1000, 1)} cm3, cavity ${f(vv / 1000, 1)} cm3, margin blok ${f(m, 1)} mm, pisah di Z = ${f(z, 1)} mm. Body part tidak berubah: langkah ini menyiapkan dua belahan cetakan.`);
       } else if (ft.type === 'member') {
         /* P1d: one solid per straight sketch line, from the sourced profile table. The kernel builds the section
            (square tube, round tube, angle, channel, I), so the volume and the cut list come from geometry. */
@@ -8206,9 +8224,10 @@ const RIBBON = [
       T('Gusset', 'gusset', 'no', 'A triangular plate in a corner. The kernel builds flat plates, not the triangle between two members yet, so it is grey until the corner is picked in the viewport.', 'Pelat segitiga di sudut. Kernel membangun pelat datar, belum segitiga antara dua member, jadi abu-abu sampai sudutnya bisa diklik di viewport.', ''), T('Weld Bead', 'weld', 'no', 'Weld geometry and symbol.', 'Geometri dan simbol las.', 'Fillet Weld'),
       T('Cut List', 'list', 'on', 'Profile, length, quantity and mass for the shop, read from the members the kernel built.', 'Profil, panjang, jumlah, dan massa untuk bengkel, dibaca dari member yang dibangun kernel.', '', 'weldCutListShow')]]]],
   ['mold', 'Mold', 'Mold', [
-    ['Mold', [T('Draft Analysis', 'draft', 'on', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.', '', 'dfmDraft'), T('Parting Line', 'split', 'no', 'Where the mould opens.', 'Garis tempat cetakan terbuka.', ''),
-      T('Shut-off Surfaces', 'fill', 'no', 'Close through-holes for the mould.', 'Tutup lubang tembus untuk cetakan.', ''), T('Core / Cavity', 'comb', 'no', 'Split the mould block into core and cavity.', 'Bagi blok cetakan menjadi core dan cavity.', 'Tooling Split'),
-      T('Shrinkage Scale', 'scale', 'no', 'Scale for plastic shrinkage.', 'Skala untuk susut plastik.', '')]]]],
+    ['Mold', [T('Draft Analysis', 'draft', 'on', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.', '', 'dfmDraft'), T('Parting Line', 'split', 'no', 'The silhouette where the mould opens. The core/cavity step cuts at a parting plane Z you type; a parting line traced from the silhouette is not built yet.', 'Siluet tempat cetakan terbuka. Langkah core/cavity memotong di bidang Z yang kamu ketik; garis pisah dari siluet belum ada.', 'Silhouette'),
+      T('Shut-off Surfaces', 'fill', 'no', 'Close through-holes for the mould.', 'Tutup lubang tembus untuk cetakan.', '')
+      /* the block above minus the part already closes a hole that ends inside the block */, T('Core / Cavity', 'comb', 'on', 'Split a block around the part into core and cavity with the kernel: block margin, parting plane Z, both volumes reported on the step. The part itself is not changed.', 'Bagi blok di sekeliling part menjadi core dan cavity dengan kernel: margin blok, bidang pisah Z, kedua volume dilaporkan di langkahnya. Part-nya sendiri tidak berubah.', 'Tooling Split', P('mold')),
+      T('Shrinkage Scale', 'scale', 'no', 'Scale for plastic shrinkage. The block follows the part size; a shrinkage factor per material is not in the table yet.', 'Skala untuk susut plastik. Blok mengikuti ukuran part; faktor susut per material belum ada di tabel.', '')]]]],
   ['asm', 'Assembly', 'Assembly', [
     ['Components', [T('Insert Component', 'part', 'mk1', 'Bring saved parts into one assembly.', 'Masukkan part tersimpan ke satu assembly.', 'Place, Insert'),
       T('Move / Rotate Component', 'move', 'mk1', 'Drag a part in the assembly.', 'Geser atau putar part di assembly.', 'Free Move'),
@@ -12737,7 +12756,331 @@ async function asmExplode() {
     if (a === 'asmExplode') return asmExplode();
     return ra.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, chat: (t) => chatAI(t), partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
+/* ---- v0.41 colleague layer (solver `colleague.py`): the studio sends the session history and the open project
+ * with every message, and shows what came back as a conversation — the stage above the reply, the next steps as
+ * buttons, the questions as chips with the recommended one marked, the reference cards of stage 2, and the
+ * assumptions panel. Nothing is computed here: the labels and numbers are the solver's. */
+const COLLEAGUE_HISTORY_MAX = 20;
+let colleagueLast = null, refsFetched = '';
+{ const st = document.createElement('style');
+  st.textContent = `
+ .sug-row{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
+ .sug-btn,.q-chip{font:inherit;font-size:11.5px;padding:5px 9px;border-radius:14px;border:1px solid #2f4d63;
+   background:#101c25;color:#d7ecf8;cursor:pointer;text-align:left}
+ .sug-btn:hover,.pat-btn:hover,.q-chip:hover{border-color:#4ea6d8;background:#132533}
+ .pat-btn{font:inherit;font-size:11.5px;padding:5px 9px;border-radius:14px;border:1px solid #2f4d63;
+   background:#101c25;color:#d7ecf8;cursor:pointer;text-align:left}
+ .pat-btn:disabled,.sug-btn:disabled{opacity:.55;cursor:default}
+ .q-wrap{display:flex;flex-direction:column;gap:8px;margin:8px 0 2px}
+ .q-card{border:1px solid #263c4c;border-radius:8px;padding:7px 9px;background:#0d1720}
+ .q-t{margin:0 0 6px;font-size:12px;color:#e7f3fa}
+ .q-opts{display:flex;flex-wrap:wrap;gap:6px}
+ .q-chip.rec{border-color:#3f9c72;box-shadow:inset 0 0 0 1px #3f9c72}
+ .rec-badge{margin-left:6px;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#8fe0b5}
+ .q-otherrow{display:flex;gap:6px;margin-top:6px}
+ .q-other{flex:1;min-width:0;background:#0a141c;border:1px solid #2b4252;color:#dcecf5;border-radius:6px;padding:5px 7px;font-size:11.5px}
+ .q-send{font:inherit;font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid #2f4d63;background:#132533;color:#d7ecf8;cursor:pointer}
+ .ref-list{display:flex;flex-direction:column;gap:7px;margin:8px 0 2px}
+ .ref-live{font-size:11px;color:#8fb6cc}
+ .ref-card{border:1px solid #263c4c;border-radius:8px;padding:7px;background:#0d1720;display:flex;flex-direction:column;gap:4px}
+ .ref-thumb{width:100%;max-height:72px;object-fit:cover;border-radius:5px}
+ .ref-t{color:#7fd6ff;font-size:12px;text-decoration:none;font-weight:600}
+ .ref-num{font-size:10.5px;color:#cbd9a0;display:flex;align-items:center;gap:6px;justify-content:space-between;flex-wrap:wrap}
+ .ref-num .q-chip{font-size:10px;padding:3px 7px}
+ .ref-num .q-chip:disabled{opacity:.65;cursor:default}
+ .asm-panel{border:1px solid #2b4252;border-radius:8px;padding:7px 9px;margin:6px 0 2px;background:#0b151d}
+ .asm-panel b{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#9fc2d6}
+ .asm-row{display:flex;align-items:center;gap:6px;margin:5px 0}
+ .asm-w{flex:0 0 42%;font-size:11.5px;color:#cfe2ee}
+ .asm-in{flex:1;min-width:0;background:#0a141c;border:1px solid #2b4252;color:#dcecf5;border-radius:5px;padding:4px 6px;font-size:11.5px}
+ .asm-x{background:none;border:0;color:#7f9dad;cursor:pointer;font-size:12px}
+ .ai-body .hint{font-size:10.5px;color:#82a3b8}
+ `;
+  document.head.append(st); }
+function colleagueHistory() {
+  const rows = [];
+  chatEl.querySelectorAll('.msg').forEach((m) => {
+    if (m.classList.contains('user')) { const b = m.querySelector('.bub'); if (b) rows.push({ role: 'user', text: b.textContent.slice(0, 600) }); }
+    else if (m.classList.contains('ai')) {
+      const ps = [...m.querySelectorAll('.ai-body p.ans')].map((p) => p.textContent.trim()).filter(Boolean);
+      if (ps.length) rows.push({ role: 'assistant', text: ps.join(' ').slice(0, 900) });
+    }
+  });
+  return rows.slice(-COLLEAGUE_HISTORY_MAX);
+}
+function colleagueProjectId() {
+  const p = state && state.part;
+  if (!p) return null;
+  return String(p.savedId || p.id || p.title || 'part');
+}
+function colleagueStageLabel(j) {
+  if (!j || !j.stage) return null;
+  return L(`Stage ${j.stage} · ${j.stage_name || ''}`, `Tahap ${j.stage} · ${j.stage_name || ''}`).replace(/ ·\s*$/, '');
+}
+function colleagueSuggestionRow(j) {
+  const list = Array.isArray(j.suggestions) ? j.suggestions : [];
+  if (!list.length) return null;
+  const box = h('div', { class: 'sug-row' });
+  list.forEach((s) => {
+    const label = String((s && (s.label || s.text)) || '').trim();
+    if (!label) return;
+    box.append(h('button', { class: 'sug-btn', title: L('Send this as your next message', 'Kirim ini sebagai pesan berikutnya'),
+      onclick: () => handleText(label) }, label));
+  });
+  return box.childNodes.length ? box : null;
+}
+function colleagueQuestions(j) {
+  const list = Array.isArray(j.questions) ? j.questions : [];
+  if (!list.length) return null;
+  const wrap = h('div', { class: 'q-wrap' });
+  list.forEach((q) => {
+    const card = h('div', { class: 'q-card' }, h('p', { class: 'q-t' }, String(q.text || '')));
+    const opts = h('div', { class: 'q-opts' });
+    (Array.isArray(q.options) ? q.options : []).forEach((o) => {
+      const label = String((o && o.label) || '').trim();
+      if (!label) return;
+      const btn = h('button', { class: 'q-chip' + (o.recommended ? ' rec' : ''), onclick: () => handleText(label) }, label);
+      if (o.recommended) btn.append(h('span', { class: 'rec-badge' }, L('Recommended', 'Rekomendasi')));
+      if (o.note) btn.title = String(o.note);
+      if (o.source) btn.title = (btn.title ? btn.title + ' · ' : '') + String(o.source);
+      opts.append(btn);
+    });
+    card.append(opts);
+    if (q.allow_other !== false) {
+      const inp2 = h('input', { class: 'q-other', type: 'text', placeholder: L('Type another answer…', 'Ketik jawaban lain…') });
+      const go = () => { const v = inp2.value.trim(); if (v) handleText(v); };
+      inp2.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      card.append(h('div', { class: 'q-otherrow' }, inp2, h('button', { class: 'q-send', onclick: go }, L('Send', 'Kirim'))));
+    }
+    wrap.append(card);
+  });
+  return wrap;
+}
+function colleagueRefCard(c) {
+  const card = h('div', { class: 'ref-card' });
+  if (c.thumbnail_url) card.append(h('img', { class: 'ref-thumb', src: String(c.thumbnail_url), alt: '', loading: 'lazy' }));
+  card.append(h('a', { class: 'ref-t', href: String(c.source_url || '#'), target: '_blank', rel: 'noopener' }, String(c.title || c.source_url || '')));
+  if (c.what_it_is) card.append(para(String(c.what_it_is), 'm'));
+  if (Array.isArray(c.key_features) && c.key_features.length) card.append(para(String(c.key_features.join(' · ')), 'm'));
+  (Array.isArray(c.numbers_found) ? c.numbers_found : []).slice(0, 4).forEach((n) => {
+    const row = h('div', { class: 'ref-num' }, h('span', null, `${n.value} ${n.unit || ''} · ${String(n.label || 'web — not verified')}`));
+    /* A web number is a candidate until the engineer says otherwise: this button is that confirmation, and it is
+     * sent as the engineer's own input — never as a value the solver computed. */
+    const use = h('button', { class: 'q-chip', title: L('Sends this number to IDRIS as your confirmation. It is a candidate from the web, not a calculation.',
+      'Mengirim angka ini ke IDRIS sebagai konfirmasi kamu. Ini kandidat dari web, bukan hasil perhitungan.') },
+      L('Use this number', 'Pakai angka ini'));
+    use.addEventListener('click', () => {
+      use.disabled = true; use.textContent = L('sent as your confirmation', 'terkirim sebagai konfirmasi');
+      handleText(`Use this number (I confirm it): ${n.value} ${n.unit || ''} — from ${c.source_url || 'the source'}. Treat it as my input, not as a computed value.`);
+    });
+    row.append(use); card.append(row);
+  });
+  return card;
+}
+/** The patterns are suggestions, so they are offered, never applied: each button sends the engineer's choice as a
+ *  message and then goes quiet, so it is clear the choice was made once. */
+function colleaguePatternRow(patterns) {
+  if (!Array.isArray(patterns) || !patterns.length) return null;
+  const row = h('div', { class: 'sug-row' });
+  const pick = (label, text, why) => {
+    const b = h('button', { class: 'pat-btn', title: why, onclick: () => { row.querySelectorAll('button').forEach((x) => { x.disabled = true; }); handleText(text); } }, label);
+    row.append(b);
+  };
+  pick(L('Use this pattern', 'Pakai pola ini'), `Use this pattern as the base: ${patterns[0]}`, L('Sends this pattern as your choice; nothing is applied by itself.', 'Mengirim pola ini sebagai pilihanmu; tidak ada yang diterapkan sendiri.'));
+  if (patterns.length > 1) pick(L('Combine', 'Gabungkan'), `Combine these patterns: ${patterns.join('; ')}`, L('Sends both patterns as your choice.', 'Mengirim kedua pola sebagai pilihanmu.'));
+  pick(L('Skip', 'Lewati'), 'Skip the references — compare two concepts instead.', L('Goes on without the web references.', 'Lanjut tanpa referensi web.'));
+  return row;
+}
+async function colleagueReferences(j, bodyEl) {
+  const brief = typeof chatBrief !== 'undefined' ? chatBrief : null;
+  const title = state && state.part && (state.part.title || '');
+  const b = (brief && brief.object) ? brief : (title ? { object: String(title) } : null);
+  if (!b || !j || Number(j.stage) !== 2) return;
+  const key = JSON.stringify(b);
+  if (refsFetched === key) return;
+  refsFetched = key;
+  const box = h('div', { class: 'ref-list' }, h('div', { class: 'ref-live' }, L('Searching for design references…', 'Mencari referensi desain…')));
+  if (bodyEl) bodyEl.append(box);
+  try {
+    const r = await fetch(API + '/references/design', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brief: b, project_id: colleagueProjectId() }) });
+    const d = await r.json();
+    const live = box.querySelector('.ref-live');
+    const steps = Array.isArray(d.steps) ? d.steps.map(String) : [];
+    const found = steps.slice().reverse().find((s) => /^Found \d+, reading \d+/.test(s));
+    if (live) live.textContent = found ? `${found}${(d.cards || []).length ? ` · ${(d.cards || []).length} cards` : ''}` : (steps.slice(-1)[0] || '');
+    if (!d || !d.ok || !(d.cards || []).length) {
+      if (live) live.textContent = (d && d.error) || L('Web search is not available; using the solver references.', 'Pencarian web tidak tersedia; memakai referensi solver.');
+      return;
+    }
+    (d.cards || []).slice(0, 6).forEach((c) => box.append(colleagueRefCard(c)));
+    if (Array.isArray(d.patterns) && d.patterns.length) box.append(para(L('Patterns: ', 'Pola: ') + d.patterns.join('; '), 'm'));
+    if (d.proposal) box.append(para(String(d.proposal), 'm'));
+    const pat = colleaguePatternRow(d.patterns); if (pat) box.append(pat);
+    if (d.note) box.append(h('p', { class: 'hint' }, String(d.note)));
+  } catch (e) {
+    const live = box.querySelector('.ref-live');
+    if (live) live.textContent = L('Web search is not available right now.', 'Pencarian web tidak tersedia saat ini.');
+  }
+}
+function colleagueAssumptions(j) {
+  const b = typeof chatBrief !== 'undefined' ? chatBrief : null;
+  const list = b && Array.isArray(b.assumptions) ? b.assumptions : [];
+  if (!list.length) return null;
+  const box = h('div', { class: 'asm-panel' }, h('b', null, L('Assumptions', 'Asumsi')));
+  const setA = (rows) => {
+    try { const nb = { ...(chatBrief || {}) }; nb.assumptions = rows; chatBrief = nb; saveBrief(chatBrief); renderBriefCard(); }
+    catch (err) { /* in memory only */ }
+  };
+  list.forEach((a, i) => {
+    const what = typeof a === 'object' ? (a.what || a.text || '') : String(a);
+    const value = typeof a === 'object' ? (a.value || '') : '';
+    const inp3 = h('input', { class: 'asm-in', type: 'text', value: String(value) });
+    inp3.addEventListener('change', () => setA(list.map((x, k) => (k === i ? { ...(typeof x === 'object' ? x : { what: x }), value: inp3.value } : x))));
+    const del = h('button', { 'class': 'asm-x', 'aria-label': L('Remove', 'Hapus') }, '\u2715');
+    del.addEventListener('click', (e) => {
+      setA(list.filter((_, k) => k !== i));
+      const row = e.currentTarget.parentNode;
+      if (row && row.parentNode) row.parentNode.removeChild(row);
+    });
+    box.append(h('div', { class: 'asm-row' }, h('span', { class: 'asm-w' }, String(what || '')), inp3, del));
+  });
+  box.append(h('p', { class: 'hint' }, L('Changing an assumption recalculates the stage it belongs to.', 'Mengubah asumsi menghitung ulang tahap terkait.')));
+  return box;
+}
+
+function renderColleague(j) {
+  if (!j || (!j.stage && !(j.suggestions || []).length && !(j.questions || []).length)) return;
+  const msg = [...chatEl.querySelectorAll('.msg.ai')].pop();
+  const bodyEl = msg && msg.querySelector('.ai-body');
+  if (!bodyEl) return;
+  const viaEl = msg.querySelector('.via');
+  const lab = colleagueStageLabel(j);
+  if (lab && viaEl) viaEl.textContent = lab;
+  [colleagueAssumptions(j), colleagueSuggestionRow(j), colleagueQuestions(j)].forEach((el) => { if (el) bodyEl.append(el); });
+  colleagueReferences(j, bodyEl).catch(() => {});
+  scrollDown();
+}
+{ const f3 = window.fetch; window.fetch = function (url, opt) {
+    if (typeof url === 'string' && url === API + '/chat' && opt && typeof opt.body === 'string' && !(opt.headers && (opt.headers['X-Idris-Concept'] || opt.headers['X-Idris-Brief']))) {
+      try {
+        const b = JSON.parse(opt.body);
+        b.history = colleagueHistory();                 // B1: the session travels with every message
+        const pid = colleagueProjectId(); if (pid && !b.project_id) b.project_id = pid;
+        opt = { ...opt, body: JSON.stringify(b) };
+      } catch (e) { /* unchanged */ }
+    }
+    return f3(url, opt); }; }
+{ const ca2 = chatAI; chatAI = async function (text) {
+    const r = await ca2.apply(this, arguments);
+    colleagueLast = (state.lastChat && state.lastChat.response) || null;
+    try { renderColleague(colleagueLast); } catch (e) { /* UI only */ }
+    return r; }; }
+
+/* ---- v0.42 manufacturing panel (solver `joining.py`): the assembly goes to POST /join/plan, and what comes back
+ * is the workshop's view — the geometry checks with the parts they name, then BOM, cut list, weld list, bolt list
+ * and the assembly order, each downloadable as CSV. Nothing is computed here: every number is the solver's, and
+ * every weld size carries the table it came from. */
+const MFG_TABLES = [
+  ['bom', 'BOM', [['part', 'Part'], ['process', 'Process'], ['stock', 'Stock'], ['qty', 'Qty'], ['mass_kg', 'Mass kg'], ['material', 'Material']]],
+  ['cut_list', 'Cut list', [['part', 'Part'], ['stock', 'Stock'], ['length_mm', 'Length mm'], ['width_mm', 'Width mm'], ['angle_deg', 'Angle °'], ['qty', 'Qty']]],
+  ['welds', 'Welds', [['between', 'Between'], ['kind', 'Kind'], ['leg_mm', 'Leg mm'], ['length_mm', 'Length mm'], ['source', 'Size source']]],
+  ['bolts', 'Bolts', [['between', 'Between'], ['size', 'Size'], ['length_mm', 'Length mm'], ['clamp_mm', 'Clamp mm'], ['source', 'Source']]],
+];
+function mfgCell(v) {
+  if (Array.isArray(v)) return v.join(' + ');
+  if (v == null || v === '') return '—';
+  if (typeof v === 'number') return f(v, Math.abs(v) < 10 ? 2 : 1);
+  return String(v);
+}
+function mfgCsv(name, cols, rows) {
+  const esc = (x) => '"' + String(Array.isArray(x) ? x.join(' + ') : x == null ? '' : x).replace(/"/g, '""') + '"';
+  const text = [cols.map((c) => c[0]).join(','), ...rows.map((r) => cols.map((c) => esc(r[c[0]])).join(','))].join('\n');
+  dlText(text, 'idris-' + name + '.csv', 'text/csv');
+}
+function mfgTables(d) {
+  const box = h('div', { class: 'mfg-box' });
+  const checks = h('div', { class: 'mfg-checks' });
+  (d.checks || []).forEach((c) => {
+    const cls = c.status === 'pass' ? 'ok' : c.status === 'fail' ? 'bad' : 'warn';
+    checks.append(h('div', { class: 'mfg-chk ' + cls }, `${c.check}: ${mfgCell(c.value_mm3 != null ? c.value_mm3 : (c.value_mm != null ? c.value_mm : c.value))}`
+      + (c.parts && c.parts.length ? ' · ' + (Array.isArray(c.parts) ? c.parts.join(' + ') : String(c.parts)) : '')));
+  });
+  if ((d.fixes || []).length) box.append(h('div', { class: 'mfg-fix' }, h('b', null, L('Fixed by IDRIS', 'Diperbaiki IDRIS')), h('ul', null, d.fixes.map((x) => h('li', null, String(x))))));
+  box.append(checks);
+  MFG_TABLES.forEach(([key, title, cols]) => {
+    const rows = Array.isArray(d[key]) ? d[key] : [];
+    if (!rows.length) return;
+    const table = h('table', { class: 'grid mfg-t', 'data-t': key },
+      h('thead', null, h('tr', null, ...cols.map((c) => h('th', null, L(c[1], c[1]))))),
+      h('tbody', null, rows.map((r) => h('tr', null, ...cols.map((c) => h('td', { style: 'text-align:left' }, mfgCell(r[c[0]])))))));
+    box.append(h('div', { class: 'mfg-sec' }, h('div', { class: 'mfg-h' }, h('b', null, L(title, title)),
+      h('button', { class: 'chip', onclick: () => mfgCsv(key, cols, rows) }, L('CSV', 'CSV'))), table));
+  });
+  if ((d.assembly_order || []).length) {
+    box.append(h('div', { class: 'mfg-sec' }, h('b', null, L('Assembly order', 'Urutan rakit')),
+      h('ol', { class: 'mfg-order' }, d.assembly_order.map((s) => h('li', null, `${s.what}: ${s.detail || ''}`)))));
+  }
+  if ((d.joint_strength || []).length) {
+    box.append(h('p', { class: 'hint' }, L('Joint strength: ', 'Kekuatan sambungan: ')
+      + d.joint_strength.map((j) => `${(j.joint || []).join('+')}: ${j.status}`).join(' · ')));
+  }
+  (d.notes || []).forEach((n) => box.append(h('p', { class: 'hint' }, String(n))));
+  return box;
+}
+async function manufacturingFromParts(parts, interfaces) {
+  const old = $('#mfgdlg'); if (old) old.remove();
+  const out = h('div', { class: 'tool-out' }, para(L('Checking the joints…', 'Memeriksa sambungan…'), 'm'));
+  const close = () => { const el = $('#mfgdlg'); if (el) el.remove(); };
+  const dlg = h('div', { class: 'libdlg', id: 'mfgdlg', role: 'dialog', 'aria-modal': 'true', 'aria-label': L('Manufacturing', 'Manufacturing'), onclick: (e) => { if (e.target === dlg) close(); } },
+    h('div', { class: 'lib-in tool-in' }, h('div', { class: 'lib-h' }, h('b', null, L('Manufacturing', 'Manufacturing')),
+      h('button', { class: 'x', 'aria-label': L('Close', 'Tutup'), onclick: close }, '✕')), out));
+  document.body.append(dlg);
+  try {
+    const d = await api('/join/plan', { parts, interfaces: interfaces || [] }, 60000);
+    out.innerHTML = '';
+    out.append(para(L('Every joint, stock, cut and weld below comes from the solver; a number is never estimated here.',
+      'Setiap sambungan, stok, potongan dan las di bawah berasal dari solver; tidak ada angka yang diperkirakan di sini.'), 'm'));
+    out.append(mfgTables(d));
+    window.__lastMfg = d;
+    return d;
+  } catch (e) {
+    out.innerHTML = '';
+    out.append(para(L('The engine did not answer: ', 'Mesin tidak menjawab: ') + (e && e.message ? e.message : 'error'), 'm'));
+    return null;
+  }
+}
+async function manufacturingPanel() {
+  const a = state.assy2, ok = a && (a.info || []).filter((x) => x.ok);
+  if (!ok || !ok.length) return say(para(L('Insert and build components first (Insert Component), then Manufacturing. Each part goes to the solver as its bounding box.', 'Masukkan dan bangun komponen dulu (Insert Component), lalu Manufacturing. Tiap part dikirim ke solver sebagai bounding box-nya.'), 'm'));
+  const parts = [];
+  for (const inf of ok) {
+    const c = a.comps.find((q) => q.cid === inf.cid) || {};
+    try {
+      const m = inf.shape.mesh({ tolerance: 1.2, angularTolerance: 0.7 });
+      const v = m.vertices; let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < v.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], v[i + k]); mx[k] = Math.max(mx[k], v[i + k]); }
+      parts.push({ name: c.name || inf.cid, material: String(c.material || 'steel').toLowerCase(),
+        shape: { type: 'box', size: [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]], at: [(mx[0] + mn[0]) / 2, (mx[1] + mn[1]) / 2, (mx[2] + mn[2]) / 2] } });
+    } catch (e) { /* a part without a mesh is left out and reported by the solver's part count */ }
+  }
+  return manufacturingFromParts(parts);
+}
+{ const st2 = document.createElement('style');
+  st2.textContent = `.mfg-box{display:flex;flex-direction:column;gap:10px;max-height:62vh;overflow:auto}
+ .mfg-chk{font-size:11.5px;padding:3px 6px;border-radius:5px;border:1px solid #2b4252;margin:2px 0}
+ .mfg-chk.ok{border-color:#2f6b4d;color:#a8e3c1}.mfg-chk.bad{border-color:#8a3a3a;color:#f3b6b6;background:#1c1012}
+ .mfg-chk.warn{border-color:#7a6528;color:#e8d79a}
+ .mfg-sec{border:1px solid #263c4c;border-radius:8px;padding:6px 8px}
+ .mfg-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+ .mfg-t{font-size:11px}
+ .mfg-order{font-size:11.5px;margin:4px 0 0 16px;padding:0}
+ .mfg-fix{border:1px solid #2f6b4d;border-radius:8px;padding:6px 8px;font-size:11.5px;color:#a8e3c1}`;
+  document.head.append(st2); }
+{ const ht2 = handleText; handleText = async function (text, opt = {}) {
+    const t = String(text || '').trim().toLowerCase();
+    if (/^(manufacturing|sambungan|produksi|joining)$/.test(t)) { addUser(text); return manufacturingPanel(); }
+    return ht2.apply(this, arguments); }; }
+window.__idris = { state, parseText, viewer, frameFit, chat: (t) => chatAI(t), partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, manufacturingPanel, manufacturing: manufacturingPanel, manufacturingFromParts, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
 })();
 </script>
 </body>
