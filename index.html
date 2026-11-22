@@ -6450,7 +6450,7 @@ const N = (k, en, id, unit, def, extra = {}) => ({ k, en, id, unit, def, t: 'num
 const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
-const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
+const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', mold: 'move', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
 const FEAT = {
   shape: { en: 'Shape', id: 'Shape', fields: [S('kind', 'Shape', 'Bentuk', [['box', ['Box', 'Balok']], ['cyl', ['Cylinder', 'Silinder']], ['tube', ['Tube', 'Tabung']], ['sphere', ['Sphere', 'Bola']]], 'box'),
       N('L', 'Length X', 'Panjang X', 'mm', 100, { show: (p) => p.kind === 'box' }), N('W', 'Width Y', 'Lebar Y', 'mm', 60, { show: (p) => p.kind === 'box' }),
@@ -6494,6 +6494,10 @@ const FEAT = {
       N('angle', 'Angle', 'Sudut', '\u00b0', 360, { min: 1, step: 1 }),
       S('op', 'Result', 'Hasil', OPS, 'add')],
     label: (p) => `${L('Revolve', 'Putar')} ${p.angle}\u00b0 \u00b7 ${p.axis}${p.op === 'cut' ? ' \u00b7 ' + L('cut', 'potong') : ''}` },
+  mold: { en: 'Core / Cavity', id: 'Core / Cavity', fields: [
+      N('margin', 'Block margin around the part', 'Margin blok di sekeliling part', 'mm', 10, { min: 0 }),
+      N('parting', 'Parting plane Z', 'Bidang pisah Z', 'mm', 0)],
+    label: (p) => `${L('Split at Z =', 'Bagi di Z =')} ${p.parting} mm · ${p.margin} mm ${L('block', 'blok')}` },
   draft: { en: 'Draft', id: 'Draft', fields: [
       S('sides', 'Faces to taper', 'Muka yang dimiringkan', [['X', ['\u00b1X (front / back)', '\u00b1X (depan / belakang)']], ['Y', ['\u00b1Y (left / right)', '\u00b1Y (kiri / kanan)']], ['XY', ['All four sides', 'Keempat sisi']]], 'XY'),
       N('angle', 'Draft angle', 'Sudut draft', '\u00b0', 3, { min: 0.1 }),
@@ -6510,7 +6514,7 @@ const FEAT = {
     },
     label: (p) => `${p.param} = ${p.value}${p.param === 'n' ? '' : ' mm'}` },
 };
-const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'draft', 'dim', 'measure'];
+const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'mold', 'draft', 'dim', 'measure'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
 const defaults = (type) => Object.fromEntries(FEAT[type].fields.map((x) => [x.k, x.def]));
 
@@ -6602,6 +6606,20 @@ async function buildPart(pArg) {
         catch (e) { throw new Error(L(`The kernel could not revolve this profile around ${q.axis}. Keep the profile clear of the axis and every size above 0 mm.`, `Kernel tidak bisa memutar profil ini mengelilingi ${q.axis}. Jaga profil supaya tidak menyentuh sumbu dan semua ukuran di atas 0 mm.`)); }
         if (Array.isArray(t)) { if (!t.length) throw new Error(L('The profile produced no solid when revolved.', 'Profil tidak menghasilkan solid saat diputar.')); t = t.length === 1 ? t[0] : t.reduce((a, b) => a.fuse(b)); }
         apply(t, q.op || 'add'); sketch.used = true; sketch = null;
+      } else if (ft.type === 'mold') {
+        /* P4: the two mould halves, cut in the kernel. The block is the part's own box plus the margin; the core is the
+           block below the parting plane minus the part, the cavity the block above minus the part. The part body is not
+           touched: a mould split prepares two tools, it does not change the design. */
+        if (!body) throw new Error(L('A mould split needs a part to split around.', 'Pemisahan cetakan butuh part untuk dipisah.'));
+        const [mn, mx] = bb(), m = +q.margin, z = +q.parting;
+        if (!(m >= 0)) throw new Error(L('The block margin cannot be negative.', 'Margin blok tidak boleh negatif.'));
+        if (!(z > mn[2] && z < mx[2])) throw new Error(L(`The parting plane must cut through the part: Z ${f(mn[2], 2)} to ${f(mx[2], 2)} mm, not ${f(z, 2)} mm.`, `Bidang pisah harus memotong part: Z ${f(mn[2], 2)} sampai ${f(mx[2], 2)} mm, bukan ${f(z, 2)} mm.`));
+        const block = (z0, z1) => R.makeBox([mn[0] - m, mn[1] - m, z0], [mx[0] + m, mx[1] + m, z1]);
+        const core = block(mn[2] - m, z).cut(body), cavity = block(z, mx[2] + m).cut(body);
+        const vc = R.measureVolume(core), vv = R.measureVolume(cavity);
+        if (!(vc > 0) || !(vv > 0)) throw new Error(L('One of the two halves came out empty: move the parting plane inside the part.', 'Salah satu belahan kosong: pindahkan bidang pisah ke dalam part.'));
+        ft.mold = { core: vc, cavity: vv, margin: m, parting: z };
+        ft.note = L(`Core ${f(vc / 1000, 1)} cm3, cavity ${f(vv / 1000, 1)} cm3, ${f(m, 1)} mm block margin, split at Z = ${f(z, 1)} mm. The part body is unchanged: this step prepares the two mould halves.`, `Core ${f(vc / 1000, 1)} cm3, cavity ${f(vv / 1000, 1)} cm3, margin blok ${f(m, 1)} mm, pisah di Z = ${f(z, 1)} mm. Body part tidak berubah: langkah ini menyiapkan dua belahan cetakan.`);
       } else if (ft.type === 'draft') {
         if (!body) throw new Error(L('Draft needs a body.', 'Draft butuh body.'));
         const ang = +q.angle; if (!(ang > 0 && ang <= 45)) throw new Error(L('The draft angle must be above 0\u00b0 and at most 45\u00b0.', 'Sudut draft harus di atas 0\u00b0 dan paling besar 45\u00b0.'));
@@ -7855,9 +7873,10 @@ const RIBBON = [
       T('Gusset', 'gusset', 'mk1', 'Triangular plate in a corner.', 'Pelat segitiga di sudut.', ''), T('Weld Bead', 'weld', 'no', 'Weld geometry and symbol.', 'Geometri dan simbol las.', 'Fillet Weld'),
       T('Cut List', 'list', 'mk1', 'Lengths and profiles for the shop.', 'Panjang dan profil untuk bengkel.', '')]]]],
   ['mold', 'Mold', 'Mold', [
-    ['Mold', [T('Draft Analysis', 'draft', 'on', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.', '', 'dfmDraft'), T('Parting Line', 'split', 'no', 'Where the mould opens.', 'Garis tempat cetakan terbuka.', ''),
-      T('Shut-off Surfaces', 'fill', 'no', 'Close through-holes for the mould.', 'Tutup lubang tembus untuk cetakan.', ''), T('Core / Cavity', 'comb', 'no', 'Split the mould block into core and cavity.', 'Bagi blok cetakan menjadi core dan cavity.', 'Tooling Split'),
-      T('Shrinkage Scale', 'scale', 'no', 'Scale for plastic shrinkage.', 'Skala untuk susut plastik.', '')]]]],
+    ['Mold', [T('Draft Analysis', 'draft', 'on', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.', '', 'dfmDraft'), T('Parting Line', 'split', 'no', 'The silhouette where the mould opens. The core/cavity step cuts at a parting plane Z you type; a parting line traced from the silhouette is not built yet.', 'Siluet tempat cetakan terbuka. Langkah core/cavity memotong di bidang Z yang kamu ketik; garis pisah dari siluet belum ada.', 'Silhouette'),
+      T('Shut-off Surfaces', 'fill', 'no', 'Close through-holes for the mould.', 'Tutup lubang tembus untuk cetakan.', '')
+      /* the block above minus the part already closes a hole that ends inside the block */, T('Core / Cavity', 'comb', 'on', 'Split a block around the part into core and cavity with the kernel: block margin, parting plane Z, both volumes reported on the step. The part itself is not changed.', 'Bagi blok di sekeliling part menjadi core dan cavity dengan kernel: margin blok, bidang pisah Z, kedua volume dilaporkan di langkahnya. Part-nya sendiri tidak berubah.', 'Tooling Split', P('mold')),
+      T('Shrinkage Scale', 'scale', 'no', 'Scale for plastic shrinkage. The block follows the part size; a shrinkage factor per material is not in the table yet.', 'Skala untuk susut plastik. Blok mengikuti ukuran part; faktor susut per material belum ada di tabel.', '')]]]],
   ['asm', 'Assembly', 'Assembly', [
     ['Components', [T('Insert Component', 'part', 'mk1', 'Bring saved parts into one assembly.', 'Masukkan part tersimpan ke satu assembly.', 'Place, Insert'),
       T('Move / Rotate Component', 'move', 'mk1', 'Drag a part in the assembly.', 'Geser atau putar part di assembly.', 'Free Move'),
@@ -12114,7 +12133,7 @@ async function asmExplode() {
     if (a === 'asmExplode') return asmExplode();
     return ra.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay } };
+window.__idris = { state, parseText, viewer, frameFit, partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
 })();
 </script>
 </body>
