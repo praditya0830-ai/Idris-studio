@@ -8451,16 +8451,16 @@ const RIBBON = [
   ['asm', 'Assembly', 'Assembly', [
     ['Components', [T('Insert Component', 'part', 'mk1', 'Bring saved parts into one assembly.', 'Masukkan part tersimpan ke satu assembly.', 'Place, Insert'),
       T('Move / Rotate Component', 'move', 'mk1', 'Drag a part in the assembly.', 'Geser atau putar part di assembly.', 'Free Move'),
-      T('Component Pattern', 'lpat', 'mk1', 'Repeat a part, e.g. bolts on a circle.', 'Ulangi part, mis. baut melingkar.', 'Pattern Component'),
-      T('Mirror Components', 'mirror', 'no', 'Mirror parts in the assembly.', 'Cerminkan part di assembly.', ''),
+      T('Component Pattern', 'lpat', 'on', 'Repeat the selected component as real solids: a linear pitch in X and Y, or a count around a centre in Z. Every copy is built by the kernel, the copies are checked against each other by common volume, and the envelope is measured; copies that overlap are refused with the volume they share.', 'Ulangi komponen terpilih sebagai solid nyata: jarak linear di X dan Y, atau jumlah salinan mengelilingi pusat di Z. Setiap salinan dibangun kernel, salinan dicek satu sama lain lewat volume irisan, dan selubungnya diukur; salinan yang bertumpuk ditolak dengan volume irisan itu.', 'Pattern Component', 'asmPattern'),
+      T('Mirror Components', 'mirror', 'on', 'Mirror the selected component about the YZ, XZ or XY plane through the origin. The copy is the kernel\u2019s own mirrored solid and must keep the volume of its source; the envelope of the two is measured.', 'Cerminkan komponen terpilih terhadap bidang YZ, XZ, atau XY lewat titik nol. Salinannya solid cermin dari kernel sendiri dan harus tetap bervolume sama dengan asalnya; selubung keduanya diukur.', 'Mirror Part', 'asmMirror'),
       T('Standard Parts', 'bolt', 'mk1', 'ISO bolts, nuts, washers, bearings, seals from a library.', 'Baut, mur, ring, bearing, seal ISO dari library.', 'Toolbox, Content Center, McMaster')]],
-    ['Mates', [T('Mate', 'mate', 'mk1', 'Coincident, concentric, distance, angle, parallel.', 'Coincident, konsentris, jarak, sudut, sejajar.', 'Joint, Constrain, Assemble'),
+    ['Mates', [T('Mate', 'mate', 'on', 'Mate the selected component onto the part under it: the two holes line up concentric and the faces flush. The kernel checks the result by pushing a probe rod of the hole diameter through both holes (it must hit 0 mm\u00b3) and a rod 2 mm larger (it must hit material, so the hole is really drilled).', 'Mate komponen terpilih ke part di bawahnya: dua lubang menjadi konsentris dan muka rata. Kernel mengecek hasilnya dengan menusukkan batang probe seukuran lubang menembus kedua lubang (harus 0 mm\u00b3) dan batang 2 mm lebih besar (harus mengenai material, jadi lubangnya benar-benar ada).', 'Joint, Constrain, Assemble', 'asmMate'),
       T('Auto Assembly', 'auto', 'mk1', 'IDRIS places the parts with mates (bolt in hole, shaft in bore), finds interference and size mismatches with the kernel, fixes what is clear and asks you when a size must change, e.g. “the hole is for M5 but the bolt is M6: make the hole Ø6.6 or use M5?”', 'IDRIS memasang part dengan mate (baut ke lubang, poros ke bore), menemukan interferensi dan ukuran yang tidak cocok dengan kernel, memperbaiki yang jelas, dan bertanya saat ukuran harus berubah, mis. “lubangnya untuk M5 tapi bautnya M6: lubang jadi Ø6,6 atau pakai M5?”', 'SmartMates, As-built Joint', null, null, true)]],
     ['Review', [T('Interference Detection', 'intf', 'gb', 'Find parts that overlap.', 'Temukan part yang saling tumpang tindih.', 'Interference, Clash', 'gbCheck', ALT_GB),
       T('Exploded View', 'explode', 'on', 'Slide the assembly components apart along Z with a distance slider; their real positions do not change.', 'Geser komponen assembly terpisah sepanjang Z dengan slider jarak; posisi aslinya tidak berubah.', 'Explode', 'asmExplode'),
       T('Bill of Materials', 'bom', 'on', 'Parts list from the assembly: name, quantity, material and mass from the kernel.', 'Daftar part dari assembly: nama, jumlah, material, dan massa dari kernel.', 'BOM, Parts List', 'asmBom'),
-      T('Motion Study', 'motion', 'no', 'Animate mechanisms and read forces.', 'Animasi mekanisme dan baca gayanya.', 'Motion Link, Kinematics'),
-      T('Collision Detection', 'intf', 'no', 'Stop parts that hit while moving.', 'Hentikan part yang bertabrakan saat bergerak.', 'Contact Set')]]]],
+      T('Motion Study', 'motion', 'no', 'An animation needs a time step and a driving constraint; the kernel here builds static solids and models no motion, so this stays grey. The geometry it can measure is the first contact along a travel \u2014 that is Collision Detection.', 'Animasi butuh langkah waktu dan constraint penggerak; kernel di sini hanya membangun solid statis dan tidak memodelkan gerak, jadi tombol ini tetap abu-abu. Geometri yang bisa diukurnya adalah sentuhan pertama sepanjang lintasan \u2014 itu Collision Detection.', 'Motion Link, Kinematics'),
+      T('Collision Detection', 'intf', 'on', 'Move the selected component along X, Y or Z in steps you type and report the first step where its common volume with another component is not zero, with the travel distance and the overlap. The model itself does not move.', 'Gerakkan komponen terpilih sepanjang X, Y, atau Z dalam langkah yang kamu ketik dan laporkan langkah pertama saat volume irisannya dengan komponen lain tidak nol, dengan jarak tempuh dan tumpangannya. Modelnya sendiri tidak berubah.', 'Contact Set', 'asmCollide')]]]],
   ['eval', 'Evaluate', 'Evaluasi', [
     ['Measure', [T('Measure', 'measure', 'on', 'Size of the part from the kernel.', 'Ukuran part dari kernel.', 'Inspect, Measure', 'measureAny'),
       T('Mass Properties', 'mass', 'on', 'Volume and area from the kernel, mass = volume × density, with the density and its source shown.', 'Volume dan luas dari kernel, massa = volume × densitas, dengan densitas dan sumbernya ditampilkan.', 'Physical Properties', 'mass'),
@@ -9278,6 +9278,8 @@ async function assyRebuild(fit) {
     for (const [i, c] of a.comps.entries()) {
       try { let sh = c.src === 'bolt' ? await boltShape(R, c.bolt) : c.src === 'nut' ? nutShape(R, c.nut) : c.src === 'washer' ? washerShape(R, c.washer) : await shapeOfPart(c.part);
         if (c.rz) sh = sh.rotate(c.rz, [0, 0, 0], [0, 0, 1]); sh = sh.translate(c.t);
+        /* S19: a mirrored component is the mirror of its source where the source already is */
+        if (c.mir) sh = sh.mirror(c.mir);
         const m = sh.mesh({ tolerance: 0.05, angularTolerance: 0.2 }), bb = sh.boundingBox.bounds;
         info.push({ cid: c.cid, ok: true, shape: sh, bounds: [[...bb[0]], [...bb[1]]], vol: R.measureVolume(sh) });
         parts.push({ buf: meshToSTL(zUp(m)), kind: ['bolt', 'nut', 'washer'].includes(c.src) ? 'fastener' : 'part', name: c.name }); }
@@ -9420,6 +9422,227 @@ function assyPicker() {
     h('h3', null, L('Standard bolt (solver catalog)', 'Baut standar (katalog solver)')), h('div', { class: 'lib-g' }, ['M3', 'M4', 'M5', 'M6', 'M8', 'M10'].map((M) => card(`ISO 4762 ${M}`, L('socket head cap screw, thread not modelled', 'baut kepala silinder, ulir tidak dimodelkan'), 'catalog', () => assyInsertBolt(M))))));
   document.body.append(d);
 }
+/* ---- S19: the moves the kernel measures (pattern, mirror, mate, collision) -----------------------------------------
+ * Every answer below comes from solids the kernel built, never from arithmetic on a picture:
+ *   * a pattern copy is a real solid, and every pair of copies is compared by common volume (0.00 mm3 = no overlap);
+ *   * a mirrored copy is the kernel's own mirrored solid and must keep the volume of its source;
+ *   * a mate is checked with a probe rod of the hole diameter (it must hit 0.00 mm3 through both holes) and a rod
+ *     1 mm larger per side (it must hit material, so the hole is really drilled);
+ *   * a collision is the first step of a travel whose common volume is no longer zero.
+ * This block has no DOM and no page state: tests/s19-assembly.test.mjs lifts it and runs it on the same kernel. */
+const ASM_AXIS = { x: 0, y: 1, z: 2 };
+const asmBoxOf = (sh) => { const b = sh.boundingBox.bounds; return [[b[0][0], b[0][1], b[0][2]], [b[1][0], b[1][1], b[1][2]]]; };
+function asmEnvelope(boxes) {
+  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  for (const b of boxes) for (let k = 0; k < 3; k++) { if (b[0][k] < mn[k]) mn[k] = b[0][k]; if (b[1][k] > mx[k]) mx[k] = b[1][k]; }
+  return boxes.length ? { min: mn, max: mx, span: [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]] } : null;
+}
+/* boxes that touch exactly (shared face) do not overlap, so the pair is skipped before any boolean */
+const asmTouch = (a, b) => [0, 1, 2].every((k) => a[0][k] < b[1][k] - 1e-9 && b[0][k] < a[1][k] - 1e-9);
+function asmPatternPlaces(sh, o) {
+  const kind = o && o.kind === 'circular' ? 'circular' : 'linear';
+  const count = Math.round(+((o && o.count) || 0));
+  if (!(count >= 2)) return { refuse: 'count', count };
+  if (count > 64) return { refuse: 'max', count };
+  const dx = +((o && o.dx) || 0), dy = +((o && o.dy) || 0), cx = +((o && o.cx) || 0), cy = +((o && o.cy) || 0);
+  const pitch = Math.hypot(dx, dy);
+  if (kind === 'linear' && !(pitch > 1e-9)) return { refuse: 'pitch', pitch };
+  const places = [];
+  for (let i = 1; i < count; i++) {
+    let c, angle = 0, t = null;
+    if (kind === 'circular') { angle = 360 * i / count; c = sh.clone().translate([-cx, -cy, 0]).rotate(angle, [0, 0, 0], [0, 0, 1]).translate([cx, cy, 0]); }
+    else { t = [i * dx, i * dy, 0]; c = sh.clone().translate(t); }
+    places.push({ i, angle, t, shape: c, box: asmBoxOf(c) });
+  }
+  return { kind, count, pitch: kind === 'circular' ? 360 / count : pitch, places, env: asmEnvelope([asmBoxOf(sh)].concat(places.map((q) => q.box))) };
+}
+function asmPairVolumes(R, items) {
+  const out = [];
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const A = items[i], B = items[j];
+    if (!asmTouch(A.box, B.box)) continue;
+    let v = 0;
+    try { v = R.measureVolume(A.shape.clone().intersect(B.shape.clone())); } catch (e) { v = 0; }
+    if (v > 0.01) out.push({ a: A.name, b: B.name, v });
+  }
+  return out;
+}
+function asmMirrorCopy(R, sh, plane) {
+  const p = ['YZ', 'XZ', 'XY'].includes(plane) ? plane : 'YZ';
+  const before = R.measureVolume(sh.clone());
+  const m = sh.clone().mirror(p);
+  return { plane: p, shape: m, box: asmBoxOf(m), volBefore: before, volAfter: R.measureVolume(m.clone()) };
+}
+/* the upper hole must land on the lower hole (both in assembly coordinates for the lower one) */
+function asmMateSolve(o) {
+  if (!o || !o.lowerHole || !o.upperHole) return { refuse: 'holes', lower: !!(o && o.lowerHole), upper: !!(o && o.upperHole) };
+  const d = Math.min(+o.lowerHole.d, +o.upperHole.d > 0 ? +o.upperHole.d : +o.lowerHole.d);
+  if (!(d > 0.8)) return { refuse: 'diameter', d };
+  const a = (+o.upperRot || 0) * Math.PI / 180, hx = +o.upperHole.x, hy = +o.upperHole.y;
+  const wx = hx * Math.cos(a) - hy * Math.sin(a), wy = hx * Math.sin(a) + hy * Math.cos(a);
+  return { kind: 'concentric', hole: { x: +o.lowerHole.x, y: +o.lowerHole.y, d },
+    t: [+o.lowerHole.x - wx, +o.lowerHole.y - wy, +o.lowerTop - +o.upperLocalBottom + (+o.offset || 0)] };
+}
+/* grow < 0: a rod thinner than the hole (must hit nothing); grow > 0: thicker (must hit the hole wall) */
+function asmProbe(R, shapes, hole, z0, z1, grow) {
+  const r = (+hole.d) / 2 + (+grow || 0);
+  if (!(r > 0.2)) return { refuse: 'probe', r, len: z1 - z0 };
+  if (!(z1 > z0)) return { refuse: 'length', r, len: z1 - z0 };
+  const rod = R.makeCylinder(r, z1 - z0, [+hole.x, +hole.y, +z0], [0, 0, 1]);
+  let v = 0;
+  for (const s of shapes) { try { v += R.measureVolume(rod.clone().intersect(s.clone())); } catch (e) { /* a failed boolean adds nothing */ } }
+  return { d: +hole.d, r, len: z1 - z0, vol: v };
+}
+function asmCollide(R, moving, others, o) {
+  const ax = ASM_AXIS[o && o.axis] != null ? ASM_AXIS[o.axis] : 0;
+  const step = Math.abs(+((o && o.step) || 0)), travel = Math.abs(+((o && o.travel) || 0));
+  if (!(step > 1e-9) || !(travel > 1e-9)) return { refuse: 'travel', step, travel };
+  const n = Math.min(200, Math.max(1, Math.round(travel / step)));
+  let first = null, maxV = 0;
+  for (let i = 1; i <= n; i++) {
+    const d = step * i, t = [0, 0, 0]; t[ax] = d;
+    const moved = moving.clone().translate(t), mb = asmBoxOf(moved);
+    let v = 0;
+    for (const osh of others) {
+      if (!asmTouch(mb, asmBoxOf(osh))) continue;
+      try { v = Math.max(v, R.measureVolume(moved.clone().intersect(osh.clone()))); } catch (e) { /* keep the largest measured */ }
+    }
+    if (v > maxV) maxV = v;
+    if (v > 0.01) { first = { step: i, d, v }; break; }
+  }
+  return { axis: ['x', 'y', 'z'][ax], step, travel, steps: n, first, maxV };
+}
+/* ---- S19 UI: the four ribbon tools, on the assembly the engineer already has open */
+const ASM_ARGS = { pattern: { kind: 'linear', count: 3, dx: 40, dy: 0, cx: 0, cy: 0 }, mirror: { plane: 'YZ' }, collide: { axis: 'x', travel: 60, step: 5 } };
+const ASM_TOOL_NAME = { pattern: ['Component pattern', 'Pola komponen'], mirror: ['Mirror components', 'Cermin komponen'], collide: ['Collision detection', 'Deteksi tabrakan'] };
+let asmTool = null;
+function asmPickComp() {
+  const a = state.assy2; if (!a) return { refuse: 'assembly' };
+  const c = a.comps.find((x) => x.cid === assySel); if (!c) return { refuse: 'select', a };
+  const inf = assyInfo(c.cid); if (!inf || !inf.ok) return { refuse: 'build', a, c };
+  return { a, c, inf };
+}
+function asmRefuse(r) {
+  const t = { assembly: [L('Start an assembly first: Insert Component brings saved parts, Library parts or ISO bolts into one.', 'Mulai assembly dulu: Insert Component memasukkan part tersimpan, part Library, atau baut ISO ke satu assembly.')],
+    select: [L('Select the component in the assembly tree first, then run the tool.', 'Pilih komponennya di pohon assembly dulu, lalu jalankan tool-nya.')],
+    build: [L('The selected component did not build, so there is no geometry for the kernel to move.', 'Komponen terpilih tidak terbangun, jadi tidak ada geometri untuk digerakkan kernel.')] }[r.refuse] || [L('The tool could not run.', 'Tool tidak bisa jalan.')];
+  say(para(L(t[0], t[1]), 'm'));
+}
+async function asmPatternRun() {
+  const p = asmPickComp(); if (p.refuse) return asmRefuse(p);
+  const a = p.a, o = ASM_ARGS.pattern, res = asmPatternPlaces(p.inf.shape, o);
+  if (res.refuse) return say(para({ count: L(`A pattern needs at least 2 copies; the count is ${res.count}.`, `Pola butuh minimal 2 salinan; jumlahnya ${res.count}.`),
+    max: L(`64 copies is the limit here; the count is ${res.count}.`, `Batas di sini 64 salinan; jumlahnya ${res.count}.`),
+    pitch: L('A linear pattern needs a spacing above 0 mm.', 'Pola linear butuh jarak di atas 0 mm.') }[res.refuse], 'm'));
+  const R = await kernel(), items = [{ name: p.c.name, shape: p.inf.shape.clone(), box: asmBoxOf(p.inf.shape) }].concat(res.places.map((q) => ({ name: `${p.c.name} ${q.i + 1}`, shape: q.shape, box: q.box })));
+  const clash = asmPairVolumes(R, items);
+  if (clash.length) return say(para(L(`The pattern was not added: ${clash.map((x) => `${x.a} \u2194 ${x.b} ${f(x.v, 2)} mm\u00b3`).join('; ')} would overlap (OpenCascade common volume). Widen the spacing or lower the count.`,
+    `Pola tidak ditambahkan: ${clash.map((x) => `${x.a} \u2194 ${x.b} ${f(x.v, 2)} mm\u00b3`).join('; ')} akan bertumpuk (volume irisan OpenCascade). Lebarkan jarak atau kurangi jumlahnya.`), 'm'));
+  const cs = [];
+  for (const q of res.places) {
+    const c = JSON.parse(JSON.stringify(p.c)); c.cid = assyNextId(); c.name = `${p.c.name} ${q.i + 1}`; c.manual = true;
+    if (res.kind === 'circular') { const r = q.angle * Math.PI / 180, ax = p.c.t[0] - ASM_ARGS.pattern.cx, ay = p.c.t[1] - ASM_ARGS.pattern.cy;
+      c.t = [ASM_ARGS.pattern.cx + ax * Math.cos(r) - ay * Math.sin(r), ASM_ARGS.pattern.cy + ax * Math.sin(r) + ay * Math.cos(r), p.c.t[2]]; }
+    else c.t = [p.c.t[0] + q.t[0], p.c.t[1] + q.t[1], p.c.t[2]];
+    c.rz = (p.c.rz || 0) + q.angle; a.comps.push(c); cs.push(c.cid);
+  }
+  await assyRebuild(false);
+  const boxes = cs.map((cid) => assyInfo(cid)).filter((x) => x && x.ok).map((x) => x.bounds);
+  const env = asmEnvelope([p.inf.bounds].concat(boxes));
+  a.pattern = { kind: res.kind, count: res.count, boxes: boxes.length };
+  say(para(L(`${res.kind === 'circular' ? 'Circular' : 'Linear'} pattern: ${res.count} copies (${res.kind === 'circular' ? `pitch ${f(res.pitch, 2)}\u00b0` : `pitch ${f(res.pitch, 2)} mm`}), ${boxes.length} built by the kernel, envelope ${env.span.map((x) => f(x, 2)).join(' \u00d7 ')} mm, copies overlap 0.00 mm\u00b3 (OpenCascade common volume).`,
+    `Pola ${res.kind === 'circular' ? 'melingkar' : 'linear'}: ${res.count} salinan (${res.kind === 'circular' ? `pitch ${f(res.pitch, 2)}\u00b0` : `jarak ${f(res.pitch, 2)} mm`}), ${boxes.length} dibangun kernel, selubung ${env.span.map((x) => f(x, 2)).join(' \u00d7 ')} mm, salinan bertumpuk 0,00 mm\u00b3 (volume irisan OpenCascade).`)));
+}
+async function asmMirrorRun() {
+  const p = asmPickComp(); if (p.refuse) return asmRefuse(p);
+  const a = p.a, res = asmMirrorCopy(await kernel(), p.inf.shape, ASM_ARGS.mirror.plane);
+  const dv = Math.abs(res.volAfter - res.volBefore);
+  if (dv > Math.max(0.5, res.volBefore * 0.001)) return say(para(L(`The mirror was not added: the kernel\u2019s copy measures ${f(res.volAfter, 2)} mm\u00b3 against ${f(res.volBefore, 2)} mm\u00b3 in the source, so it is not the same solid.`,
+    `Cermin tidak ditambahkan: salinan kernel berukuran ${f(res.volAfter, 2)} mm\u00b3 sedangkan asalnya ${f(res.volBefore, 2)} mm\u00b3, jadi solidnya tidak sama.`), 'm'));
+  const c = JSON.parse(JSON.stringify(p.c)); c.cid = assyNextId(); c.name = `${p.c.name} (mirror ${res.plane})`; c.mir = res.plane; c.mirrorOf = p.c.cid; a.comps.push(c);
+  await assyRebuild(false);
+  const inf = assyInfo(c.cid), env = asmEnvelope(inf && inf.ok ? [p.inf.bounds, inf.bounds] : [p.inf.bounds]);
+  a.mirror = { plane: res.plane, vol: res.volAfter };
+  say(para(L(`Mirror across ${res.plane} through the origin: the kernel\u2019s copy is ${f(res.volAfter / 1000, 2)} cm\u00b3 in both parts (source ${f(res.volBefore / 1000, 2)} cm\u00b3), envelope of the pair ${env.span.map((x) => f(x, 2)).join(' \u00d7 ')} mm.`,
+    `Cermin terhadap ${res.plane} lewat titik nol: salinan kernel ${f(res.volAfter / 1000, 2)} cm\u00b3 pada kedua part (asal ${f(res.volBefore / 1000, 2)} cm\u00b3), selubung keduanya ${env.span.map((x) => f(x, 2)).join(' \u00d7 ')} mm.`)));
+}
+async function asmMateRun() {
+  const p = asmPickComp(); if (p.refuse) return asmRefuse(p);
+  const a = p.a, upper = p.c;
+  if (upper.src !== 'part' || !upper.part) return say(para(L('A standard part (bolt, nut, washer) is mated by Auto Assembly; pick a designed part in the tree.', 'Part standar (baut, mur, ring) di-mate lewat Auto Assembly; pilih part hasil desain di pohon.'), 'm'));
+  const below = a.comps.filter((x) => x.cid !== upper.cid && x.src === 'part' && x.part).map((x) => ({ c: x, inf: assyInfo(x.cid) })).filter((x) => x.inf && x.inf.ok);
+  if (!below.length) return say(para(L('A mate needs a second component that the kernel built. Insert another part first.', 'Mate butuh komponen kedua yang terbangun kernel. Masukkan part lain dulu.'), 'm'));
+  const ub = p.inf.bounds, area = (A, B) => Math.max(0, Math.min(A[1][0], B[1][0]) - Math.max(A[0][0], B[0][0])) * Math.max(0, Math.min(A[1][1], B[1][1]) - Math.max(A[0][1], B[0][1]));
+  below.sort((x, y) => area(ub, y.inf.bounds) - area(ub, x.inf.bounds));
+  const low = below[0], lb = low.inf.bounds;
+  if (!(area(ub, lb) > 0)) return say(para(L('The selected component does not sit over any other part in X and Y, so there is no face to mate. Move it over the part first (Move / Rotate Component).', 'Komponen terpilih tidak berada di atas part lain pada X dan Y, jadi tidak ada muka untuk di-mate. Geser dulu ke atas part-nya (Move / Rotate Component).'), 'm'));
+  const hu = holesOf(upper.part), hl = holesOf(low.c.part);
+  const world = (c, h, inf) => { const tr = c.rz || 0; const [x, y] = rotXY(h.x, h.y, tr); const zt = isFinite(h.zTop) ? h.zTop : 0; return { x: x + c.t[0], y: y + c.t[1], d: +h.d, zTop: zt + c.t[2] }; };
+  let pair = null;
+  for (const u of hu) for (const l of hl) { const H = world(low.c, l), U = world(upper, u); const d2 = Math.hypot(H.x - U.x, H.y - U.y) + Math.abs(l.d - u.d); if (!pair || d2 < pair.d2) pair = { u, l, H, U, d2 }; }
+  const upperLocalBottom = ub[0][2] - upper.t[2];
+  const sol = pair ? asmMateSolve({ lowerTop: lb[1][2], upperLocalBottom, lowerHole: { x: pair.H.x, y: pair.H.y, d: +pair.l.d }, upperHole: { x: +pair.u.x, y: +pair.u.y, d: +pair.u.d }, upperRot: upper.rz, offset: 0 })
+    : asmMateSolve({ lowerTop: lb[1][2], upperLocalBottom, offset: 0 });
+  if (sol.refuse && sol.refuse !== 'holes') return say(para(L('The holes are too small to probe with the kernel.', 'Lubangnya terlalu kecil untuk diprobe kernel.'), 'm'));
+  const before = upper.t.slice();
+  upper.t = sol.t.slice(); a.clashDone = false;
+  await assyRebuild(false);
+  const iu = assyInfo(upper.cid), il = assyInfo(low.c.cid);
+  if (!iu || !iu.ok) { upper.t = before; return say(para(L('The mate did not build; the component was left where it was.', 'Mate tidak terbangun; komponen dikembalikan ke posisi semula.'), 'm')); }
+  const z0 = Math.min(iu.bounds[0][2], il.bounds[0][2]) - 1, z1 = Math.max(iu.bounds[1][2], il.bounds[1][2]) + 1;
+  const gap = iu.bounds[0][2] - il.bounds[1][2], R = await kernel();
+  let msg;
+  if (sol.hole) {
+    const clear = asmProbe(R, [iu.shape, il.shape], sol.hole, z0, z1, -0.2), wall = asmProbe(R, [iu.shape, il.shape], sol.hole, z0, z1, 1);
+    a.joints = (a.joints || []).concat([{ upper: upper.cid, lower: low.c.cid, d: sol.hole.d, clear: clear.vol, wall: wall.vol, gap }]);
+    msg = L(`Mate: ${upper.name} on ${low.c.name} \u2014 \u00d8${f(sol.hole.d, 1)} concentric, faces flush. The \u00d8${f(clear.r * 2, 1)} probe through both holes hits ${f(clear.vol, 2)} mm\u00b3; the \u00d8${f(wall.r * 2, 1)} probe hits ${f(wall.vol, 2)} mm\u00b3 of material, so the hole is drilled; face gap ${f(gap, 3)} mm (OpenCascade).`,
+      `Mate: ${upper.name} di atas ${low.c.name} \u2014 \u00d8${f(sol.hole.d, 1)} konsentris, muka rata. Probe \u00d8${f(clear.r * 2, 1)} menembus kedua lubang mengenai ${f(clear.vol, 2)} mm\u00b3; probe \u00d8${f(wall.r * 2, 1)} mengenai ${f(wall.vol, 2)} mm\u00b3 material, jadi lubangnya ada; celah muka ${f(gap, 3)} mm (OpenCascade).`);
+    if (clear.vol > 0.01) msg += L(` The probe still hits ${f(clear.vol, 2)} mm\u00b3, so the axes did not line up.`, ` Probe masih mengenai ${f(clear.vol, 2)} mm\u00b3, jadi sumbunya belum sejajar.`);
+  } else {
+    a.joints = (a.joints || []).concat([{ upper: upper.cid, lower: low.c.cid, gap }]);
+    msg = L(`Mate: ${upper.name} on ${low.c.name} \u2014 no hole in both parts, so the mate is the flush face only: face gap ${f(gap, 3)} mm (OpenCascade bounding boxes).`,
+      `Mate: ${upper.name} di atas ${low.c.name} \u2014 tidak ada lubang di kedua part, jadi mate-nya hanya muka rata: celah muka ${f(gap, 3)} mm (bounding box OpenCascade).`);
+  }
+  say(para(msg)); renderCad();
+}
+async function asmCollideRun() {
+  const p = asmPickComp(); if (p.refuse) return asmRefuse(p);
+  const a = p.a, o = ASM_ARGS.collide;
+  const others = a.comps.filter((x) => x.cid !== p.c.cid).map((x) => assyInfo(x.cid)).filter((x) => x && x.ok).map((x) => x.shape);
+  if (!others.length) return say(para(L('Collision needs a second component that the kernel built. Insert another part first.', 'Deteksi tabrakan butuh komponen kedua yang terbangun kernel. Masukkan part lain dulu.'), 'm'));
+  const res = asmCollide(await kernel(), p.inf.shape, others, o);
+  if (res.refuse) return say(para(L('A collision check needs a travel and a step above 0 mm.', 'Cek tabrakan butuh jarak tempuh dan langkah di atas 0 mm.'), 'm'));
+  a.collide = res;
+  say(para(res.first ? L(`Collision: ${p.c.name} travels along ${res.axis} in ${f(res.step, 2)} mm steps; the first contact is at ${f(res.first.d, 2)} mm (step ${res.first.step} of ${res.steps}) with ${f(res.first.v, 2)} mm\u00b3 of common volume (OpenCascade). The model did not move.`,
+    `Tabrakan: ${p.c.name} bergerak sepanjang ${res.axis} dalam langkah ${f(res.step, 2)} mm; sentuhan pertama di ${f(res.first.d, 2)} mm (langkah ${res.first.step} dari ${res.steps}) dengan volume irisan ${f(res.first.v, 2)} mm\u00b3 (OpenCascade). Modelnya tidak bergerak.`)
+    : L(`No collision: ${p.c.name} travels ${f(res.travel, 2)} mm along ${res.axis} in ${f(res.step, 2)} mm steps (${res.steps} steps) and the common volume stays 0.00 mm\u00b3 (OpenCascade).`,
+      `Tidak ada tabrakan: ${p.c.name} bergerak ${f(res.travel, 2)} mm sepanjang ${res.axis} dalam langkah ${f(res.step, 2)} mm (${res.steps} langkah) dan volume irisannya tetap 0,00 mm\u00b3 (OpenCascade).`)));
+}
+function asmToolPanel() {
+  const kind = asmTool, o = ASM_ARGS[kind]; if (!kind || !o) return null;
+  const num = (k, lab, unit) => h('label', null, h('span', null, lab), h('span', { class: 'pnum' }, h('input', { type: 'number', step: 'any', value: o[k], 'data-k': k, oninput: (e) => { o[k] = +e.target.value; } }), h('em', null, unit)));
+  const pick = (k, lab, opts) => h('label', null, h('span', null, lab), h('select', { 'data-k': k, onchange: (e) => { o[k] = e.target.value; renderCad(); } }, opts.map(([v, t]) => h('option', { value: v, selected: o[k] === v }, t))));
+  const rows = kind === 'pattern'
+    ? [pick('kind', L('Kind', 'Jenis'), [['linear', L('Linear', 'Linear')], ['circular', L('Circular', 'Melingkar')]]), num('count', L('Copies', 'Salinan'), ''),
+      o.kind === 'circular' ? num('cx', L('Centre X', 'Pusat X'), 'mm') : num('dx', L('Pitch X', 'Jarak X'), 'mm'),
+      o.kind === 'circular' ? num('cy', L('Centre Y', 'Pusat Y'), 'mm') : num('dy', L('Pitch Y', 'Jarak Y'), 'mm')]
+    : kind === 'mirror' ? [pick('plane', L('Plane through the origin', 'Bidang lewat titik nol'), [['YZ', 'YZ'], ['XZ', 'XZ'], ['XY', 'XY']])]
+      : [pick('axis', L('Travel axis', 'Sumbu gerak'), [['x', 'X'], ['y', 'Y'], ['z', 'Z']]), num('travel', L('Travel', 'Jarak'), 'mm'), num('step', L('Step', 'Langkah'), 'mm')];
+  const hint = { pattern: L('Each copy is a solid the kernel builds; copies are checked against each other by common volume.', 'Tiap salinan solid yang dibangun kernel; salinan dicek satu sama lain lewat volume irisan.'),
+    mirror: L('The copy is the kernel\u2019s mirrored solid; it must keep the volume of its source.', 'Salinannya solid cermin kernel; volumenya harus sama dengan asalnya.'),
+    collide: L('The component is moved only in the check; its real position does not change.', 'Komponen hanya digerakkan di dalam pengecekan; posisi aslinya tidak berubah.') }[kind];
+  const run = { pattern: asmPatternRun, mirror: asmMirrorRun, collide: asmCollideRun }[kind];
+  return h('div', { class: 'gen-src', id: 'asmTool', 'data-tool': kind }, h('b', null, L(...ASM_TOOL_NAME[kind])), h('p', { class: 'hint' }, hint),
+    h('div', { class: 'pform', style: 'grid-template-columns:1fr 1fr;gap:6px 10px' }, rows),
+    h('div', { class: 'pact' }, h('button', { class: 'chip primary', onclick: () => run() }, L('Run', 'Jalankan')), h('button', { class: 'chip', onclick: () => { asmTool = null; renderCad(); } }, L('Close', 'Tutup'))));
+}
+{ const ra3 = ribAct; ribAct = function (act) {
+    if (act === 'asmPattern' || act === 'asmMirror' || act === 'asmCollide') {
+      if (!state.assy2) { say(para(L('Start an assembly first: Insert Component brings saved parts, Library parts or ISO bolts into one.', 'Mulai assembly dulu: Insert Component memasukkan part tersimpan, part Library, atau baut ISO ke satu assembly.'), 'm')); return; }
+      asmTool = act === 'asmPattern' ? 'pattern' : act === 'asmMirror' ? 'mirror' : 'collide'; return renderCad(); }
+    if (act === 'asmMate') return asmMateRun();
+    return ra3.apply(this, arguments); };
+}
 /* ---- rendering */
 function assyGroup(list) {
   /* a solver clearance finding and IDRIS's ISO 273 question about the same bolt become one item with the two choices */
@@ -9446,10 +9669,13 @@ function renderAssyCad() {
     h('ol', { class: 'pft' }, a.comps.map((c) => { const inf = info.find((x) => x.cid === c.cid);
       return h('li', { class: (assySel === c.cid ? 'on ' : '') + (inf && !inf.ok ? 'err' : '') }, h('button', { class: 'pfn', onclick: () => { assySel = c.cid; renderCad(); } },
         h('span', { class: 'cdot ' + (inf ? inf.ok ? 'ok' : 'bad' : ''), 'aria-hidden': 'true' }), h('b', null, c.name),
-        h('span', null, ['bolt', 'nut', 'washer'].includes(c.src) ? L('standard part · catalog', 'part standar · katalog') : `x ${f(c.t[0], 1)} · y ${f(c.t[1], 1)} · z ${f(c.t[2], 1)} · ${f(c.rz, 0)}°`))); })),
-    a.mates.length ? h('div', { class: 'gen-src' }, h('b', null, L('Mates', 'Mate')), ...a.mates.map((m) => h('p', { class: 'hint' }, L(`${m.M}×${m.L || '?'} · concentric + flush · ${a.comps.find((c) => c.cid === m.upper).name} → ${a.comps.find((c) => c.cid === m.lower).name}`, `${m.M}×${m.L || '?'} · konsentris + rata · ${a.comps.find((c) => c.cid === m.upper).name} → ${a.comps.find((c) => c.cid === m.lower).name}`)))) : null,
+        h('span', null, ['bolt', 'nut', 'washer'].includes(c.src) ? L('standard part · catalog', 'part standar · katalog') : c.mir ? L(`mirror across ${c.mir} of ${(a.comps.find((q) => q.cid === c.mirrorOf) || {}).name || 'the component'}`, `cermin ${c.mir} dari ${(a.comps.find((q) => q.cid === c.mirrorOf) || {}).name || 'komponen'}`) : `x ${f(c.t[0], 1)} · y ${f(c.t[1], 1)} · z ${f(c.t[2], 1)} · ${f(c.rz, 0)}°`))); })),
+    a.mates.length ? h('div', { class: 'gen-src' }, h('b', null, L('Mates', 'Mate')), ...a.mates.map((m) => h('p', { class: 'hint' }, L(`${m.M}×${m.L || '?'} · concentric + flush · ${a.comps.find((c) => c.cid === m.upper).name} → ${a.comps.find((c) => c.cid === m.lower).name}`, `${m.M}×${m.L || '?'} · konsentris + rata · ${a.comps.find((c) => c.cid === m.upper).name} → ${a.comps.find((c) => c.cid === m.lower).name}`)))) : '',
     h('div', { class: 'pact', style: 'padding:8px 12px;flex-wrap:wrap' }, h('button', { class: 'chip', disabled: assyBusy, onclick: assyPicker }, L('Insert component', 'Masukkan komponen')),
       h('button', { class: 'chip primary', disabled: assyBusy, onclick: assyAuto }, 'Auto Assembly'), h('button', { class: 'chip', disabled: assyBusy || !info.length, onclick: () => assyInterference(false) }, L('Check interference', 'Cek interferensi'))),
+    (a.joints || []).length ? h('div', { class: 'gen-src' }, h('b', null, L('Mates (kernel probe)', 'Mate (probe kernel)')), ...(a.joints).map((m) => h('p', { class: 'hint' }, L(`${(a.comps.find((c) => c.cid === m.upper) || {}).name || m.upper} \u2192 ${(a.comps.find((c) => c.cid === m.lower) || {}).name || m.lower} \u00b7 ${m.d ? `\u00d8${f(m.d, 1)} concentric, faces flush \u00b7 probe ${f(m.clear, 2)} mm\u00b3 clear, ${f(m.wall, 2)} mm\u00b3 material` : 'faces flush'} \u00b7 gap ${f(m.gap, 3)} mm`,
+      `${(a.comps.find((c) => c.cid === m.upper) || {}).name || m.upper} \u2192 ${(a.comps.find((c) => c.cid === m.lower) || {}).name || m.lower} \u00b7 ${m.d ? `\u00d8${f(m.d, 1)} konsentris, muka rata \u00b7 probe ${f(m.clear, 2)} mm\u00b3 bebas, ${f(m.wall, 2)} mm\u00b3 material` : 'muka rata'} \u00b7 celah ${f(m.gap, 3)} mm`)))) : '',
+    asmToolPanel(),
     h('div', { class: 'pdoc' }, h('button', { class: 'linkbtn', onclick: () => { const n = prompt(L('Assembly name', 'Nama assembly'), a.name); if (n) { a.name = n.slice(0, 60); saveAssy(); renderCad(); } } }, L('Rename', 'Ganti nama')), ' · ', h('button', { class: 'linkbtn', onclick: assyLeave }, L('Close assembly', 'Tutup assembly'))));
   const pr = propsEl(); pr.innerHTML = '';
   const c = a.comps.find((x) => x.cid === assySel);
@@ -13781,7 +14007,10 @@ async function manufacturingPanel() {
     if (/^(manufacturing|sambungan|produksi|joining)$/.test(t)) { addUser(text); return manufacturingPanel(); }
     return ht2.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, chat: (t) => chatAI(t), partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), asm: { setJob: (a) => { asmJob = a; renderAsm(); }, job: () => asmJob, assemble: () => asmAssemble(), render: () => renderAsm() }, vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, aiUsageRefresh, aiBadgePaint, sheetMetal: sheetMetalPanel, bendAllowance, flatPattern, bendSetback, setback: bendSetback, manufacturingPanel, manufacturing: manufacturingPanel, manufacturingFromParts, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
+window.__idris = { state, parseText, viewer, frameFit, chat: (t) => chatAI(t), partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), asm: { setJob: (a) => { asmJob = a; renderAsm(); }, job: () => asmJob, assemble: () => asmAssemble(), render: () => renderAsm(),
+    start: () => assyStart(), insert: (p) => assyInsertPart(p), rebuild: (f2) => assyRebuild(f2), tryInfo: () => state.assy2 && state.assy2.info,
+    state: () => state.assy2, select: (cid) => { assySel = cid; renderCad(); }, tool: (k) => { asmTool = k; renderCad(); },
+    run: { pattern: () => asmPatternRun(), mirror: () => asmMirrorRun(), mate: () => asmMateRun(), collide: () => asmCollideRun() } }, vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, aiUsageRefresh, aiBadgePaint, sheetMetal: sheetMetalPanel, bendAllowance, flatPattern, bendSetback, setback: bendSetback, manufacturingPanel, manufacturing: manufacturingPanel, manufacturingFromParts, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
 })();
 </script>
 </body>
