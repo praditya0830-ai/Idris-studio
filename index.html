@@ -5579,7 +5579,16 @@ const TOOL_GROUPS = [
   ['surfplane', 'Planar Surface', 'a flat face from one closed sketch loop'],
   ['surfoffset', 'Offset Surface', 'copy the surface body at a distance (kernel offset)'],
   ['surfknit', 'Knit Surface', 'sew the surface pieces, optionally into a solid'],
-  ['surfthick', 'Thicken', 'turn the surface body into a solid wall']];
+  ['surfthick', 'Thicken', 'turn the surface body into a solid wall'],
+  /* S16: sheet metal, in the order a shop builds a bracket */
+  ['smbase', 'Base Flange', 'a plate with a thickness and a bend radius, the base of every sheet-metal part'],
+  ['smedge', 'Edge Flange', 'bend a leg up from one edge, at the angle you pick'],
+  ['smmiter', 'Miter Flange', 'legs on two adjacent edges, mitred at 45° through the corner'],
+  ['smbend', 'Sketched Bend', 'bend the part along a line at the distance you give'],
+  ['smunfold', 'Unfold / Fold', 'open the bends to a flat plate, then fold back'],
+  ['smflatten', 'Flatten', 'the flat pattern of the chain with its bend lines'],
+  ['smrelief', 'Corner Relief', 'cut a relief notch where two bends meet'],
+  ['smconvert', 'Convert to Sheet Metal', 'take thickness and radius from the plate already open']]
 const plannedWhy = () => L('Not in this build yet. Ask IDRIS for what you need.', 'Belum ada di versi ini. Minta ke IDRIS apa yang kamu butuhkan.');
 let LAYOUT = (() => { try { return localStorage.getItem('idris-layout') === 'classic' ? 'classic' : 'cad'; } catch (e) { return 'cad'; } })();
 let cadTab = 'design';
@@ -6712,12 +6721,65 @@ const FEAT = {
     label: (p) => (p.solid === 'solid' ? L('Knit into a solid', 'Jahit menjadi solid') : L('Knit surfaces', 'Jahit surface')) },
   surfthick: { en: 'Thicken', id: 'Thicken', fields: [N('t', 'Wall thickness', 'Tebal dinding', 'mm', 2, { min: 0.05 })],
     label: (p) => `${L('Thicken', 'Tebalkan')} ${p.t} mm` },
+  /* S16: sheet metal (Batch 2). Thickness and bend radius come from Base Flange; the K-factor is the workshop
+     table below unless the engineer types one, and every number in a note is measured by the kernel afterwards. */
+  smbase: { en: 'Base Flange', id: 'Base Flange', fields: [
+      N('L', 'Length X', 'Panjang X', 'mm', 100, { min: 1 }), N('W', 'Width Y', 'Lebar Y', 'mm', 60, { min: 1 }),
+      N('t', 'Thickness', 'Tebal', 'mm', 2, { min: 0.1 }), N('R', 'Inside bend radius', 'Radius tekuk dalam', 'mm', 2, { min: 0 }),
+      S('material', 'Material', 'Material', [['steel', ['Steel', 'Baja']], ['stainless', ['Stainless', 'Stainless']], ['aluminium', ['Aluminium', 'Aluminium']], ['brass', ['Brass', 'Kuningan']]]),
+      N('k', 'K-factor (0 = table)', 'K-factor (0 = tabel)', '', 0, { min: 0, max: 1 })],
+    label: (p) => `${L('Base flange', 'Flange dasar')} ${p.L}×${p.W}×${p.t}` },
+  smedge: { en: 'Edge Flange', id: 'Edge Flange', fields: [
+      S('edge', 'Edge', 'Tepi', [['x+', ['+X', '+X']], ['x-', ['-X', '-X']], ['y+', ['+Y', '+Y']], ['y-', ['-Y', '-Y']]]),
+      S('angle', 'Bend angle', 'Sudut tekuk', [['45', ['45°', '45°']], ['60', ['60°', '60°']], ['90', ['90°', '90°']], ['120', ['120°', '120°']], ['135', ['135°', '135°']]], '90'),
+      N('F', 'Flange length', 'Panjang flange', 'mm', 30, { min: 1 })],
+    label: (p) => `${L('Edge flange', 'Flange tepi')} ${p.edge} · ${p.angle}° · ${p.F} mm` },
+  smmiter: { en: 'Miter Flange', id: 'Miter Flange', fields: [
+      S('angle', 'Bend angle', 'Sudut tekuk', [['45', ['45°', '45°']], ['90', ['90°', '90°']], ['135', ['135°', '135°']]], '90'),
+      N('F', 'Flange length', 'Panjang flange', 'mm', 25, { min: 1 })],
+    label: (p) => `${L('Miter flange +X +Y', 'Flange miter +X +Y')} · ${p.angle}° · ${p.F} mm` },
+  smbend: { en: 'Sketched Bend', id: 'Sketched Bend', fields: [
+      N('d', 'Bend line from -X', 'Garis tekuk dari -X', 'mm', 40, { min: 0.5 }),
+      S('angle', 'Bend angle', 'Sudut tekuk', [['45', ['45°', '45°']], ['60', ['60°', '60°']], ['90', ['90°', '90°']], ['120', ['120°', '120°']]], '90')],
+    label: (p) => `${L('Sketched bend', 'Tekuk dari garis')} ${p.d} mm · ${p.angle}°` },
+  smunfold: { en: 'Unfold / Fold', id: 'Unfold / Fold', fields: [
+      S('mode', 'State', 'Keadaan', [['unfold', ['Unfold (flat)', 'Buka (datar)']], ['fold', ['Fold back', 'Lipat kembali']]])],
+    label: (p) => (p.mode === 'fold' ? L('Fold back', 'Lipat kembali') : L('Unfold to flat', 'Buka jadi datar')) },
+  smflatten: { en: 'Flatten', id: 'Flatten', fields: [],
+    label: () => L('Flat pattern', 'Bentangan datar') },
+  smrelief: { en: 'Corner Relief', id: 'Corner Relief', fields: [
+      S('kind', 'Shape', 'Bentuk', [['round', ['Round', 'Bulat']], ['square', ['Square', 'Kotak']]]),
+      N('r', 'Relief size', 'Ukuran relief', 'mm', 3, { min: 0.2 }),
+      S('corner', 'Corner', 'Sudut', [['x+y+', ['+X +Y', '+X +Y']], ['x-y+', ['-X +Y', '-X +Y']], ['x+y-', ['+X -Y', '+X -Y']], ['x-y-', ['-X -Y', '-X -Y']]])],
+    label: (p) => `${L('Corner relief', 'Relief sudut')} ${p.r} mm` },
+  smconvert: { en: 'Convert to Sheet Metal', id: 'Convert to Sheet Metal', fields: [
+      N('t', 'Thickness (0 = measure)', 'Tebal (0 = ukur)', 'mm', 0, { min: 0 }), N('R', 'Inside bend radius', 'Radius tekuk dalam', 'mm', 2, { min: 0 }),
+      S('material', 'Material', 'Material', [['steel', ['Steel', 'Baja']], ['stainless', ['Stainless', 'Stainless']], ['aluminium', ['Aluminium', 'Aluminium']], ['brass', ['Brass', 'Kuningan']]])],
+    label: (p) => L('Convert to sheet metal', 'Ubah jadi sheet metal') },
 };
 const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'mold', 'draft', 'dim', 'measure',
-  'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick'];
+  'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick',
+  'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
 const defaults = (type) => Object.fromEntries(FEAT[type].fields.map((x) => [x.k, x.def]));
 
+/* the flat pattern of the chain: a plate of the developed length, with the bend lines where they develop to */
+function smFlatDxf(model) {
+  const Lf = model.flat, w = model.w;
+  const lines = ['0', 'SECTION', '2', 'ENTITIES'];
+  const rect = [[0, 0], [Lf, 0], [Lf, w], [0, w]];
+  for (let i = 0; i < 4; i++) { const a = rect[i], b = rect[(i + 1) % 4];
+    lines.push('0', 'LINE', '8', 'OUTLINE', '10', String(a[0]), '20', String(a[1]), '11', String(b[0]), '21', String(b[1])); }
+  model.folds.forEach((fd, i) => {
+    for (const x of [fd.at, fd.at + fd.ba]) lines.push('0', 'LINE', '8', 'BEND', '10', String(x), '20', '0', '11', String(x), '21', String(w));
+    lines.push('0', 'TEXT', '8', 'NOTE', '10', String(fd.at + 1), '20', String(w + 6 + i * 5), '40', '3',
+      '1', `bend ${i + 1}: ${fd.th}deg R${fd.R} K${fd.k} BA=${fd.ba.toFixed(3)} t=${model.t}`);
+  });
+  lines.push('0', 'TEXT', '8', 'NOTE', '10', '4', '20', String(w + 6 + model.folds.length * 5), '40', '3.5',
+    '1', `flat ${Lf.toFixed(2)} x ${w} mm, t=${model.t}`);
+  lines.push('0', 'ENDSEC', '0', 'EOF');
+  return lines.join('\n');
+}
 /* rebuild: run every feature in order; a feature that fails is marked and skipped, the rest still runs */
 async function buildPart(pArg) {
   const R = await kernel(), p = pArg || state.part; if (!p) return null;
@@ -6760,6 +6822,40 @@ async function buildPart(pArg) {
   const srfBody = () => (surfs.length ? srfSew(surfs.map((x) => x.sh)) : null);
   const srfSolidOf = (sh) => { const m = new OC3.BRepBuilderAPI_MakeSolid(OC3.TopoDS.Shell(sh.wrapped)); m.Build(); return R.cast(m.Solid()); };
   const srfNeed = () => { if (!surfs.length) throw new Error(L('This needs a surface first: build one with Extruded, Revolved, Lofted, Swept or Planar Surface.', 'Ini butuh surface dulu: bangun dengan Extruded, Revolved, Lofted, Swept, atau Planar Surface.')); };
+  /* S16: sheet metal. A bend is the annular sector between the inside radius R and R+t around the bend axis, so
+     its volume is θ/2·((R+t)²−R²)·width, and the same sector develops to θ·(R+K·t) in the flat. K comes from the
+     workshop table (K_DEFAULT, labelled a default) unless the engineer types one in Base Flange: nothing here
+     invents a K. A +Y flange is the +X one turned by the kernel, not a second guess at the trigonometry. */
+  const sm = { t: 0, R: 0, k: 0, mat: 'steel', L: 0, W: 0, folds: [], flat: 0, folded: null };
+  const SMBIG = 1e4;
+  const smReady = () => { if (!(sm.t > 0)) throw new Error(L('Sheet metal starts with a Base Flange: thickness and bend radius come from it (or Convert to Sheet Metal on a plate).', 'Sheet metal mulai dari Base Flange: tebal dan radius tekuk dari sana (atau Convert to Sheet Metal pada pelat).')); };
+  /* a box on the +X side, turned by phi: it covers every direction within 90° of d(phi) = (cos phi, 0, -sin phi) */
+  const smPos = (ax, az, phi) => R.makeBox([0, -2 * SMBIG, -SMBIG], [SMBIG, 2 * SMBIG, SMBIG]).rotate(phi, [0, 0, 0], [0, 1, 0]).translate([ax, 0, az]);
+  /* the annular sector from angle p0 to p1 (p1 > p0, at most 180°) about the axis along Y at (ax, az) */
+  const smSector = (ax, az, w, rIn, t, p0, p1) => {
+    const ring = R.makeCylinder(rIn + t, w, [ax, 0, az], [0, 1, 0]).cut(R.makeCylinder(Math.max(0.005, rIn), w + 4, [ax, -2, az], [0, 1, 0]));
+    let sh = ring.cut(smPos(ax, az, p0 - 90));
+    if (p1 - p0 < 179.9) sh = sh.cut(smPos(ax, az, p1 + 90));
+    return sh;
+  };
+  const smBA = (th, r, k, t) => (th * Math.PI / 180) * (r + k * t);
+  const smPlate = (Lx, Wy, t) => R.makeBox([0, 0, 0], [Lx, Wy, t]);
+  /* one flange at the +X edge of a plate Lx×Wy, in that plate's frame: the bend, then its straight leg */
+  const smFlangePiece = (Lx, Wy, t, r, th, F) => {
+    const sec = smSector(Lx, t + r, Wy, r, t, 90 - th, 90);
+    let fl = R.makeBox([Lx + r, 0, t + r], [Lx + r + t, Wy, t + r + F]);
+    if (th !== 90) fl = fl.rotate(90 - th, [Lx, 0, t + r], [0, 1, 0]);
+    return sec.fuse(fl);
+  };
+  /* put a +X-edge piece on the edge the engineer picked: the +Y frame is the +X frame turned a quarter */
+  const smPlace = (sh, edge) => {
+    const yEdge = edge[0] === 'y';
+    let out = yEdge ? sh.rotate(90, [0, 0, 0], [0, 0, 1]).translate([sm.L, 0, 0]) : sh;
+    if (edge[1] === '-') out = yEdge ? out.mirror('XZ', [0, sm.W / 2, 0]) : out.mirror('YZ', [sm.L / 2, 0, 0]);
+    return out;
+  };
+  const smFrame = (edge) => (edge[0] === 'y' ? [sm.W, sm.L] : [sm.L, sm.W]);
+  const smFlatBox = () => R.makeBox([0, 0, 0], [sm.flat, sm.W, sm.t]);
   for (const d of p.features) {
     if (d.type !== 'dim' || d.off) continue;
     const tgt = p.features.find((x) => x.id === d.p.step);
@@ -7055,6 +7151,112 @@ async function buildPart(pArg) {
         surfs.length = 0;
         ft.note = L(`Solid from ${n} surface piece(s): wall ${f(t, 2)} mm, volume ${f(vol / 1000, 2)} cm³, area ${f(area, 1)} mm² (kernel). The wall is the surface profile offset by the thickness in its own plane, so the volume is the kernel's own difference, not an area times a number. The surface body became this solid.`,
           `Solid dari ${n} potongan surface: dinding ${f(t, 2)} mm, volume ${f(vol / 1000, 2)} cm³, luas ${f(area, 1)} mm² (kernel). Dindingnya adalah profil surface yang di-offset setebal itu di bidangnya sendiri, jadi volumenya selisih dari kernel, bukan luas kali angka. Body surface menjadi solid ini.`);
+      } else if (ft.type === 'smbase') {
+        /* S16: the plate every sheet-metal step stands on. Thickness and inside radius live here, so no later step
+           has to guess them, and the K-factor is the workshop table unless one is typed. */
+        const Lx = pos(q.L), Wy = pos(q.W), t = pos(q.t), r = Math.max(0, +q.R || 0), mat = q.material || 'steel';
+        const k = +q.k > 0 ? +q.k : K_DEFAULT[mat];
+        const plate = smPlate(Lx, Wy, t);
+        apply(plate, 'add');
+        sm.t = t; sm.R = r; sm.k = k; sm.mat = mat; sm.L = Lx; sm.W = Wy; sm.folds = []; sm.flat = Lx; sm.folded = null;
+        ft.sheet = { t, R: r, k, mat, L: Lx, W: Wy, flat: Lx, folds: 0 };
+        ft.note = L(`Base flange ${f(Lx, 1)}×${f(Wy, 1)}×${f(t, 2)} mm, inside radius R${f(r, 1)}, K ${k} (${+q.k > 0 ? 'typed by you' : 'workshop table for ' + mat + ', a default you can change'}). Volume ${f(R.measureVolume(plate) / 1000, 3)} cm³ (kernel).`,
+          `Flange dasar ${f(Lx, 1)}×${f(Wy, 1)}×${f(t, 2)} mm, radius dalam R${f(r, 1)}, K ${k} (${+q.k > 0 ? 'diketik kamu' : 'tabel bengkel untuk ' + mat + ', default yang bisa diubah'}). Volume ${f(R.measureVolume(plate) / 1000, 3)} cm³ (kernel).`);
+      } else if (ft.type === 'smedge') {
+        smReady();
+        const edge = q.edge || 'x+', th = +q.angle || 90, F = pos(q.F);
+        const [Lx, Wy] = smFrame(edge);
+        const piece = smPlace(smFlangePiece(Lx, Wy, sm.t, sm.R, th, F), edge);
+        const v = R.measureVolume(piece);
+        apply(piece, 'add');
+        const ba = smBA(th, sm.R, sm.k, sm.t);
+        const at = sm.flat;
+        sm.flat += ba + F;
+        sm.folds.push({ at, th, R: sm.R, k: sm.k, t: sm.t, F, ba, edge });
+        ft.sheet = { edge, th, F, ba, vol: v, flat: sm.flat };
+        ft.note = L(`Edge flange ${edge} bent ${f(th, 0)}° at R${f(sm.R, 1)}, leg ${f(F, 1)} mm: bend allowance θ·(R+K·t) = ${f(ba, 3)} mm with K ${sm.k}, so the developed length is ${f(sm.flat, 2)} mm. The kernel added ${f(v / 1000, 3)} cm³.`,
+          `Flange tepi ${edge} ditekuk ${f(th, 0)}° di R${f(sm.R, 1)}, kaki ${f(F, 1)} mm: bend allowance θ·(R+K·t) = ${f(ba, 3)} mm dengan K ${sm.k}, jadi panjang bentangan ${f(sm.flat, 2)} mm. Kernel menambah ${f(v / 1000, 3)} cm³.`);
+      } else if (ft.type === 'smmiter') {
+        smReady();
+        const th = +q.angle || 90, F = pos(q.F);
+        const t = sm.t, r = sm.R;
+        const a = smPlace(smFlangePiece(sm.L, sm.W, t, r, th, F), 'x+');
+        const b = smPlace(smFlangePiece(sm.W, sm.L, t, r, th, F), 'y+');
+        const wedge = R.makeBox([0, -SMBIG, -SMBIG], [SMBIG, SMBIG, SMBIG]).rotate(45, [0, 0, 0], [0, 0, 1]).translate([sm.L, sm.W, 0]);
+        const piece = a.fuse(b).cut(wedge);
+        const v = R.measureVolume(piece);
+        apply(piece, 'add');
+        const ba = smBA(th, r, sm.k, t), at = sm.flat;
+        sm.flat += 2 * ba + 2 * F;
+        sm.folds.push({ at, th, R: r, k: sm.k, t, F, ba, edge: 'x+y+' });
+        ft.sheet = { th, F, ba, vol: v, flat: sm.flat, mitre: 45 };
+        ft.note = L(`Miter flange on +X and +Y, ${f(th, 0)}°, legs ${f(F, 1)} mm, mitred at 45° through the outer corner: the kernel added ${f(v / 1000, 3)} cm³ and the developed length is ${f(sm.flat, 2)} mm (two bends of ${f(ba, 3)} mm).`,
+          `Flange miter di +X dan +Y, ${f(th, 0)}°, kaki ${f(F, 1)} mm, miter 45° lewat sudut luar: kernel menambah ${f(v / 1000, 3)} cm³ dan bentangan ${f(sm.flat, 2)} mm (dua tekukan ${f(ba, 3)} mm).`);
+      } else if (ft.type === 'smbend') {
+        if (!body) throw new Error(L('Sketched Bend needs a sheet-metal body: build a Base Flange first.', 'Sketched Bend butuh badan sheet metal: buat Base Flange dulu.'));
+        smReady();
+        const d = pos(q.d), th = +q.angle || 90, t = sm.t, r = sm.R;
+        const [mn, mx] = bb();
+        if (!(d > mn[0] + 1e-6 && d < mx[0] - 1e-6)) throw new Error(L(`The bend line at ${f(d, 2)} mm is not inside the part (x from ${f(mn[0], 2)} to ${f(mx[0], 2)}).`, `Garis tekuk di ${f(d, 2)} mm di luar part (x ${f(mn[0], 2)}..${f(mx[0], 2)}).`));
+        const w = mx[1] - mn[1], zTop = mx[2];
+        const near = body.clone().cut(R.makeBox([d, -SMBIG, -SMBIG], [3 * SMBIG, SMBIG, SMBIG]));
+        const far = body.clone().cut(R.makeBox([-SMBIG, -SMBIG, -SMBIG], [d, SMBIG, SMBIG]));
+        if (!(R.measureVolume(far) > 0)) throw new Error(L('There is nothing beyond the bend line to bend.', 'Tidak ada apa pun di luar garis tekuk untuk ditekuk.'));
+        const zc = zTop + r;
+        const sec = smSector(d, zc, w, r, t, 90 - th, 90).translate([0, mn[1], 0]);
+        const turned = far.rotate(-th, [d, 0, zc], [0, 1, 0]);
+        body = near.fuse(sec).fuse(turned);
+        const ba = smBA(th, r, sm.k, t), at = d + smBA(th, r, sm.k, t) * 0;
+        sm.folds.push({ at, th, R: r, k: sm.k, t, F: 0, ba, edge: 'sketch' });
+        sm.flat += ba;
+        ft.sheet = { d, th, ba, flat: sm.flat };
+        ft.note = L(`Bent ${f(th, 0)}° along the line at ${f(d, 2)} mm: the part beyond the line is turned by the kernel and the bend sector closes the gap, allowance ${f(ba, 3)} mm (K ${sm.k}, R${f(r, 1)}), developed length ${f(sm.flat, 2)} mm. Volume after the bend ${f(R.measureVolume(body) / 1000, 3)} cm³ (kernel).`,
+          `Ditekuk ${f(th, 0)}° di garis ${f(d, 2)} mm: bagian di luar garis diputar kernel dan sektor tekuk menutup celahnya, allowance ${f(ba, 3)} mm (K ${sm.k}, R${f(r, 1)}), bentangan ${f(sm.flat, 2)} mm. Volume setelah tekuk ${f(R.measureVolume(body) / 1000, 3)} cm³ (kernel).`);
+      } else if (ft.type === 'smunfold' || ft.type === 'smflatten') {
+        if (!body) throw new Error(L('This needs a sheet-metal body: build a Base Flange first.', 'Ini butuh badan sheet metal: buat Base Flange dulu.'));
+        smReady();
+        const mode = ft.type === 'smflatten' ? 'unfold' : (q.mode || 'unfold');
+        if (mode === 'fold') {
+          if (!sm.folded) throw new Error(L('There is nothing to fold back: the part is not unfolded.', 'Tidak ada yang bisa dilipat kembali: part belum dibuka.'));
+          body = sm.folded.clone(); sm.folded = null;
+          ft.sheet = { flat: sm.flat, folded: true };
+          ft.note = L(`Folded back to the bent part: volume ${f(R.measureVolume(body) / 1000, 3)} cm³ (kernel). The developed length of the chain stays ${f(sm.flat, 2)} mm.`,
+            `Dilipat kembali ke part tekukan: volume ${f(R.measureVolume(body) / 1000, 3)} cm³ (kernel). Bentangan rangkaiannya tetap ${f(sm.flat, 2)} mm.`);
+        } else {
+          if (!sm.folded) sm.folded = body.clone();
+          const flat = smFlatBox();
+          body = flat;
+          const v = R.measureVolume(flat);
+          ft.sheet = { flat: sm.flat, w: sm.W, t: sm.t, vol: v, folds: sm.folds.length, dxf: true };
+          ft.note = L(`${ft.type === 'smflatten' ? 'Flat pattern' : 'Unfolded'}: ${f(sm.flat, 2)} mm developed length × ${f(sm.W, 1)} mm wide × ${f(sm.t, 2)} mm, volume ${f(v / 1000, 3)} cm³ (kernel). The ${sm.folds.length} bend(s) add ${f(sm.flat - sm.L, 2)} mm of allowance — the flat is not the folded volume divided by the thickness, bending stretches material. The DXF with the bend lines is in Sheet Metal → Flat Pattern.`,
+            `${ft.type === 'smflatten' ? 'Bentangan datar' : 'Dibuka'}: panjang ${f(sm.flat, 2)} mm × lebar ${f(sm.W, 1)} mm × ${f(sm.t, 2)} mm, volume ${f(v / 1000, 3)} cm³ (kernel). ${sm.folds.length} tekukan menambah ${f(sm.flat - sm.L, 2)} mm allowance — bentangan bukan volume terlipat dibagi tebal, bahan memanjang saat ditekuk. DXF dengan garis tekuk ada di Sheet Metal → Flat Pattern.`);
+        }
+      } else if (ft.type === 'smrelief') {
+        if (!body) throw new Error(L('Corner Relief cuts a body: build a sheet-metal part first.', 'Corner Relief memotong badan: buat part sheet metal dulu.'));
+        const r = pos(q.r), c = q.corner || 'x+y+', [mn, mx] = bb();
+        const px = c[1] === '+' ? mx[0] : mn[0], py = c[3] === '+' ? mx[1] : mn[1];
+        const cx0 = px, cy0 = py;
+        const was = R.measureVolume(body);
+        const cutter = q.kind === 'square'
+          ? R.makeBox([cx0 - r / 2, cy0 - r / 2, mn[2] - 1], [cx0 + r / 2, cy0 + r / 2, mx[2] + 1])
+          : R.makeCylinder(r / 2, mx[2] - mn[2] + 2, [cx0, cy0, mn[2] - 1], [0, 0, 1]);
+        body = body.cut(cutter);
+        const cut = was - R.measureVolume(body);
+        if (!(cut > 0)) throw new Error(L('The relief did not remove anything at that corner: check the corner and the size.', 'Relief tidak memotong apa pun di sudut itu: cek sudut dan ukurannya.'));
+        ft.sheet = { r, corner: c, kind: q.kind || 'round', removed: cut };
+        ft.note = L(`${q.kind === 'square' ? 'Square' : 'Round'} corner relief ${f(r, 2)} mm at ${c}: the kernel removed ${f(cut, 3)} mm³, volume ${f(R.measureVolume(body) / 1000, 3)} cm³ (kernel).`,
+          `Relief sudut ${q.kind === 'square' ? 'kotak' : 'bulat'} ${f(r, 2)} mm di ${c}: kernel memotong ${f(cut, 3)} mm³, volume ${f(R.measureVolume(body) / 1000, 3)} cm³ (kernel).`);
+      } else if (ft.type === 'smconvert') {
+        if (!body) throw new Error(L('Convert to Sheet Metal needs a body: build or open a plate first.', 'Convert to Sheet Metal butuh badan: bangun atau buka pelat dulu.'));
+        const [mn, mx] = bb(), dims = [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]];
+        const meas = Math.min(...dims), mat = q.material || 'steel';
+        const t = +q.t > 0 ? pos(q.t) : meas, r = Math.max(0, +q.R || 0);
+        const vol = R.measureVolume(body);
+        sm.t = t; sm.R = r; sm.mat = mat; sm.k = K_DEFAULT[mat]; sm.L = dims[0]; sm.W = dims[1];
+        sm.folds = []; sm.flat = dims[0]; sm.folded = null;
+        ft.sheet = { t, R: r, k: sm.k, mat, L: dims[0], W: dims[1], flat: dims[0], folds: 0, converted: true };
+        ft.note = L(`Sheet metal from this body: thickness ${f(t, 2)} mm (${+q.t > 0 ? 'typed' : 'measured as its smallest side, ' + f(meas, 2) + ' mm'}), inside radius R${f(r, 1)} you typed, K ${sm.k} from the workshop table for ${mat}. No geometry changed: the volume is still ${f(vol / 1000, 3)} cm³ (kernel).`,
+          `Sheet metal dari badan ini: tebal ${f(t, 2)} mm (${+q.t > 0 ? 'diketik' : 'diukur dari sisi terkecil, ' + f(meas, 2) + ' mm'}), radius dalam R${f(r, 1)} yang kamu ketik, K ${sm.k} dari tabel bengkel untuk ${mat}. Geometri tidak berubah: volume tetap ${f(vol / 1000, 3)} cm³ (kernel).`);
       } else if (ft.type === 'wall') {
         if (!body) throw new Error(L('Wall needs a body.', 'Wall butuh body.'));
         const [mn, mx] = bb(), z = q.open === 'top' ? mx[2] : mn[2];
@@ -7066,7 +7268,8 @@ async function buildPart(pArg) {
     } catch (e) { ft.err = String((e && e.message) || e).slice(0, 220) || L('The kernel could not build this feature.', 'Kernel tidak bisa membangun fitur ini.'); }
   }
   const open = sketches.filter((x) => !x.used);
-  return { R, body, open, profile, surfs: surfs.map((x) => x.sh) };
+  const sheet = sm.t > 0 ? { t: sm.t, R: sm.R, k: sm.k, mat: sm.mat, L: sm.L, W: sm.W, flat: sm.flat, folds: sm.folds.slice() } : null;
+  return { R, body, open, profile, surfs: surfs.map((x) => x.sh), sheet };
 }
 /* triangles → binary STL, so the viewer shows the kernel's shape exactly like the solver's parts */
 function meshToSTL(m) {
@@ -7099,10 +7302,10 @@ async function rebuildPart(fit) {
     partInfo = out.body ? (() => { const R = out.R, vol = R.measureVolume(out.body), area = R.measureArea(out.body), b = out.body.boundingBox.bounds, mat = PMAT[state.part.material] || PMAT.aluminium;
       /* P1d: a welded frame is steel, so its kernel mass uses 7.85 kg/dm³ and carries the simplified-section label */
       const weld = weldSectionSummary(state.part.features), rho = weld ? 7.85 : mat[1];
-      return { vol, area, size: [0, 1, 2].map((k) => b[1][k] - b[0][k]), mass: vol / 1000 * rho, rho, weld, mat }; })()
+      return { vol, area, size: [0, 1, 2].map((k) => b[1][k] - b[0][k]), mass: vol / 1000 * rho, rho, weld, mat, sheet: out.sheet || null }; })()
       : (out.surfs && out.surfs.length ? (() => { const R = out.R, area = out.surfs.reduce((a, x) => a + R.measureArea(x), 0), b = out.surfs[0].boundingBox.bounds, mat = PMAT[state.part.material] || PMAT.aluminium;
         /* a surface has an area, not a volume: reporting 0 cm3 and 0 g would be numbers that are not true */
-        return { surface: true, area, size: [0, 1, 2].map((k) => b[1][k] - b[0][k]), vol: null, mass: null, rho: mat[1], mat }; })() : null);
+        return { surface: true, area, size: [0, 1, 2].map((k) => b[1][k] - b[0][k]), vol: null, mass: null, rho: mat[1], mat, sheet: null }; })() : null);
   } catch (e) {
     partInfo = null; say(h('div', { class: 'warnbox bad' }, h('b', null, L('The CAD kernel could not load', 'Kernel CAD tidak bisa dimuat')),
       para(L(`The part tools need the kernel files in a kernel/ (or Kernel/) folder next to index.html (${String(e.message || e).slice(0, 120)}).`, `Alat part butuh file kernel di folder kernel/ (atau Kernel/) di samping index.html (${String(e.message || e).slice(0, 120)}).`))));
@@ -7130,7 +7333,8 @@ function partTool(k, preset, label) {
   if (k === 'measure') { partArm = null; partSel = 'measure'; cadTab = 'design'; renderCad(); return; }
   const first = !state.part.features.some((f) => f.type === 'shape' || f.type === 'push');
   /* Push/Pull, Revolve and Smart Dimension all work on a sketch before there is a body */
-  if (first && !['shape', 'sketch', 'push', 'revolve', 'sweep', 'loft', 'rib', 'dim', 'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
+  if (first && !['shape', 'sketch', 'push', 'revolve', 'sweep', 'loft', 'rib', 'dim', 'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick',
+    'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
   if (k === 'push' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Extrude needs a sketch: draw one first.', 'Extrude butuh sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'revolve' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Revolve needs a sketch: draw the profile first.', 'Revolve butuh sketch: buat profilnya dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'dim' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Smart Dimension drives a sketch size: draw a sketch first.', 'Smart Dimension mengatur ukuran sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
@@ -8429,15 +8633,18 @@ const RIBBON = [
       T('Delete Face', 'delface', 'no', 'Remove faces and heal the gap. Healing is not in this kernel wrapper yet (Batch 5).', 'Hapus muka dan tutup celahnya. Healing belum ada di wrapper kernel ini (Batch 5).', 'Remove Face'),
       T('Thicken', 'thick', 'on', 'Make a solid wall of the thickness you give: the solid between the surface profile and that same profile offset by the thickness in its own plane, with the volume measured by the kernel.', 'Buat dinding solid setebal yang kamu beri: solid antara profil surface dan profil yang sama yang di-offset setebal itu di bidangnya, dengan volume diukur kernel.', 'Thicken', { part: 'surfthick' })]]]],
   ['sheet', 'Sheet Metal', 'Sheet Metal', [
-    ['Flanges', [T('Base Flange', 'flat', 'mk1', 'Sheet-metal part from a sketch, with thickness and bend radius.', 'Part sheet metal dari sketch, dengan tebal dan radius tekuk.', 'Base Feature'),
-      T('Edge Flange', 'flange', 'mk1', 'Bend a wall up from an edge.', 'Tekuk dinding naik dari sebuah tepi.', 'Flange'), T('Miter Flange', 'flange', 'mk1', 'Flange along several edges with mitred corners.', 'Flange sepanjang beberapa tepi dengan sudut miter.', 'Contour Flange'),
-      T('Hem', 'hem', 'mk1', 'Fold an edge back on itself.', 'Lipat tepi ke dirinya sendiri.', ''), T('Jog', 'jog', 'mk1', 'Two bends from a sketch line.', 'Dua tekukan dari garis sketch.', '')]],
-    ['Bends', [T('Sketched Bend', 'bend', 'mk1', 'Bend along a sketch line.', 'Tekuk sepanjang garis sketch.', 'Bend'), T('Unfold / Fold', 'unfold', 'mk1', 'Open bends to add features, then fold back.', 'Buka tekukan untuk menambah fitur, lalu lipat lagi.', ''),
+    ['Flanges', [T('Base Flange', 'flat', 'on', 'The plate every sheet-metal step stands on: thickness, inside bend radius and the K-factor (the workshop table, or one you type). Built by the kernel and measured.', 'Pelat tempat semua langkah sheet metal berdiri: tebal, radius tekuk dalam, dan K-factor (tabel bengkel, atau yang kamu ketik). Dibangun kernel dan diukur.', 'Base Feature', { part: 'smbase' }),
+      T('Edge Flange', 'flange', 'on', 'Bend a leg up from +X, -X, +Y or -Y at 45° to 135°: the kernel builds the bend sector and the leg, and the step reports the allowance it used.', 'Tekuk kaki dari +X, -X, +Y, atau -Y pada 45° sampai 135°: kernel membangun sektor tekuk dan kakinya, dan langkahnya melaporkan allowance yang dipakai.', 'Flange', { part: 'smedge' }),
+      T('Miter Flange', 'flange', 'on', 'Legs on two adjacent edges, mitred at 45° through the outer corner: both bends and the mitre are kernel geometry.', 'Kaki di dua tepi bersebelahan, miter 45° lewat sudut luar: kedua tekukan dan miternya geometri kernel.', 'Contour Flange', { part: 'smmiter' }),
+      T('Hem', 'hem', 'no', 'Fold an edge back on itself. With the inside radius the shop table gives, a 180° fold puts the outer surface of the bend back through the plate the bend started from, so the kernel would merge the sheet with itself and report a volume that is not a part. Grey until the fold is modelled as the sheet is (Batch 3).', 'Lipat tepi ke dirinya sendiri. Dengan radius dalam dari tabel bengkel, lipatan 180° membuat permukaan luar tekukan menembus pelat asalnya, jadi kernel akan menggabungkan lembaran itu dengan dirinya sendiri dan melaporkan volume yang bukan part. Abu-abu sampai lipatan dimodelkan seperti lembaran sebenarnya (Batch 3).', '')]], 
+    ['Bends', [T('Sketched Bend', 'bend', 'on', 'Bend the part along a line at the distance you give: the part beyond the line is turned by the kernel and the bend sector closes the gap. Refused if the line is outside the part.', 'Tekuk part di garis pada jarak yang kamu beri: bagian di luar garis diputar kernel dan sektor tekuk menutup celahnya. Ditolak bila garisnya di luar part.', 'Bend', { part: 'smbend' }),
+      T('Unfold / Fold', 'unfold', 'on', 'Open the bends into the flat plate of the developed length, then fold back: both states are kernel solids, and the flat is the chain of allowances, not the folded volume divided by the thickness.', 'Buka tekukan jadi pelat datar sepanjang bentangan, lalu lipat kembali: kedua keadaan adalah solid kernel, dan bentangannya adalah rangkaian allowance, bukan volume terlipat dibagi tebal.', '', { part: 'smunfold' }),
+      T('Jog', 'jog', 'no', 'Two opposite bends from a sketch line. In this sector model the second bend leaves the lower plate inside the web it just made, so the sheet would pass through itself: grey until the fold model can carry a web (Batch 3).', 'Dua tekukan berlawanan dari garis sketch. Pada model sektor ini tekukan kedua meninggalkan pelat bawah di dalam web yang baru dibuat, jadi lembaran menembus dirinya sendiri: abu-abu sampai model lipatan bisa membawa web (Batch 3).', ''),
       T('Bend Allowance', 'bend', 'on', 'One bend: BA = θ·(R + K·t), the setback and the straight length, with the K-factor labelled a workshop default. Opens in the Edit page of the left panel.', 'Satu tekukan: BA = θ·(R + K·t), setback, dan panjang lurus, dengan K-factor disebut default bengkel. Terbuka di halaman Edit panel kiri.', 'Sheet Metal Bend, Bend Deduction', 'sheetMetalBend'),
-      T('Flat Pattern', 'flat', 'on', 'The flat length of this bend chain and a DXF of the flat part with its bend line. Opens in the Edit page of the left panel.', 'Panjang bentangan rangkaian tekuk ini dan DXF part datar dengan garis tekuknya. Terbuka di halaman Edit panel kiri.', 'Unfold, Flat Pattern DXF', 'sheetMetalFlat'),
-      T('Flatten', 'flat', 'mk1', 'Flat pattern with bend lines, for laser cutting.', 'Pola datar dengan garis tekuk, untuk laser cutting.', 'Flat Pattern'),
-      T('Corner Relief', 'relief', 'mk1', 'Relief cuts where bends meet.', 'Potongan relief di pertemuan tekukan.', 'Closed Corner'),
-      T('Forming Tool', 'form', 'no', 'Louvres, embosses, lances.', 'Louvre, emboss, lance.', 'Punch'), T('Convert to Sheet Metal', 'flat', 'no', 'Turn a solid into sheet metal.', 'Ubah solid menjadi sheet metal.', '')]]]],
+      T('Flat Pattern', 'flat', 'on', 'The flat length of this bend chain and a DXF of the flat part with its bend lines. Opens in the Edit page of the left panel.', 'Panjang bentangan rangkaian tekuk ini dan DXF part datar dengan garis tekuknya. Terbuka di halaman Edit panel kiri.', 'Unfold, Flat Pattern DXF', 'sheetMetalFlat'),
+      T('Flatten', 'flat', 'on', 'The flat pattern of the part you built: a plate of the developed length, with a DXF that names every bend, its radius, its K and its allowance.', 'Bentangan datar part yang kamu bangun: pelat sepanjang bentangan, dengan DXF yang menyebut tiap tekukan, radius, K, dan allowance-nya.', 'Flat Pattern', { part: 'smflatten' }),
+      T('Corner Relief', 'relief', 'on', 'Cut a round or square relief notch at a picked corner of the part: the kernel cuts it and the step reports what it removed.', 'Potong relief bulat atau kotak di sudut part yang dipilih: kernel memotongnya dan langkahnya melaporkan berapa yang dibuang.', 'Closed Corner', { part: 'smrelief' }),
+      T('Forming Tool', 'form', 'no', 'Louvres, embosses, lances.', 'Louvre, emboss, lance.', 'Punch'), T('Convert to Sheet Metal', 'flat', 'on', 'Take thickness and bend radius from the plate already open, so the sheet-metal steps can work on it. The thickness is measured from the body; the volume does not change.', 'Ambil tebal dan radius tekuk dari pelat yang sudah terbuka, supaya langkah sheet metal bisa bekerja di atasnya. Tebalnya diukur dari bodi; volumenya tidak berubah.', '', { part: 'smconvert' })]]]],
   ['weld', 'Weldments', 'Weldment', [
     ['Frame', [T('Structural Member', 'member', 'on', 'Standard profiles along straight sketch lines: SHS and CHS (EN 10219), L (EN 10056), UPN and IPE (EN 10365), each row naming its standard. Ends are cut at shared corners on request.', 'Profil standar sepanjang garis sketch lurus: SHS dan CHS (EN 10219), L (EN 10056), UPN dan IPE (EN 10365), tiap baris menyebut standarnya. Ujung dipotong di sudut bersama bila diminta.', 'Frame Generator', P('member')),
       T('Trim/Extend', 'trim', 'no', 'Trim members against each other. Today the member step cuts its own ends at shared corners (half the profile each end); trimming one member against another is not built.', 'Potong member satu sama lain. Saat ini langkah member memotong ujungnya sendiri di sudut bersama (setengah profil tiap ujung); memotong member terhadap member lain belum ada.', 'Notch, Miter'), T('End Cap', 'endcap', 'on', 'A plate of the profile size at both ends of every member in the sketch.', 'Pelat seukuran profil di kedua ujung tiap member pada sketch.', '', P('endcap')),
@@ -13405,6 +13612,13 @@ function sheetMetalPanel() {
       para(L(K_SOURCE.replace('workshop default, change it to your tooling sheet', 'workshop default, change it to your tooling sheet.'), K_SOURCE), 'm'),
       h('p', { class: 'hint' }, L('The folded 3D part and the DXF below use this flat length; the bend line is drawn in layer BEND.', 'Part 3D terlipat dan DXF di bawah memakai panjang bentangan ini; garis tekuk digambar di layer BEND.')));
     window.__lastFlat = f2;
+    /* S16: when a sheet-metal part is open, the panel also exports that part's own chain of bends */
+    const chain = partInfo && partInfo.sheet && partInfo.sheet.folds && partInfo.sheet.folds.length ? partInfo.sheet : null;
+    if (chain) out.append(h('div', { class: 'sm-f', 'data-chain': String(chain.folds.length) },
+      h('div', null, L(`From the open part: ${chain.folds.length} bend(s), developed length ${f(chain.flat, 2)} mm, t ${f(chain.t, 2)} mm, ${f(chain.W, 1)} mm wide`,
+        `Dari part yang terbuka: ${chain.folds.length} tekukan, bentangan ${f(chain.flat, 2)} mm, t ${f(chain.t, 2)} mm, lebar ${f(chain.W, 1)} mm`)),
+      h('button', { class: 'chip primary', id: 'sm-chain-dxf', onclick: () => dlText(smFlatDxf({ flat: chain.flat, w: chain.W, t: chain.t, folds: chain.folds }), 'idris-flat-chain.dxf', 'application/dxf') },
+        L("Download the part's flat DXF", 'Unduh DXF bentangan part'))));
   };
   const dlg = h('div', { class: 'libdlg', id: 'smdlg', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Sheet Metal', onclick: (e) => { if (e.target === dlg) close(); } },
     h('div', { class: 'lib-in tool-in' }, h('div', { class: 'lib-h' }, h('b', null, 'Sheet Metal'),
