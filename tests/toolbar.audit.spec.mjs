@@ -48,6 +48,8 @@ const snapshot = () => page.evaluate(() => ({
   dialogs: [...document.querySelectorAll('.libdlg,.ribpop,#drawdlg,#bomdlg,#expoDlg,#sectdlg')].map((d) => d.id || d.className).join(','),
   left: (document.querySelector('#cadLeft') || {}).textContent || '',
   props: (document.querySelector('#cadProps') || {}).textContent || '',
+  /* S15: the Properties section shares the Edit page, and several tools open their own page there */
+  edit: (document.querySelector('#lppEdit') || {}).textContent || '',
 }));
 
 async function audit(stateName, part) {
@@ -75,6 +77,7 @@ async function audit(stateName, part) {
       const did = [];
       if (after.dialogs !== before.dialogs) did.push('dialog:' + after.dialogs);
       if (after.props !== before.props) did.push('panel');
+      if (after.edit !== before.edit) did.push('edit page');
       if (after.left !== before.left) did.push('left panel');
       if (after.chat !== before.chat) did.push('chat');
       if (download) did.push('download');

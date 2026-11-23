@@ -2119,6 +2119,17 @@ const NAMES = { power_kw: 'power', input_rpm: 'input speed', gear_ratio: 'gear r
 const UNITS = { power_kw: ' kW', input_rpm: ' rpm', envelope_width: ' mm', envelope_height: ' mm', envelope_depth: ' mm', wall_thickness: ' mm' };
 
 const $ = (s) => document.querySelector(s);
+/* S15: the Properties section is moved between left-panel pages, so a tool that clears a page can take it with it.
+ * Ask for it through propsEl(): it is put back instead of the next part render writing into nothing. */
+const propsEl = () => {
+  let el = document.querySelector('#cadProps');
+  if (!el) {
+    el = document.createElement('section');
+    el.className = 'cad-only cprops'; el.id = 'cadProps'; el.setAttribute('aria-label', 'Properties');
+    (document.querySelector('#lppEdit') || document.querySelector('.pane-tree') || document.body).append(el);
+  }
+  return el;
+};
 const chatEl = $('#chat'), inp = $('#inp'), sendBtn = $('#send');
 const narrow = () => matchMedia('(max-width:1180px)').matches;
 const phone = () => matchMedia('(max-width:700px)').matches;
@@ -5559,7 +5570,16 @@ const TOOL_GROUPS = [
   ['dim', 'Smart Dimension', 'drive one size of a sketch; the part rebuilds from it'],
   ['wall', 'Wall', 'shell with an open top or bottom · draft and ribs later'],
   ['bodies', 'Bodies', 'mirror the body and join, or move it · split later'],
-  ['measure', 'Measure', 'volume, surface area, size and mass of the part']];
+  ['measure', 'Measure', 'volume, surface area, size and mass of the part'],
+  /* S15: the surface steps also live in the rail palette, in the order an engineer uses them */
+  ['surfext', 'Extruded Surface', 'push a closed sketch along its normal into a shell'],
+  ['surfrev', 'Revolved Surface', 'turn a sketch into a shell around X, Y or Z'],
+  ['surfloft', 'Lofted Surface', 'blend two or three closed sketches into one surface'],
+  ['surfsweep', 'Swept Surface', 'sweep a profile sketch along a path sketch'],
+  ['surfplane', 'Planar Surface', 'a flat face from one closed sketch loop'],
+  ['surfoffset', 'Offset Surface', 'copy the surface body at a distance (kernel offset)'],
+  ['surfknit', 'Knit Surface', 'sew the surface pieces, optionally into a solid'],
+  ['surfthick', 'Thicken', 'turn the surface body into a solid wall']];
 const plannedWhy = () => L('Not in this build yet. Ask IDRIS for what you need.', 'Belum ada di versi ini. Minta ke IDRIS apa yang kamu butuhkan.');
 let LAYOUT = (() => { try { return localStorage.getItem('idris-layout') === 'classic' ? 'classic' : 'cad'; } catch (e) { return 'cad'; } })();
 let cadTab = 'design';
@@ -5612,7 +5632,7 @@ function renderCad() {
   lf.append(h('div', { class: 'lpsep' }));
   lf.append(lpProperties());
   /* right: properties of the selected part or variant */
-  const pr = $('#cadProps'); pr.innerHTML = '';
+  const pr = propsEl(); pr.innerHTML = '';
   if (!v) { pr.append(h('h2', null, L('Properties', 'Properti')), h('p', { class: 'hint' }, L('Tell IDRIS what you need in the command box or the chat. Editable values appear here.', 'Ceritakan kebutuhanmu di kotak perintah atau chat, lalu buka sebuah varian. Nilai yang bisa diubah muncul di sini.'))); return; }
   const part = state.hiPart >= 0 && viewer.parts ? viewer.parts[state.hiPart] : null;
   if (part) {
@@ -5996,7 +6016,9 @@ function lpProperties() {
     } else {
       wrap.append(lpRow(L('Part', 'Part'), p.name), lpRow(L('Material', 'Material'), (PMAT[p.material] || PMAT.aluminium)[0], L('standard', 'standar')),
         lpRow(L('Feature steps', 'Langkah fitur'), p.features.length));
-      if (partInfo) { wrap.append(lpRow(L('Mass', 'Massa'), f(partInfo.mass, 1) + ' g'), lpRow(L('Size', 'Ukuran'), partInfo.size.map((x) => f(x, 1)).join(' × ') + ' mm'));
+      if (partInfo && partInfo.surface) { wrap.append(lpRow(L('Surface area', 'Luas permukaan'), f(partInfo.area / 100, 2) + ' cm²'), lpRow(L('Size', 'Ukuran'), partInfo.size.map((x) => f(x, 1)).join(' × ') + ' mm'));
+        wrap.append(h('p', { class: 'lphint' }, L('A surface body has no volume or mass until you Thicken it (Surface → Thicken).', 'Body surface belum punya volume atau massa sampai ditebalkan (Surface → Thicken).'))); }
+      else if (partInfo) { wrap.append(lpRow(L('Mass', 'Massa'), f(partInfo.mass, 1) + ' g'), lpRow(L('Size', 'Ukuran'), partInfo.size.map((x) => f(x, 1)).join(' × ') + ' mm'));
         if (partInfo.weld) wrap.append(h('p', { class: 'lphint' }, weldMassNote(partInfo.weld))); }
       const g = p.gen;
       if (g && Array.isArray(g.params) && g.params.length) {
@@ -6008,7 +6030,7 @@ function lpProperties() {
     wrap.append(h('div', { class: 'cmat', style: 'margin-top:6px' }, h('span', null, L('Material', 'Material')),
       h('select', { onchange: (e) => { p.material = e.target.value; rebuildPart(); }, 'aria-label': L('Material', 'Material') },
         Object.entries(PMAT).map(([k, [n, rho]]) => h('option', { value: k, selected: k === p.material }, `${n} · ${rho} g/cm³`))),
-      partInfo ? h('span', null, partInfo.weld ? L(`Mass ${f(partInfo.mass, 1)} g (kernel volume × 7.85 kg/dm³ steel) · ${weldMassNote(partInfo.weld)}`, `Massa ${f(partInfo.mass, 1)} g (volume kernel × 7,85 kg/dm³ baja) · ${weldMassNote(partInfo.weld)}`)
+      partInfo && !partInfo.surface ? h('span', null, partInfo.weld ? L(`Mass ${f(partInfo.mass, 1)} g (kernel volume × 7.85 kg/dm³ steel) · ${weldMassNote(partInfo.weld)}`, `Massa ${f(partInfo.mass, 1)} g (volume kernel × 7,85 kg/dm³ baja) · ${weldMassNote(partInfo.weld)}`)
         : L(`Mass ${f(partInfo.mass, 1)} g (kernel volume × typical density)`, `Massa ${f(partInfo.mass, 1)} g (volume kernel × densitas tipikal)`)) : null));
     wrap.append(h('div', { class: 'pdoc' }, h('button', { class: 'linkbtn', onclick: () => renamePart() }, L('Rename part', 'Ganti nama part')), ' · ',
       h('button', { class: 'linkbtn', onclick: () => leavePart() }, L('Close part', 'Tutup part'))));
@@ -6658,8 +6680,41 @@ const FEAT = {
         N('value', 'Value', 'Nilai', 'mm', 40, { min: 0.1 })];
     },
     label: (p) => `${p.param} = ${p.value}${p.param === 'n' ? '' : ' mm'}` },
+  /* S15: the surface steps. Each one builds a real shell in the kernel and reports the area the kernel measures;
+     the pieces stack into one surface body, and Thicken turns that body into a solid wall of the thickness you
+     give. The wall is the solid between the profiles and the same profiles offset by that thickness, so the
+     volume Thicken reports is the kernel's, not an area times a number. */
+  surfext: { en: 'Extruded Surface', id: 'Extruded Surface', get fields() {
+      const o = sketchOptions();
+      return [S('sketch', 'Profile sketch', 'Sketch profil', o, o[0][0]), N('len', 'Distance', 'Jarak', 'mm', 30, { min: 0.1 })]; },
+    label: (p) => `${L('Extruded surface', 'Surface tarik')} ${p.len} mm` },
+  surfrev: { en: 'Revolved Surface', id: 'Revolved Surface', get fields() {
+      const o = sketchOptions();
+      return [S('sketch', 'Profile sketch', 'Sketch profil', o, o[0][0]), S('axis', 'Axis', 'Sumbu', [['X', ['X', 'X']], ['Y', ['Y', 'Y']], ['Z', ['Z', 'Z']]], 'Z'),
+        N('angle', 'Angle', 'Sudut', '\u00b0', 360, { min: 1 })]; },
+    label: (p) => `${L('Revolved surface', 'Surface putar')} ${p.angle}\u00b0 ${p.axis}` },
+  surfloft: { en: 'Lofted Surface', id: 'Lofted Surface', get fields() {
+      const o = sketchOptions(), m = [['', [L('(none)', '(tidak ada)')]], ...o];
+      return [S('from', 'From sketch', 'Dari sketch', o, o[0][0]), S('mid', 'Middle sketch (optional)', 'Sketch tengah (opsional)', m, ''),
+        S('to', 'To sketch', 'Ke sketch', o, o.length > 1 ? o[1][0] : o[0][0])]; },
+    label: (p) => `${L('Lofted surface', 'Surface loft')}${p.mid ? ' · 3 ' + L('profiles', 'profil') : ''}` },
+  surfsweep: { en: 'Swept Surface', id: 'Swept Surface', get fields() {
+      const o = sketchOptions();
+      return [S('profile', 'Profile sketch', 'Sketch profil', o, o[0][0]), S('path', 'Path sketch', 'Sketch lintasan', o, o.length > 1 ? o[1][0] : o[0][0])]; },
+    label: () => L('Swept surface', 'Surface sapu') },
+  surfplane: { en: 'Planar Surface', id: 'Planar Surface', get fields() {
+      const o = sketchOptions();
+      return [S('sketch', 'Closed loop sketch', 'Sketch loop tertutup', o, o[0][0])]; },
+    label: () => L('Planar surface', 'Surface datar') },
+  surfoffset: { en: 'Offset Surface', id: 'Offset Surface', fields: [N('dist', 'Distance', 'Jarak', 'mm', 2, { min: 0.1 })],
+    label: (p) => `${L('Offset surface', 'Surface offset')} ${p.dist} mm` },
+  surfknit: { en: 'Knit Surface', id: 'Knit Surface', fields: [S('solid', 'Result', 'Hasil', [['sheet', ['Surface (sewn)', 'Surface (dijahit)']], ['solid', ['Solid when the pieces close', 'Solid bila potongannya menutup']]], 'sheet')],
+    label: (p) => (p.solid === 'solid' ? L('Knit into a solid', 'Jahit menjadi solid') : L('Knit surfaces', 'Jahit surface')) },
+  surfthick: { en: 'Thicken', id: 'Thicken', fields: [N('t', 'Wall thickness', 'Tebal dinding', 'mm', 2, { min: 0.05 })],
+    label: (p) => `${L('Thicken', 'Tebalkan')} ${p.t} mm` },
 };
-const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'mold', 'draft', 'dim', 'measure'];
+const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'mold', 'draft', 'dim', 'measure',
+  'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
 const defaults = (type) => Object.fromEntries(FEAT[type].fields.map((x) => [x.k, x.def]));
 
@@ -6689,6 +6744,22 @@ async function buildPart(pArg) {
   /* Smart Dimension: a dimension step drives one size of the sketch it points at, so the sketch is built with that value.
      Errors are kept in dimErr and raised in the dim step, because the loop below clears ft.err on every pass. */
   const dims = {}, dimErr = {};
+  /* S15: surfaces. Every surface step is a real shell in OpenCascade; the pieces stack into one surface body.
+     Each piece keeps the sketch it was built from, so Thicken can offset that same profile by the wall thickness
+     and cut the wall out of the two solids. The kernel measures the area and the volume written in the note. */
+  const surfs = [];
+  const OC3 = typeof R.getOC === 'function' ? R.getOC() : null;
+  const v3 = (v) => [v.x, v.y, v.z];
+  const srfOn = (sk) => { const s2 = profile(sk.s).sketchOnPlane(sk.s.plane, sk.at); return { sk: s2, face: s2.face(), wire: s2.wire, dir: v3(s2.defaultDirection) }; };
+  const srfInset = (sk, t) => profile(sk.s).offset(-Math.abs(t), { lineJoinType: 'intersection' }).sketchOnPlane(sk.s.plane, sk.at);
+  const srfPrism = (wire, dir, len) => { const m = new OC3.BRepPrimAPI_MakePrism(wire.wrapped, new OC3.gp_Vec(dir[0] * len, dir[1] * len, dir[2] * len)); m.Build(); return R.cast(m.Shape()); };
+  const srfThru = (wires, solid) => { const m = new OC3.BRepOffsetAPI_ThruSections(!!solid, false, 1e-6); wires.forEach((w) => m.AddWire(w.wrapped)); m.Build(); if (!m.IsDone() || !m.Shape) throw new Error('thru'); return R.cast(m.Shape()); };
+  const srfRevol = (wire, org, dir, deg) => { const m = new OC3.BRepPrimAPI_MakeRevol(wire.wrapped, new OC3.gp_Ax1(new OC3.gp_Pnt(org[0], org[1], org[2]), new OC3.gp_Dir(dir[0], dir[1], dir[2])), deg * Math.PI / 180); m.Build(); return R.cast(m.Shape()); };
+  const srfOffsetShape = (sh, d) => { const m = new OC3.BRepOffsetAPI_MakeOffsetShape(); m.PerformByJoin(sh.wrapped, d, 1e-3, OC3.BRepOffset_Mode.BRepOffset_Skin, true, false, OC3.GeomAbs_JoinType.GeomAbs_Arc); if (!m.IsDone()) throw new Error('offset'); return R.cast(m.Shape()); };
+  const srfSew = (shapes) => { if (shapes.length === 1) return shapes[0]; const m = new OC3.BRepBuilderAPI_Sewing(1e-4); shapes.forEach((x) => m.Add(x.wrapped)); m.Perform(); return R.cast(m.SewedShape()); };
+  const srfBody = () => (surfs.length ? srfSew(surfs.map((x) => x.sh)) : null);
+  const srfSolidOf = (sh) => { const m = new OC3.BRepBuilderAPI_MakeSolid(OC3.TopoDS.Shell(sh.wrapped)); m.Build(); return R.cast(m.Solid()); };
+  const srfNeed = () => { if (!surfs.length) throw new Error(L('This needs a surface first: build one with Extruded, Revolved, Lofted, Swept or Planar Surface.', 'Ini butuh surface dulu: bangun dengan Extruded, Revolved, Lofted, Swept, atau Planar Surface.')); };
   for (const d of p.features) {
     if (d.type !== 'dim' || d.off) continue;
     const tgt = p.features.find((x) => x.id === d.p.step);
@@ -6890,6 +6961,100 @@ async function buildPart(pArg) {
         if (dimErr[ft.id]) throw new Error(dimErr[ft.id]);
         const tgt = p.features.find((x) => x.id === q.step);
         if (tgt && !ft.err) ft.note = L(`${q.param} = ${q.value}${q.param === 'n' ? '' : ' mm'} drives step ${p.features.indexOf(tgt) + 1}`, `${q.param} = ${q.value}${q.param === 'n' ? '' : ' mm'} mengatur langkah ${p.features.indexOf(tgt) + 1}`);
+      } else if (ft.type === 'surfext') {
+        /* S15: the profile wire is pushed along the sketch normal, so the kernel gives a real shell (four side faces
+           for a rectangle). The wall is the full prism minus the same prism on the profile offset by the thickness. */
+        const A = pickSketch(q.sketch), len = pos(q.len), P = srfOn(A);
+        const sh = srfPrism(P.wire, P.dir, len);
+        const area = R.measureArea(sh);
+        if (!(area > 0)) throw new Error(L('That profile made an empty surface: pick a closed sketch.', 'Profil itu menghasilkan surface kosong: pilih sketch tertutup.'));
+        surfs.push({ sh, wall: (t) => P.sk.extrude(len).cut(srfInset(A, t).extrude(len)) });
+        ft.surf = { kind: 'ext', area, len };
+        ft.note = L(`Extruded surface ${f(len, 2)} mm: area ${f(area, 1)} mm² (kernel). Thicken turns it into a wall.`, `Surface tarik ${f(len, 2)} mm: luas ${f(area, 1)} mm² (kernel). Thicken mengubahnya jadi dinding.`);
+        A.f.note = L(`Surface for step ${p.features.indexOf(ft) + 1}.`, `Surface untuk langkah ${p.features.indexOf(ft) + 1}.`);
+        if (sketch && sketch.s === A.s) { sketch.used = true; sketch = null; }
+      } else if (ft.type === 'surfplane') {
+        const A = pickSketch(q.sketch), P = srfOn(A);
+        const area = R.measureArea(P.face);
+        if (!(area > 0)) throw new Error(L('That sketch has no closed loop, so it makes no planar surface.', 'Sketch itu tidak punya loop tertutup, jadi tidak membuat surface datar.'));
+        surfs.push({ sh: P.face, wall: (t) => P.sk.extrude(t) });
+        ft.surf = { kind: 'plane', area };
+        ft.note = L(`Planar surface: area ${f(area, 1)} mm² (kernel). Thicken extrudes it by the wall thickness.`, `Surface datar: luas ${f(area, 1)} mm² (kernel). Thicken menariknya setebal dinding.`);
+        if (sketch && sketch.s === A.s) { sketch.used = true; sketch = null; }
+      } else if (ft.type === 'surfrev') {
+        const A = pickSketch(q.sketch), ang = +q.angle;
+        if (!(ang > 0 && ang <= 360)) throw new Error(L('The angle must be above 0\u00b0 and at most 360\u00b0.', 'Sudut harus di atas 0\u00b0 dan paling besar 360\u00b0.'));
+        const pl = A.s.plane, at = A.at, org = pl === 'XY' ? [0, 0, at] : pl === 'XZ' ? [0, at, 0] : [at, 0, 0];
+        const dir = q.axis === 'X' ? [1, 0, 0] : q.axis === 'Y' ? [0, 1, 0] : [0, 0, 1];
+        const P = srfOn(A);
+        let sh; try { sh = srfRevol(P.wire, org, dir, ang); } catch (e) { throw new Error(L(`The kernel could not revolve this profile around ${q.axis}: keep it clear of the axis.`, `Kernel tidak bisa memutar profil ini mengelilingi ${q.axis}: jaga jarak dari sumbunya.`)); }
+        const one = (x) => (Array.isArray(x) ? (x.length === 1 ? x[0] : x.reduce((a, b) => a.fuse(b))) : x);
+        surfs.push({ sh, wall: (t) => one(P.sk.revolve(dir, { origin: org, angle: ang })).cut(one(srfInset(A, t).revolve(dir, { origin: org, angle: ang }))) });
+        ft.surf = { kind: 'rev', area: R.measureArea(sh), angle: ang, axis: q.axis };
+        ft.note = L(`Revolved surface ${f(ang, 0)}\u00b0 about ${q.axis}: area ${f(R.measureArea(sh), 1)} mm² (kernel).`, `Surface putar ${f(ang, 0)}\u00b0 atas ${q.axis}: luas ${f(R.measureArea(sh), 1)} mm² (kernel).`);
+        if (sketch && sketch.s === A.s) { sketch.used = true; sketch = null; }
+      } else if (ft.type === 'surfloft') {
+        const A = pickSketch(q.from), B2 = pickSketch(q.to), M = q.mid ? pickSketch(q.mid) : null;
+        if (A.f.id === B2.f.id) throw new Error(L('Loft needs two different sketches, not the same one twice.', 'Loft butuh dua sketch berbeda, bukan sketch yang sama dua kali.'));
+        if (M && (M.f.id === A.f.id || M.f.id === B2.f.id)) throw new Error(L('The middle sketch must be a third sketch.', 'Sketch tengah harus sketch ketiga.'));
+        const parts = [A, ...(M ? [M] : []), B2];
+        let sh; try { sh = srfThru(parts.map((x) => srfOn(x).wire), false); } catch (e) { throw new Error(L('The kernel could not loft between these profiles: keep all of them closed and not twisted.', 'Kernel tidak bisa me-loft profil ini: jaga semuanya tertutup dan tidak terpuntir.')); }
+        surfs.push({ sh, wall: (t) => srfThru(parts.map((x) => srfOn(x).wire), true).cut(srfThru(parts.map((x) => srfInset(x, t).wire), true)) });
+        ft.surf = { kind: 'loft', profiles: parts.length, area: R.measureArea(sh) };
+        ft.note = L(`Lofted surface through ${parts.length} profile(s): area ${f(R.measureArea(sh), 1)} mm² (kernel).`, `Surface loft melalui ${parts.length} profil: luas ${f(R.measureArea(sh), 1)} mm² (kernel).`);
+        if (sketch && parts.some((x) => sketch.s === x.s)) { sketch.used = true; sketch = null; }
+      } else if (ft.type === 'surfsweep') {
+        const A = pickSketch(q.profile), B2 = pickSketch(q.path);
+        if (A.f.id === B2.f.id) throw new Error(L('Sweep needs two sketches: one profile, one path.', 'Sweep butuh dua sketch: satu profil, satu lintasan.'));
+        const pathDraw = p1PathDrawing(R, B2.s.ents || []);
+        if (!pathDraw) throw new Error(L('The path sketch needs one open chain of lines or arcs.', 'Sketch lintasan butuh satu rangkaian terbuka dari garis atau busur.'));
+        const pathSk = pathDraw.sketchOnPlane(B2.s.plane, B2.at), P = srfOn(A);
+        let sh; try { const m = new OC3.BRepOffsetAPI_MakePipe(pathSk.wire.wrapped, P.wire.wrapped); m.Build(); sh = R.cast(m.Shape()); }
+        catch (e) { throw new Error(L('The kernel could not sweep this profile along that path.', 'Kernel tidak bisa menyapu profil ini sepanjang lintasan itu.')); }
+        surfs.push({ sh, wall: (t) => R.genericSweep(P.wire, pathSk.wire, { withContact: false, transitionMode: 'right' })
+          .cut(R.genericSweep(srfInset(A, t).wire, pathSk.wire, { withContact: false, transitionMode: 'right' })) });
+        ft.surf = { kind: 'sweep', area: R.measureArea(sh) };
+        ft.note = L(`Swept surface: area ${f(R.measureArea(sh), 1)} mm² (kernel).`, `Surface sapu: luas ${f(R.measureArea(sh), 1)} mm² (kernel).`);
+        if (sketch && (sketch.s === A.s || sketch.s === B2.s)) { sketch.used = true; sketch = null; }
+      } else if (ft.type === 'surfoffset') {
+        srfNeed();
+        const base = srfBody(), dist = Math.abs(+q.dist);
+        if (!(dist > 0)) throw new Error(L('The offset distance must be above 0 mm.', 'Jarak offset harus di atas 0 mm.'));
+        let sh = null, sign = 1;
+        for (const sg of [1, -1]) { try { const o = srfOffsetShape(base, sg * dist); if (R.measureArea(o) > 0) { sh = o; sign = sg; break; } } catch (e) { /* try the other normal direction */ } }
+        if (!sh) throw new Error(L(`The kernel could not offset this surface ${f(dist, 2)} mm: use a smaller distance.`, `Kernel tidak bisa meng-offset surface ini ${f(dist, 2)} mm: pakai jarak lebih kecil.`));
+        surfs.push({ sh, wall: null });
+        ft.surf = { kind: 'offset', area: R.measureArea(sh), dist, sign };
+        ft.note = L(`Offset surface ${f(dist, 2)} mm ${sign > 0 ? 'inward' : 'outward'}, area ${f(R.measureArea(sh), 1)} mm² (kernel). A copy has no profile of its own, so Thicken cannot use it: thicken the sketch-built surface instead.`,
+          `Surface offset ${f(dist, 2)} mm ${sign > 0 ? 'ke dalam' : 'ke luar'}, luas ${f(R.measureArea(sh), 1)} mm² (kernel). Salinan tidak punya profil sendiri, jadi Thicken tidak bisa memakainya: tebalkan surface yang dibangun dari sketch.`);
+      } else if (ft.type === 'surfknit') {
+        srfNeed();
+        const pieces = surfs.slice(), walls = pieces.map((x) => x.wall), canWall = walls.every(Boolean);
+        const sewn = srfSew(pieces.map((x) => x.sh));
+        let sh = sewn;
+        if (q.solid === 'solid') { try { sh = srfSolidOf(sewn); } catch (e) { throw new Error(L('These surfaces do not close into a solid: sew them along shared edges, or keep the result a surface.', 'Surface ini tidak menutup jadi solid: jahit di tepi yang sama, atau biarkan sebagai surface.')); } }
+        surfs.length = 0;
+        surfs.push({ sh, wall: canWall ? (t) => walls.map((w) => w(t)).reduce((a, b) => a.fuse(b)) : null });
+        const solidVol = q.solid === 'solid' ? R.measureVolume(sh) : 0;
+        ft.surf = { kind: 'knit', pieces: pieces.length, solid: q.solid === 'solid', area: R.measureArea(sh), vol: solidVol };
+        ft.note = L(`Knitted ${pieces.length} piece(s): area ${f(R.measureArea(sh), 1)} mm²${q.solid === 'solid' ? `, closed solid volume ${f(solidVol / 1000, 2)} cm³` : ', still an open surface'} (kernel).`,
+          `Menjahit ${pieces.length} potongan: luas ${f(R.measureArea(sh), 1)} mm²${q.solid === 'solid' ? `, volume solid ${f(solidVol / 1000, 2)} cm³` : ', masih surface terbuka'} (kernel).`);
+      } else if (ft.type === 'surfthick') {
+        srfNeed();
+        const t = pos(q.t);
+        if (surfs.some((x) => !x.wall)) throw new Error(L('This surface body cannot be thickened in this build: an Offset Surface copy has no profile of its own to offset. Thicken the Extruded, Revolved, Lofted, Swept or Planar surface instead.', 'Body surface ini tidak bisa ditebalkan di build ini: salinan Offset Surface tidak punya profil sendiri untuk di-offset. Tebalkan surface Extruded, Revolved, Lofted, Swept, atau Planar.'));
+        let solid = null, n = 0;
+        for (const x of surfs) {
+          let w; try { w = x.wall(t); } catch (e) { throw new Error(L(`The kernel could not close a ${f(t, 2)} mm wall for this surface: use a smaller thickness.`, `Kernel tidak bisa menutup dinding ${f(t, 2)} mm untuk surface ini: pakai tebal lebih kecil.`)); }
+          if (!(R.measureVolume(w) > 0)) throw new Error(L(`A ${f(t, 2)} mm wall came out empty: use a smaller thickness.`, `Dinding ${f(t, 2)} mm kosong: pakai tebal lebih kecil.`));
+          solid = solid ? solid.fuse(w) : w; n++;
+        }
+        apply(solid, 'add');
+        const vol = R.measureVolume(solid), area = R.measureArea(solid);
+        ft.thick = { t, vol, area, pieces: n };
+        surfs.length = 0;
+        ft.note = L(`Solid from ${n} surface piece(s): wall ${f(t, 2)} mm, volume ${f(vol / 1000, 2)} cm³, area ${f(area, 1)} mm² (kernel). The wall is the surface profile offset by the thickness in its own plane, so the volume is the kernel's own difference, not an area times a number. The surface body became this solid.`,
+          `Solid dari ${n} potongan surface: dinding ${f(t, 2)} mm, volume ${f(vol / 1000, 2)} cm³, luas ${f(area, 1)} mm² (kernel). Dindingnya adalah profil surface yang di-offset setebal itu di bidangnya sendiri, jadi volumenya selisih dari kernel, bukan luas kali angka. Body surface menjadi solid ini.`);
       } else if (ft.type === 'wall') {
         if (!body) throw new Error(L('Wall needs a body.', 'Wall butuh body.'));
         const [mn, mx] = bb(), z = q.open === 'top' ? mx[2] : mn[2];
@@ -6901,7 +7066,7 @@ async function buildPart(pArg) {
     } catch (e) { ft.err = String((e && e.message) || e).slice(0, 220) || L('The kernel could not build this feature.', 'Kernel tidak bisa membangun fitur ini.'); }
   }
   const open = sketches.filter((x) => !x.used);
-  return { R, body, open, profile };
+  return { R, body, open, profile, surfs: surfs.map((x) => x.sh) };
 }
 /* triangles → binary STL, so the viewer shows the kernel's shape exactly like the solver's parts */
 function meshToSTL(m) {
@@ -6922,15 +7087,22 @@ async function rebuildPart(fit) {
     const out = await buildPart(); if (seq !== partSeq || !state.part) return;
     partShape = out.body; const parts = [];
     if (out.body) parts.push({ buf: meshToSTL(zUp(out.body.mesh({ tolerance: 0.05, angularTolerance: 0.2 }))), kind: 'part', name: state.part.name });
+    /* S15: a surface body is drawn too: an engineer must see the shell before it becomes a wall */
+    (out.surfs || []).forEach((sh, i) => { try { parts.push({ buf: meshToSTL(zUp(sh.mesh({ tolerance: 0.05, angularTolerance: 0.2 }))), kind: 'surface', name: `Surface ${i + 1}` }); } catch (e) { /* preview only */ } });
     out.open.forEach((s, i) => { try { const f = out.profile(s.s).sketchOnPlane(s.s.plane, s.at).extrude(0.2); parts.push({ buf: meshToSTL(zUp(f.mesh({ tolerance: 0.05, angularTolerance: 0.2 }))), kind: 'sketch', name: `Sketch ${i + 1}` }); } catch (e) { /* preview only */ } });
-    if (parts.length) { const cam = fit ? null : [viewer.yaw, viewer.pitch, viewer.dist, viewer.target]; viewer.setParts(parts);
+    /* S15: the camera frames the first thing that appears, even when that thing is a surface, not a solid */
+    const hadView = !$('#vempty').classList.contains('hide');
+    if (parts.length) { const cam = (fit || !hadView) ? null : [viewer.yaw, viewer.pitch, viewer.dist, viewer.target]; viewer.setParts(parts);
       if (cam) { [viewer.yaw, viewer.pitch, viewer.dist, viewer.target] = cam; viewer.dirty = true; }
       $('#vempty').classList.add('hide'); }
     else { viewer.clear(); $('#vempty').classList.remove('hide'); }
     partInfo = out.body ? (() => { const R = out.R, vol = R.measureVolume(out.body), area = R.measureArea(out.body), b = out.body.boundingBox.bounds, mat = PMAT[state.part.material] || PMAT.aluminium;
       /* P1d: a welded frame is steel, so its kernel mass uses 7.85 kg/dm³ and carries the simplified-section label */
       const weld = weldSectionSummary(state.part.features), rho = weld ? 7.85 : mat[1];
-      return { vol, area, size: [0, 1, 2].map((k) => b[1][k] - b[0][k]), mass: vol / 1000 * rho, rho, weld, mat }; })() : null;
+      return { vol, area, size: [0, 1, 2].map((k) => b[1][k] - b[0][k]), mass: vol / 1000 * rho, rho, weld, mat }; })()
+      : (out.surfs && out.surfs.length ? (() => { const R = out.R, area = out.surfs.reduce((a, x) => a + R.measureArea(x), 0), b = out.surfs[0].boundingBox.bounds, mat = PMAT[state.part.material] || PMAT.aluminium;
+        /* a surface has an area, not a volume: reporting 0 cm3 and 0 g would be numbers that are not true */
+        return { surface: true, area, size: [0, 1, 2].map((k) => b[1][k] - b[0][k]), vol: null, mass: null, rho: mat[1], mat }; })() : null);
   } catch (e) {
     partInfo = null; say(h('div', { class: 'warnbox bad' }, h('b', null, L('The CAD kernel could not load', 'Kernel CAD tidak bisa dimuat')),
       para(L(`The part tools need the kernel files in a kernel/ (or Kernel/) folder next to index.html (${String(e.message || e).slice(0, 120)}).`, `Alat part butuh file kernel di folder kernel/ (atau Kernel/) di samping index.html (${String(e.message || e).slice(0, 120)}).`))));
@@ -6958,7 +7130,7 @@ function partTool(k, preset, label) {
   if (k === 'measure') { partArm = null; partSel = 'measure'; cadTab = 'design'; renderCad(); return; }
   const first = !state.part.features.some((f) => f.type === 'shape' || f.type === 'push');
   /* Push/Pull, Revolve and Smart Dimension all work on a sketch before there is a body */
-  if (first && !['shape', 'sketch', 'push', 'revolve', 'sweep', 'loft', 'rib', 'dim'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
+  if (first && !['shape', 'sketch', 'push', 'revolve', 'sweep', 'loft', 'rib', 'dim', 'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
   if (k === 'push' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Extrude needs a sketch: draw one first.', 'Extrude butuh sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'revolve' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Revolve needs a sketch: draw the profile first.', 'Revolve butuh sketch: buat profilnya dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'dim' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Smart Dimension drives a sketch size: draw a sketch first.', 'Smart Dimension mengatur ukuran sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
@@ -6967,7 +7139,7 @@ function partTool(k, preset, label) {
   if (narrow() || document.body.classList.contains('hide-chat')) setChat(true);
   renderCad(); setLpTab('edit');
   requestAnimationFrame(() => {
-    const pr = $('#cadProps'), form = document.querySelector('#cadProps .pform');
+    const pr = propsEl(), form = document.querySelector('#cadProps .pform');
     if (form && form.scrollIntoView) form.scrollIntoView({ block: 'nearest' }); else if (pr) pr.scrollTop = 0;
     const i = document.querySelector('#cadProps .pform input') || document.querySelector('#cadProps .pform select'); if (i) { i.focus(); if (i.select) i.select(); }
     if (k === 'sketch') updateSketchGhost(0); else viewer.setPreview(null);
@@ -7911,7 +8083,7 @@ function renderPartCad() {
   const ck = $('#cchecks'); ck.innerHTML = ''; const bad = p.features.filter((f) => f.err), I = partInfo;
   ck.append(h('b', null, L('Checks', 'Cek')), h('ul', null,
     h('li', null, h('span', { class: 'cdot ' + (partBusy ? 'run' : bad.length ? 'bad' : I ? 'ok' : ''), 'aria-hidden': 'true' }), h('b', null, L('Model', 'Model')),
-      h('span', null, partBusy ? L('rebuilding…', 'membangun ulang…') : bad.length ? L(`${bad.length} feature(s) failed — see the tree`, `${bad.length} fitur gagal — lihat pohon`) : I ? L(`solid · ${p.features.filter((f) => !f.off).length} features`, `solid · ${p.features.filter((f) => !f.off).length} fitur`) : L('empty', 'kosong'))),
+      h('span', null, partBusy ? L('rebuilding…', 'membangun ulang…') : bad.length ? L(`${bad.length} feature(s) failed — see the tree`, `${bad.length} fitur gagal — lihat pohon`) : I ? (I.surface ? L(`surface · ${p.features.filter((f) => !f.off).length} features · no volume yet`, `surface · ${p.features.filter((f) => !f.off).length} fitur · belum ada volume`) : L(`solid · ${p.features.filter((f) => !f.off).length} features`, `solid · ${p.features.filter((f) => !f.off).length} fitur`)) : L('empty', 'kosong'))),
     I ? h('li', null, h('span', { class: 'cdot ok', 'aria-hidden': 'true' }), h('b', null, L('Size', 'Ukuran')), h('span', null, I.size.map((x) => f(x, 1)).join(' × ') + ' mm')) : null,
     h('li', null, h('span', { class: 'cdot warn', 'aria-hidden': 'true' }), h('b', null, L('Strength', 'Kekuatan')), h('span', null, L('not checked: parts have no loads yet', 'belum dicek: part belum punya beban')))),
     h('span', { class: 'u' }, 'mm · g'));
@@ -7943,11 +8115,11 @@ function renderPartCad() {
   lf.append(h('div', { class: 'lpsep' }));
   lf.append(lpProperties());
   /* right: properties */
-  const pr = $('#cadProps'); pr.innerHTML = '';
+  const pr = propsEl(); pr.innerHTML = '';
   if (partArm && partArm.p && partArm.p.prof === 'ents') { renderSketchPanel(pr); }
   else if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
-      h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : TOOL_GROUPS.find((g) => g[0] === partArm.type)[2]),
+      h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : (TOOL_GROUPS.find((g) => g[0] === partArm.type) || [null, null, ''])[2]),
       pform(partArm.type, partArm.p, () => { p.features.push({ id: Date.now().toString(36), type: partArm.type, p: { ...partArm.p } }); partSel = p.features.length - 1; const fit = p.features.length === 1; partArm = null; viewer.setPreview(null); hideSkLabel(); if (narrow()) setChat(false); setLpTab('tree'); rebuildPart(fit); },
         L('Add & build', 'Tambah & bangun'), () => { partArm = null; viewer.setPreview(null); hideSkLabel(); renderCad(); setLpTab('tree'); }));
   } else if (fsel && fsel.type === 'sketch' && fsel.p.prof === 'ents') {
@@ -7969,7 +8141,10 @@ function renderPartCad() {
     const mat = PMAT[state.part.material] || PMAT.aluminium;
     const src = (typeof PMAT_SRC !== 'undefined' && PMAT_SRC[state.part.material]) || L('IDRIS material table (typical value, not a certified lot)', 'Tabel material IDRIS (nilai tipikal, bukan sertifikat lot)');
     pr.append(h('h2', null, h('span', null, L('Mass Properties', 'Properti Massa')), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))));
-    if (I) pr.append(kvs([[L('Volume', 'Volume'), `${f(I.vol / 1000, 2)} cm³`], [L('Surface area', 'Luas permukaan'), `${f(I.area / 100, 2)} cm²`],
+    if (I && I.surface) pr.append(kvs([[L('Surface area', 'Luas permukaan'), `${f(I.area / 100, 2)} cm²`],
+      [L('Size X × Y × Z', 'Ukuran X × Y × Z'), I.size.map((x) => f(x, 2)).join(' × ') + ' mm']]),
+      h('p', { class: 'hint' }, L('This is a surface body: the kernel gives an area, not a volume. Thicken it (Surface → Thicken) to get a solid with a mass.', 'Ini body surface: kernel memberi luas, bukan volume. Tebalkan (Surface → Thicken) untuk mendapat solid dengan massa.')));
+    else if (I) pr.append(kvs([[L('Volume', 'Volume'), `${f(I.vol / 1000, 2)} cm³`], [L('Surface area', 'Luas permukaan'), `${f(I.area / 100, 2)} cm²`],
       [L('Size X × Y × Z', 'Ukuran X × Y × Z'), I.size.map((x) => f(x, 2)).join(' × ') + ' mm'], [L('Density', 'Densitas'), `${I.rho != null ? I.rho : mat[1]} g/cm³ · ${I.rho === 7.85 ? L('steel (structural members)', 'baja (structural member)') : mat[0]}`], [L('Mass', 'Massa'), `${f(I.vol / 1000 * (I.rho != null ? I.rho : mat[1]), 1)} g`]]),
       I.weld ? h('p', { class: 'hint' }, weldMassNote(I.weld)) : document.createTextNode(''),
       h('div', { class: 'pform' }, h('label', null, h('span', null, L('Material (drives the density)', 'Material (menentukan densitas)')),
@@ -7978,7 +8153,10 @@ function renderPartCad() {
     else pr.append(para(L('Build a body first.', 'Bangun body dulu.'), 'm'));
   } else if (partSel === 'measure' || cadTab === 'check') {
     pr.append(h('h2', null, h('span', null, L('Measure', 'Ukur')), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))));
-    if (I) pr.append(kvs([[L('Volume', 'Volume'), `${f(I.vol / 1000, 2)} cm³`], [L('Surface area', 'Luas permukaan'), `${f(I.area / 100, 2)} cm²`],
+    if (I && I.surface) pr.append(kvs([[L('Surface area', 'Luas permukaan'), `${f(I.area / 100, 2)} cm²`],
+      [L('Size X × Y × Z', 'Ukuran X × Y × Z'), I.size.map((x) => f(x, 2)).join(' × ') + ' mm']]),
+      h('p', { class: 'hint' }, L('A surface body has no volume and no mass; the area above is measured by the kernel.', 'Body surface tidak punya volume dan massa; luas di atas diukur kernel.')));
+    else if (I) pr.append(kvs([[L('Volume', 'Volume'), `${f(I.vol / 1000, 2)} cm³`], [L('Surface area', 'Luas permukaan'), `${f(I.area / 100, 2)} cm²`],
       [L('Size X × Y × Z', 'Ukuran X × Y × Z'), I.size.map((x) => f(x, 2)).join(' × ') + ' mm'], [L('Mass', 'Massa'), `${f(I.mass, 1)} g`], [L('Density used', 'Densitas dipakai'), `${I.rho != null ? I.rho : I.mat[1]} g/cm³ (${I.rho === 7.85 ? L('steel, structural members', 'baja, structural member') : I.mat[0] + ', ' + L('typical', 'tipikal')})`]]),
       I.weld ? h('p', { class: 'hint' }, weldMassNote(I.weld)) : document.createTextNode(''),
       h('p', { class: 'hint' }, L('Volume, area and size come from the OpenCascade kernel in this browser. Mass uses a typical density, not a certified material value. No strength check has been run for this part.', 'Volume, luas, dan ukuran berasal dari kernel OpenCascade di browser ini. Massa memakai densitas tipikal, bukan nilai material bersertifikat. Belum ada cek kekuatan untuk part ini.')));
@@ -7991,7 +8169,7 @@ function renderPartCad() {
   if (typeof skOverlay === 'function') requestAnimationFrame(skOverlay);
 }
 function renamePart() {
-  const pr = $('#cadProps'); pr.innerHTML = ''; const inp = h('input', { type: 'text', value: state.part.name, maxlength: 60, 'aria-label': L('Part name', 'Nama part') });
+  const pr = propsEl(); pr.innerHTML = ''; const inp = h('input', { type: 'text', value: state.part.name, maxlength: 60, 'aria-label': L('Part name', 'Nama part') });
   const ok = () => { const v = inp.value.trim(); if (v) { state.part.name = v; savePart(); } renderCad(); renderTree(); };
   pr.append(h('h2', null, L('Rename part', 'Ganti nama part')), h('div', { class: 'pform' }, h('label', null, h('span', null, L('Name', 'Nama')), inp), h('div', { class: 'pact' }, h('button', { class: 'chip primary', onclick: ok }, L('Save', 'Simpan')))));
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') ok(); }); inp.focus(); inp.select();
@@ -8233,18 +8411,23 @@ const RIBBON = [
       T('Move/Copy Body', 'move', 'on', 'Move the body by X, Y, Z.', 'Geser body sejauh X, Y, Z.', 'Translate, Move', P('bodies', { kind: 'move' })),
       T('Split', 'split', 'no', 'Split a body with a plane.', 'Belah body dengan bidang.', 'Split Body'),
       T('Scale', 'scale', 'no', 'Scale the body.', 'Skala body.', ''),
-      T('Thicken', 'thick', 'no', 'Turn a surface into a solid.', 'Ubah surface menjadi solid.', '')]],
+      T('Thicken', 'thick', 'no', 'Turn a surface into a solid. Active as Surface → Thicken: one tool, one name, so this copy stays grey and sends you there.', 'Ubah surface menjadi solid. Aktif sebagai Surface → Thicken: satu alat satu nama, jadi salinan ini tetap abu-abu dan mengarah ke sana.', '')]],
     ['Reference', [T('Plane', 'plane', 'mk1', 'Reference plane by offset, angle or three points. Today: sketch on XY, XZ, YZ with an offset.', 'Bidang referensi dengan offset, sudut, atau tiga titik. Saat ini: sketch di XY, XZ, YZ dengan offset.', 'Construction Plane, Datum Plane', null, ALT_SK),
       T('Axis', 'axis', 'mk1', 'Reference axis for revolves and patterns.', 'Sumbu referensi untuk revolve dan pola.', 'Datum Axis'),
       T('Coordinate System', 'csys', 'no', 'Extra coordinate system.', 'Sistem koordinat tambahan.', 'Datum CSYS')]]]],
   ['surf', 'Surface', 'Surface', [
-    ['Create', [T('Extruded Surface', 'surf', 'no', 'Surface from an extruded curve.', 'Surface dari kurva yang ditarik.', ''), T('Revolved Surface', 'rev', 'no', 'Surface of revolution.', 'Surface hasil putaran.', ''),
-      T('Swept Surface', 'sweep', 'no', 'Surface along a path.', 'Surface sepanjang lintasan.', ''), T('Lofted Surface', 'loft', 'no', 'Surface between curves.', 'Surface di antara kurva.', ''),
-      T('Boundary Surface', 'bound', 'no', 'Surface from boundary curves.', 'Surface dari kurva batas.', ''), T('Filled Surface', 'fill', 'no', 'Patch a hole with a surface.', 'Tambal lubang dengan surface.', 'Patch'),
-      T('Planar Surface', 'plane', 'no', 'Flat surface from a closed loop.', 'Surface datar dari loop tertutup.', '')]],
-    ['Edit', [T('Offset Surface', 'offset', 'no', 'Copy a face at a distance.', 'Salin muka pada jarak tertentu.', ''), T('Knit Surface', 'knit', 'no', 'Join surfaces, optionally into a solid.', 'Gabungkan surface, bisa menjadi solid.', 'Stitch'),
-      T('Trim Surface', 'trim', 'no', 'Trim a surface with another.', 'Potong surface dengan surface lain.', ''), T('Delete Face', 'delface', 'no', 'Remove faces and heal the gap.', 'Hapus muka dan tutup celahnya.', 'Remove Face'),
-      T('Thicken', 'thick', 'no', 'Give a surface a thickness.', 'Beri ketebalan pada surface.', '')]]]],
+    ['Create', [T('Extruded Surface', 'surf', 'on', 'Push a closed sketch along its normal: the kernel builds the shell, its area is measured, and Thicken turns it into a wall.', 'Tarik sketch tertutup sepanjang normalnya: kernel membangun shell, luasnya diukur, dan Thicken mengubahnya jadi dinding.', 'Extrude Surface', { part: 'surfext' }),
+      T('Revolved Surface', 'rev', 'on', 'Turn a sketch around X, Y or Z by the angle you give; the kernel builds the shell.', 'Putar sketch mengelilingi X, Y, atau Z sebesar sudut yang kamu beri; kernel membangun shell-nya.', 'Revolve Surface', { part: 'surfrev' }),
+      T('Swept Surface', 'sweep', 'on', 'Sweep a profile sketch along a path sketch with the kernel.', 'Sapu sketch profil sepanjang sketch lintasan dengan kernel.', 'Sweep Surface', { part: 'surfsweep' }),
+      T('Lofted Surface', 'loft', 'on', 'Blend two or three closed sketches on their own planes into one surface.', 'Gabungkan dua atau tiga sketch tertutup di bidangnya menjadi satu surface.', 'Loft Surface', { part: 'surfloft' }),
+      T('Boundary Surface', 'bound', 'no', 'Surface from boundary curves in two directions. The kernel wrapper here has no boundary-surface builder yet (Batch 5).', 'Surface dari kurva batas dua arah. Wrapper kernel di sini belum punya pembangun boundary surface (Batch 5).', ''),
+      T('Filled Surface', 'fill', 'no', 'Patch a hole with a surface. Not built yet (Batch 5); Planar Surface covers a flat patch today.', 'Tambal lubang dengan surface. Belum dibangun (Batch 5); Planar Surface menangani tambalan datar sekarang.', 'Patch'),
+      T('Planar Surface', 'plane', 'on', 'A flat face from one closed sketch loop, built by the kernel.', 'Muka datar dari satu loop sketch tertutup, dibangun kernel.', 'Planar Face', { part: 'surfplane' })]],
+    ['Edit', [T('Offset Surface', 'offset', 'on', 'Copy the surface body at a distance with the kernel. The copy has no profile of its own, so Thicken cannot use it.', 'Salin body surface pada jarak tertentu dengan kernel. Salinan tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.', 'Offset Face', { part: 'surfoffset' }),
+      T('Knit Surface', 'knit', 'on', 'Sew the surface pieces into one body, or into a solid when they close.', 'Jahit potongan surface jadi satu body, atau jadi solid bila menutup.', 'Stitch', { part: 'surfknit' }),
+      T('Trim Surface', 'trim', 'no', 'Trim a surface with another. The kernel wrapper here has no surface-trim builder yet (Batch 5).', 'Potong surface dengan surface lain. Wrapper kernel di sini belum punya pembangun trim surface (Batch 5).', ''),
+      T('Delete Face', 'delface', 'no', 'Remove faces and heal the gap. Healing is not in this kernel wrapper yet (Batch 5).', 'Hapus muka dan tutup celahnya. Healing belum ada di wrapper kernel ini (Batch 5).', 'Remove Face'),
+      T('Thicken', 'thick', 'on', 'Make a solid wall of the thickness you give: the solid between the surface profile and that same profile offset by the thickness in its own plane, with the volume measured by the kernel.', 'Buat dinding solid setebal yang kamu beri: solid antara profil surface dan profil yang sama yang di-offset setebal itu di bidangnya, dengan volume diukur kernel.', 'Thicken', { part: 'surfthick' })]]]],
   ['sheet', 'Sheet Metal', 'Sheet Metal', [
     ['Flanges', [T('Base Flange', 'flat', 'mk1', 'Sheet-metal part from a sketch, with thickness and bend radius.', 'Part sheet metal dari sketch, dengan tebal dan radius tekuk.', 'Base Feature'),
       T('Edge Flange', 'flange', 'mk1', 'Bend a wall up from an edge.', 'Tekuk dinding naik dari sebuah tepi.', 'Flange'), T('Miter Flange', 'flange', 'mk1', 'Flange along several edges with mitred corners.', 'Flange sepanjang beberapa tepi dengan sudut miter.', 'Contour Flange'),
@@ -8755,7 +8938,7 @@ function renderGenCad() {
     r ? h('span', null, L(`Mass ${f(genMass(p, r), 1)} g${g.process === 'fdm' ? ' at 100 % infill (a normal print weighs less)' : ''} — kernel volume × typical density`, `Massa ${f(genMass(p, r), 1)} g${g.process === 'fdm' ? ' pada infill 100 % (cetakan biasa lebih ringan)' : ''} — volume kernel × densitas tipikal`)) : null));
   lf.append(h('div', { class: 'pdoc' }, h('button', { class: 'linkbtn', onclick: () => renamePart() }, L('Rename part', 'Ganti nama part')), ' · ', h('button', { class: 'linkbtn', onclick: () => leavePart() }, L('Close part', 'Tutup part'))));
   /* right: parameters, checks, export */
-  const pr = $('#cadProps'); pr.innerHTML = '';
+  const pr = propsEl(); pr.innerHTML = '';
   const edit = Object.fromEntries(g.params.map((q) => [q.k, q.v]));
   const apply = () => { let bad = null; g.params.forEach((q) => { const v = Number(edit[q.k]); if (!isFinite(v) || (q.min != null && v < q.min) || (q.max != null && v > q.max)) bad = bad || q; });
     if (bad) { say(para(L(`${bad.en} must be between ${bad.min} and ${bad.max} ${bad.unit}.`, `${bad.id} harus antara ${bad.min} dan ${bad.max} ${bad.unit}.`), 'm')); return; }
@@ -9268,7 +9451,7 @@ function renderAssyCad() {
     h('div', { class: 'pact', style: 'padding:8px 12px;flex-wrap:wrap' }, h('button', { class: 'chip', disabled: assyBusy, onclick: assyPicker }, L('Insert component', 'Masukkan komponen')),
       h('button', { class: 'chip primary', disabled: assyBusy, onclick: assyAuto }, 'Auto Assembly'), h('button', { class: 'chip', disabled: assyBusy || !info.length, onclick: () => assyInterference(false) }, L('Check interference', 'Cek interferensi'))),
     h('div', { class: 'pdoc' }, h('button', { class: 'linkbtn', onclick: () => { const n = prompt(L('Assembly name', 'Nama assembly'), a.name); if (n) { a.name = n.slice(0, 60); saveAssy(); renderCad(); } } }, L('Rename', 'Ganti nama')), ' · ', h('button', { class: 'linkbtn', onclick: assyLeave }, L('Close assembly', 'Tutup assembly'))));
-  const pr = $('#cadProps'); pr.innerHTML = '';
+  const pr = propsEl(); pr.innerHTML = '';
   const c = a.comps.find((x) => x.cid === assySel);
   if (c) { const inf = info.find((x) => x.cid === c.cid), ed = { x: c.t[0], y: c.t[1], z: c.t[2], rz: c.rz };
     const num = (k, lab) => h('label', null, h('span', null, lab), h('span', { class: 'pnum' }, h('input', { type: 'number', value: +(+ed[k]).toFixed(3), step: 'any', oninput: (e) => { ed[k] = +e.target.value; } }), h('em', null, k === 'rz' ? '°' : 'mm')));
@@ -10854,7 +11037,7 @@ async function partReport(p) {
     cad: { title: p.name, process: g.process || null, params: (g.params || []).map((q) => ({ k: q.k, label: q.en, value: +q.v, unit: q.unit, source: q.src === 'user' ? 'user' : q.src === 'table' ? 'standard table' : 'default' })) },
     material: mat ? { name: mat[0], density_kg_m3: mat[1] * 1000, density_source: PMAT_SRC[p.material] || 'IDRIS Studio material table (typical value)' } : p.material,
     measurements: genRes ? { x: sz[0], y: sz[1], z: sz[2], volume_mm3: +genRes.vol.toFixed(3), mass_g: mat ? +(genRes.vol / 1000 * mat[1]).toFixed(2) : null, valid: genRes.valid, source: 'OpenCascade kernel in the browser' }
-      : partInfo ? { x: sz[0], y: sz[1], z: sz[2], volume_mm3: +partInfo.vol.toFixed(3), mass_g: mat ? +(partInfo.vol / 1000 * mat[1]).toFixed(2) : null, valid: null, source: 'OpenCascade kernel in the browser (feature tree)' } : null,
+      : partInfo ? { x: sz[0], y: sz[1], z: sz[2], volume_mm3: partInfo.surface ? null : +partInfo.vol.toFixed(3), mass_g: partInfo.surface ? null : (mat ? +(partInfo.vol / 1000 * mat[1]).toFixed(2) : null), area_mm2: partInfo.surface ? +partInfo.area.toFixed(3) : undefined, valid: null, source: 'OpenCascade kernel in the browser (feature tree)' } : null,
     part_check: fr ? { sf: fr.sf, von_mises_max_mpa: fr.vmax, max_displacement_mm: fr.dmax, solver: 'fea_part_3d', loads: (s.loads || []).length + feaReq(p).loads.length, supports: (s.supports || []).length + feaReq(p).supports.length } : null,
     rank: g.conceptRank && g.conceptRank.status === 'done' ? { ranking: (g.variants || []).filter((v) => v.rank).map((v) => ({ name: v.name, score: v.rank.score, values: { SF: v.fea && v.fea.sf, mass_g: v.kres && v.kres.mass } })) } : null,
     references: g.references || null, not_checked: g.not_checked || [] };
@@ -12982,6 +13165,7 @@ function swGraph(p) {
       add(id, 'hole', { ...at, through: false, depth: +q.depth, from: 'top', z_top: zt, ...(cbo || {}) }); continue; }
     if (ft.type === 'edge') { if (q.mode === 'chamfer') add(id, 'chamfer', { distance: +q.r, edges: q.which || 'all' });
       else add(id, 'fillet', { radius: +q.r, edges: q.which || 'all' }); continue; }
+    if (ft.type.startsWith('surf')) { skip(id, ft.type, 'surface steps have no SolidWorks macro mapping in this build'); continue; }
     if (ft.type === 'repeat') { if (q.kind === 'line') add(id, 'pattern', { mode: 'linear', count: Math.round(+q.count), dx: +q.dx || 0, dy: +q.dy || 0 });
       else if (q.kind === 'circle') add(id, 'pattern', { mode: 'circular', count: Math.round(+q.count), angle_deg: 360 });
       else add(id, 'mirror', { plane: q.plane || 'YZ' }); continue; }
@@ -13244,10 +13428,13 @@ function sheetMetalEdit(focus) {
   if (!inner || !page) return window.__lastFlat;
   const head = inner.querySelector('.lib-h'); if (head) head.remove();
   dlg.remove();
-  page.innerHTML = '';
+  /* S15: keep the Properties section, which lives in this page: clear only what this panel added */
+  [...page.children].forEach((el) => { if (el.id !== 'cadProps') el.remove(); });
   page.append(h('div', { class: 'lphdrow' }, h('span', null, 'Sheet Metal'),
       h('small', null, L('bend allowance · flat pattern', 'bend allowance · flat pattern'))),
     h('div', { class: 'sm-in-panel', id: 'smdlg' }, inner));
+  /* S15: the tool's own page comes first; the Properties section stays at the bottom of it */
+  { const props = page.querySelector('#cadProps'); if (props) page.append(props); }
   setLpTab('edit');
   if (focus === 'flat') { const b = $('#sm-dxf'); if (b && b.scrollIntoView) b.scrollIntoView({ block: 'nearest' }); }
   return window.__lastFlat;
