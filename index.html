@@ -8815,7 +8815,7 @@ const RIBBON = [
     ['Flanges', [T('Base Flange', 'flat', 'on', 'The plate every sheet-metal step stands on: thickness, inside bend radius and the K-factor (the workshop table, or one you type). Built by the kernel and measured.', 'Pelat tempat semua langkah sheet metal berdiri: tebal, radius tekuk dalam, dan K-factor (tabel bengkel, atau yang kamu ketik). Dibangun kernel dan diukur.', 'Base Feature', { part: 'smbase' }),
       T('Edge Flange', 'flange', 'on', 'Bend a leg up from +X, -X, +Y or -Y at 45° to 135°: the kernel builds the bend sector and the leg, and the step reports the allowance it used.', 'Tekuk kaki dari +X, -X, +Y, atau -Y pada 45° sampai 135°: kernel membangun sektor tekuk dan kakinya, dan langkahnya melaporkan allowance yang dipakai.', 'Flange', { part: 'smedge' }),
       T('Miter Flange', 'flange', 'on', 'Legs on two adjacent edges, mitred at 45° through the outer corner: both bends and the mitre are kernel geometry.', 'Kaki di dua tepi bersebelahan, miter 45° lewat sudut luar: kedua tekukan dan miternya geometri kernel.', 'Contour Flange', { part: 'smmiter' }),
-      T('Hem', 'hem', 'no', 'Fold an edge back on itself. With the inside radius the shop table gives, a 180° fold puts the outer surface of the bend back through the plate the bend started from, so the kernel would merge the sheet with itself and report a volume that is not a part. Grey until the fold is modelled as the sheet is (Batch 3).', 'Lipat tepi ke dirinya sendiri. Dengan radius dalam dari tabel bengkel, lipatan 180° membuat permukaan luar tekukan menembus pelat asalnya, jadi kernel akan menggabungkan lembaran itu dengan dirinya sendiri dan melaporkan volume yang bukan part. Abu-abu sampai lipatan dimodelkan seperti lembaran sebenarnya (Batch 3).', '')]], 
+      T('Hem', 'hem', 'no', 'Fold an edge back on itself. With the inside radius the shop table gives, a 180° fold puts the outer surface of the bend back through the plate the bend started from, so the kernel would merge the sheet with itself and report a volume that is not a part. Grey until the fold is modelled as the sheet is (Batch 3).', 'Lipat tepi ke dirinya sendiri. Dengan radius dalam dari tabel bengkel, lipatan 180° membuat permukaan luar tekukan menembus pelat asalnya, jadi kernel akan menggabungkan lembaran itu dengan dirinya sendiri dan melaporkan volume yang bukan part. Abu-abu sampai lipatan dimodelkan seperti lembaran sebenarnya (Batch 3).', '')]],
     ['Bends', [T('Sketched Bend', 'bend', 'on', 'Bend the part along a line at the distance you give: the part beyond the line is turned by the kernel and the bend sector closes the gap. Refused if the line is outside the part.', 'Tekuk part di garis pada jarak yang kamu beri: bagian di luar garis diputar kernel dan sektor tekuk menutup celahnya. Ditolak bila garisnya di luar part.', 'Bend', { part: 'smbend' }),
       T('Unfold / Fold', 'unfold', 'on', 'Open the bends into the flat plate of the developed length, then fold back: both states are kernel solids, and the flat is the chain of allowances, not the folded volume divided by the thickness.', 'Buka tekukan jadi pelat datar sepanjang bentangan, lalu lipat kembali: kedua keadaan adalah solid kernel, dan bentangannya adalah rangkaian allowance, bukan volume terlipat dibagi tebal.', '', { part: 'smunfold' }),
       T('Jog', 'jog', 'no', 'Two opposite bends from a sketch line. In this sector model the second bend leaves the lower plate inside the web it just made, so the sheet would pass through itself: grey until the fold model can carry a web (Batch 3).', 'Dua tekukan berlawanan dari garis sketch. Pada model sektor ini tekukan kedua meninggalkan pelat bawah di dalam web yang baru dibuat, jadi lembaran menembus dirinya sendiri: abu-abu sampai model lipatan bisa membawa web (Batch 3).', ''),
@@ -8870,9 +8870,9 @@ const RIBBON = [
     ['Drawing', [T('Working Drawings (A3)', 'draw', 'on', 'A3 drawing: the open part from the kernel, or the gearbox shop files from the solver.', 'Gambar A3: part yang terbuka dari kernel, atau file bengkel gearbox dari solver.', 'Make Drawing, Standard 3 View', 'drawingAny'),
       T('BOM Table', 'bom', 'on', 'Parts list of the open assembly, ready to print or save as CSV.', 'Daftar part assembly yang terbuka, siap dicetak atau disimpan sebagai CSV.', 'Balloons', 'asmBom'),
 
-      T('Section / Detail View', 'detail', 'no', 'Cut and zoomed views on the sheet.', 'Tampilan potong dan perbesaran di lembar.', ''),
+      T('Section / Detail View', 'detail', 'on', 'Cut the part with a kernel boolean at a chosen Y (section A–A, hatched from the cut face, removed volume and cut-face area reported) and add a detail view: a cylinder window cut out of the solid and projected at an ISO magnification, with the holes the kernel measures inside it.', 'Potong part dengan boolean kernel di Y pilihan (potongan A–A, diarsir dari muka potong, volume terbuang dan luas muka potong dilaporkan) dan tambah detail view: jendela silinder yang dipotong dari solid lalu diproyeksikan pada perbesaran ISO, dengan lubang yang diukur kernel di dalamnya.', 'Broken-out Section, Section View, Detail View', 'dwgSection'),
       T('Dimensions & Notes', 'note', 'no', 'Add dimensions and notes by hand.', 'Tambah dimensi dan catatan manual.', 'Annotations'),
-      T('GD&T', 'gdt', 'no', 'Geometric tolerances and datums.', 'Toleransi geometris dan datum.', 'Feature Control Frame'),
+      T('GD&T', 'gdt', 'on', 'Flatness and perpendicularity of the part’s B-rep faces, measured by the kernel (each face’s boundary sampled against its own plane; angle between face normals), printed on the sheet as feature control frames with datum A and the measured value.', 'Kerataan dan ketegaklurusan muka B-rep part, diukur kernel (batas tiap muka disampel terhadap bidangnya; sudut antara normal muka), dicetak di lembar sebagai feature control frame dengan datum A dan nilai terukur.', 'Feature Control Frame, Geometric Tolerancing', 'dwgGdt'),
       T('Export PDF / DXF', 'pdf', 'no', 'Drawing to PDF or DXF. Today drawings are SVG.', 'Gambar ke PDF atau DXF. Saat ini gambar berformat SVG.', '')]]]],
   ['manage', 'Manage', 'Kelola', [
     ['File', [T('Library', 'lib', 'on', 'Example parts and gearbox demos. Numbers are computed when you open one.', 'Contoh part dan demo gearbox. Angka dihitung saat dibuka.', 'Design Library, Samples', 'library'),
@@ -10029,6 +10029,133 @@ function asmToolPanel() {
     if (act === 'asmMate') return asmMateRun();
     return ra3.apply(this, arguments); };
 }
+/* ---- S20: the drawing geometry the kernel measures (section, detail window, flatness, perpendicularity) ----
+/* The two Drawing tools that were grey (Section / Detail View, GD&T) get their geometry here: a boolean cut of the
+ * solid, a cylinder window cut out of it and projected, and the form of the B-rep faces measured on their own wires. */
+const S20_VIEW_DIR = { front: [0, -1, 0], top: [0, 0, 1], left: [-1, 0, 0] };   /* the directions drawProjection uses */
+const S20_VIEW_AX = { front: 1, top: 2, left: 0 };                              /* the model axis that view looks along */
+function s20Area(R, fc) { try { return R.measureArea(fc.clone()); } catch (e) { return null; } }   /* replicad frees the face it measures, so it gets a clone */
+function s20Planes(R, shape) {
+  /* every planar face of the solid with its outward normal, a point on it and its measured area */
+  const out = [];
+  (shape.faces || []).forEach((fc, i) => {
+    if (fc.geomType !== 'PLANE') return;
+    const area = s20Area(R, fc);   /* first: measuring consumes the copy, normalAt/center come after */
+    let n, c; try { const q = fc.normalAt(); n = [q.x, q.y, q.z]; const cc = fc.center; c = [cc.x, cc.y, cc.z]; } catch (e) { return; }
+    out.push({ i, n, p: c, area });
+  });
+  return out;
+}
+function s20FaceDev(fc) {
+  /* how far the face's own boundary sits off its plane: sampled on the kernel wires, in mm */
+  let n, c0; try { const q = fc.normalAt(); n = [q.x, q.y, q.z]; const c = fc.center; c0 = [c.x, c.y, c.z]; } catch (e) { return null; }
+  let wires = []; try { wires = [fc.outerWire()]; } catch (e) { return null; }
+  try { fc.innerWires().forEach((w) => wires.push(w)); } catch (e) { /* this build has no inner wires */ }
+  let dev = 0, samples = 0;
+  for (const w of wires) for (let i = 0; i < 96; i++) {
+    let q; try { q = w.pointAt(i / 96); } catch (e) { continue; }
+    const d = Math.abs((q.x - c0[0]) * n[0] + (q.y - c0[1]) * n[1] + (q.z - c0[2]) * n[2]);
+    if (d > dev) dev = d; samples++;
+  }
+  return { n, dev, samples };
+}
+function s20Flatness(R, shape) {
+  const pl = s20Planes(R, shape); let worst = null;
+  for (const q of pl) {
+    const d = s20FaceDev(shape.faces[q.i]); if (!d) continue;
+    const rec = { i: q.i, n: d.n, area: q.area, dev: d.dev, samples: d.samples };
+    if (!worst || rec.dev > worst.dev + 1e-9 || (Math.abs(rec.dev - worst.dev) <= 1e-9 && (rec.area || 0) > (worst.area || 0))) worst = rec;
+  }
+  return { faces: pl.length, worst, dev: worst ? worst.dev : null };
+}
+function s20Perp(R, shape) {
+  /* datum A: the largest face that looks along Z (the part's resting face). Then every face that should stand at 90°
+   * to it: the angle between the two normals is measured, and the deviation is that angle's error over the face's
+   * own extent (sqrt of its measured area). */
+  const pl = s20Planes(R, shape); if (!pl.length) return { datum: null, faces: [], worst: null };
+  const zf = pl.filter((q) => Math.abs(Math.abs(q.n[2]) - 1) < 1e-3);
+  const pool = zf.length ? zf : pl;
+  const datum = pool.slice().sort((a, b) => (b.area || 0) - (a.area || 0))[0];
+  const dn = datum.n, faces = [];
+  for (const q of pl) {
+    if (q.i === datum.i) continue;
+    const dot = Math.abs(q.n[0] * dn[0] + q.n[1] * dn[1] + q.n[2] * dn[2]);
+    if (dot > 0.05) continue;                       /* not a face that should stand at 90° */
+    const deg = Math.acos(Math.min(1, dot)) * 180 / Math.PI, devDeg = Math.abs(deg - 90);
+    faces.push({ i: q.i, n: q.n, area: q.area, deg, devDeg, dev: Math.sin(devDeg * Math.PI / 180) * (q.area ? Math.sqrt(q.area) : 0) });
+  }
+  const worst = faces.slice().sort((a, b) => b.dev - a.dev)[0] || null;
+  return { datum: { i: datum.i, n: datum.n, area: datum.area }, faces, worst };
+}
+function s20Section(R, shape, lo, hi, y0) {
+  /* cut the front half away with a kernel boolean, then read the exposed cut face: removed volume and its area */
+  const span = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) + 100;
+  const y = Math.min(hi[1] - 0.05, Math.max(lo[1] + 0.05, +y0));
+  const before = R.measureVolume(shape);
+  const cut = shape.clone().cut(R.makeBox([lo[0] - span, lo[1] - span, lo[2] - span], [hi[0] + span, y, hi[2] + span]));
+  const kept = R.measureVolume(cut);
+  let cutArea = 0, faces = 0;
+  for (const fc of cut.faces) {
+    if (fc.geomType !== 'PLANE') continue;
+    let n, c; try { const q = fc.normalAt(); n = [q.x, q.y, q.z]; const cc = fc.center; c = [cc.x, cc.y, cc.z]; } catch (e) { continue; }
+    if (Math.abs(n[1] + 1) > 1e-3 || Math.abs(c[1] - y) > 0.02) continue;   /* the cut face looks at the viewer, -Y */
+    faces++; const a = s20Area(R, fc); if (a) cutArea += a;
+  }
+  return { y, before, kept, removed: before - kept, cutArea, faces };
+}
+function s20Detail(R, shape, view, u, w, r) {
+  /* a detail view is a real piece of the part: a cylinder of radius r around a point of the view, cut in the kernel,
+   * then projected from the same direction. It reports the volume it keeps and the full holes inside it. */
+  const dir = S20_VIEW_DIR[view] || S20_VIEW_DIR.front;
+  if (!(r > 0.5)) return { refuse: 'radius', r };
+  const bb = shape.boundingBox.bounds, mid = [0, 1, 2].map((i) => (bb[0][i] + bb[1][i]) / 2);
+  const span = Math.max(bb[1][0] - bb[0][0], bb[1][1] - bb[0][1], bb[1][2] - bb[0][2]) + 50;
+  const at = view === 'top' ? [u, -w, mid[2]] : view === 'left' ? [mid[0], -u, -w] : [u, mid[1], -w];   /* view coords → model */
+  const base = [0, 1, 2].map((i) => at[i] - dir[i] * span);
+  let sub; try { sub = shape.clone().intersect(R.makeCylinder(r, span * 2, base, dir)); } catch (e) { return { refuse: 'boolean', view, u, w, r }; }
+  const vol = R.measureVolume(sub);
+  if (!(vol > 1e-6)) return { refuse: 'empty', view, u, w, r, vol };
+  const pr = R.drawProjection(sub, view);
+  const vis = pr.visible.toSVGPaths ? pr.visible.toSVGPaths() : pr.visible;
+  let box = null; try { const b = pr.visible.boundingBox; box = { x: b.bounds[0][0], y: -b.bounds[1][1], w: b.width, h: b.height }; } catch (e) { box = null; }
+  const holes = [];
+  try { const oc = R.getOC(), seen = new Set();
+    for (const e of sub.edges) { if (e.geomType !== 'CIRCLE') continue;
+      const a = new oc.BRepAdaptor_Curve(e.wrapped);
+      try { const c = a.Circle(), ax = c.Axis().Direction(), rr = c.Radius();
+        const around = Math.abs(ax.X() * dir[0] + ax.Y() * dir[1] + ax.Z() * dir[2]) > 1 - 1e-3;
+        const full = Math.abs(a.LastParameter() - a.FirstParameter()) > 2 * Math.PI - 1e-3;
+        const key = rr.toFixed(3);
+        if (around && full && rr < r - 1e-6 && !seen.has(key)) { seen.add(key); holes.push({ r: rr, d: 2 * rr }); } } finally { a.delete(); } } } catch (e) { /* no hole read: the volume still holds */ }
+  return { view, u: +u, w: +w, r: +r, vol, box, visible: vis, hidden: [], holes };
+}
+/* ---- S20 UI: the two Drawing tools, inside the A3 sheet the engineer already has open ---- */
+const S20_MAG = [1, 2, 5];
+function dwgDetailDefault(view) {
+  /* the starting window comes from the largest round edge the kernel measured whose axis is along this view */
+  const ax = S20_VIEW_AX[view] != null ? S20_VIEW_AX[view] : 1;
+  const list = ((s6ctx && s6ctx.arcs) || []).filter((a) => { const k0 = a.n.findIndex((v) => Math.abs(Math.abs(v) - 1) < 1e-6); return k0 === ax && a.r > 0.2; });
+  if (list.length) { const pick = list.slice().sort((a, b) => b.r - a.r)[0]; let uw = [0, 0];
+    try { uw = DRAW_MAP[view](pick.c); } catch (e) { uw = [0, 0]; }
+    return { u: +(+uw[0]).toFixed(3), w: +(+uw[1]).toFixed(3), r: +(2.5 * pick.r).toFixed(3) }; }
+  /* no round edge measured: the centre is the middle of the model bounds and the radius a tenth of the shortest side */
+  const g0 = sheetGeo || genRes, bb = g0 && g0.bounds;
+  if (!bb) return { u: 0, w: 0, r: 10 };
+  const mid = [0, 1, 2].map((i) => (bb[0][i] + bb[1][i]) / 2), uw = DRAW_MAP[view](mid), span = bb[1].map((v, i) => v - bb[0][i]);
+  return { u: +(+uw[0]).toFixed(3), w: +(+uw[1]).toFixed(3), r: +(0.1 * Math.min(...span) + 2).toFixed(3) };
+}
+function dwgOpenTool(focus) {
+  if (!state.part) { say(para(L('Open a part first: the sheet is drawn from the part the kernel built.', 'Buka part dulu: lembar digambar dari part yang dibangun kernel.'), 'm')); return; }
+  if (state.part.gen) { say(h('div', { class: 'warnbox bad' }, L('This part comes from generated code, not from this browser’s kernel, so there is no solid to cut or measure. Build a part from the feature tree or open a Library part for a section, a detail view or GD&T.', 'Part ini dari kode yang dihasilkan, bukan kernel browser ini, jadi tidak ada solid untuk dipotong atau diukur. Bangun part dari feature tree atau buka part Library untuk potongan, detail view, atau GD&T.'))); return; }
+  return partDrawing(state.part).then(() => {
+    const b = focus === 'gdt' ? $('#drawdlg [data-gdt]') : $('#drawdlg [data-sec]');
+    if (b && b.scrollIntoView) { try { b.scrollIntoView({ block: 'nearest' }); } catch (e) { /* no scrolling here */ } }
+  });
+}
+{ const ra4 = ribAct; ribAct = function (a) {
+    if (a === 'dwgSection') return dwgOpenTool('section');
+    if (a === 'dwgGdt') return dwgOpenTool('gdt');
+    return ra4.apply(this, arguments); }; }
 /* ---- rendering */
 function assyGroup(list) {
   /* a solver clearance finding and IDRIS's ISO 273 question about the same bolt become one item with the two choices */
@@ -12010,6 +12137,10 @@ async function partDrawing(p) {
       s6ctx = { arcs, segs, oblique: s6Oblique(circles), mid: (lo3[1] + hi3[1]) / 2,
         section: sec && sec.on ? s6Section(R, shape, lo3, hi3, sec.y != null ? +sec.y : (lo3[1] + hi3[1]) / 2) : null,
         make: async (y) => s6Section(R, shape, lo3, hi3, y) };
+      /* S20: a saved detail view is cut out of the part again, in the kernel, before the sheet is drawn */
+      const det0 = p.drawing && p.drawing.detail;
+      if (det0) { try { const d0 = s20Detail(R, shape, det0.view, +det0.u, +det0.w, +det0.r);
+        if (!d0.refuse && d0.box) s6ctx.detail = { view: d0.view, u: d0.u, w: d0.w, r: d0.r, mag: +det0.mag || 2, proj: { visible: d0.visible, box: d0.box } }; } catch (e) { /* the sheet still draws without the detail */ } }
     }
   }
   catch (e) { return say(h('div', { class: 'warnbox bad' }, L('The drawing could not be made: ', 'Gambar tidak bisa dibuat: ') + e.message)); }
@@ -12110,6 +12241,7 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null, 
   const STEP0 = Math.min(16, Math.max(6, +opt.dimGap || 9)), STEP = Math.max(5, STEP0 - 2), mg = (v, sd) => tiers[v][sd] ? STEP0 + STEP * (tiers[v][sd] - 1) + 5 : 6;
   /* ---- layout: largest ISO scale where the three views + their dimensions fit and leave room for the iso view ---- */
   const fr = vw.front.box, tp = vw.top.box, lf = vw.left.box;
+  const DET = (sheetCtx && sheetCtx.detail && sheetCtx.detail.proj && sheetCtx.detail.proj.box && VN.includes(sheetCtx.detail.view)) ? sheetCtx.detail : null;
   const iso = SEC && SEC.box ? { visible: SEC.visible, hidden: [], box: SEC.box } : (vw.iso && vw.iso.box ? vw.iso : null);
   const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   const BLOCK = { x: NOTE.x - 4, y: NOTE.y - 4, w: 200, h: H - NOTE.y + 4 };
@@ -12140,6 +12272,24 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null, 
   { const g0 = O('front'); [Lo.F, Lo.T, Lo.Lv].forEach((r) => { r.x += g0[0]; r.y += g0[1]; }); Lo.T.y += O('top')[1]; Lo.Lv.x += O('left')[0]; }
   const place = { front: { v: vw.front, x: Lo.F.x, y: Lo.F.y }, top: { v: vw.top, x: Lo.T.x, y: Lo.T.y }, left: { v: vw.left, x: Lo.Lv.x, y: Lo.Lv.y } };
   const S = (v, u, w) => { const pl = place[v], b = pl.v.box; return [pl.x + (u - b.x) * k, pl.y + (w - b.y) * k]; };
+  /* S20: the detail view is a cylinder window the kernel cut out and projected; the scale search reserved its room */
+  let detPl = null, detG = '', detMark = '';
+  if (DET) {
+    const db = DET.proj.box, mag = +DET.mag > 0 ? +DET.mag : 2;
+    const busy = Lo.rs.concat([{ x: TB.x - 2, y: TB.y - 2, w: TB.w + 4, h: TB.h + 4 }, { x: NOTE.x - 2, y: NOTE.y - 4, w: NOTE.w + 4, h: NOTE.h + 6 }]);
+    if (Lo.isoR) busy.push({ x: Lo.isoR.x, y: Lo.isoR.y, w: Lo.isoR.w, h: Lo.isoR.h });
+    const overlaps = (r, b) => r.x < b.x + b.w && r.x + r.w > b.x && r.y < b.y + b.h && r.y + r.h > b.y;
+    /* ISO 5455 magnifications, never larger than the one asked for: the label always states the one actually drawn */
+    const mags = [mag].concat([5, 2, 1].filter((m) => m < mag));
+    for (const s0 of mags) {
+      const w0 = db.w * s0 + 6, h0 = db.h * s0 + 14;
+      for (let y0 = IN.y + 4; y0 + h0 <= IN.y2 && !detPl; y0 += 3) for (let x0 = IN.x; x0 + w0 <= IN.x2 && !detPl; x0 += 3) {
+        const r0 = { x: x0, y: y0, w: w0, h: h0 };
+        if (!busy.some((b) => overlaps(r0, b))) detPl = { v: DET.proj, x: x0 + 3, y: y0 + 3, k: s0 };
+      }
+      if (detPl) break;
+    }
+  }
   /* ---- primitives (shared by SVG and DXF) ---- */
   const lines = [], texts = [], LW = { vis: 0.5, thin: 0.25, frame: 0.7 };
   const ln = (x1, y1, x2, y2, layer, w = LW.thin, dash) => lines.push({ x1, y1, x2, y2, layer, w, dash });
@@ -12212,6 +12362,28 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null, 
   tx(X0, Y0 - 1.5, 'IDRIS Design Studio · OpenCascade kernel', 2, { fill: '#555' });
   tx(NOTE.x, NOTE.y + 2, 'Notes', 3, { weight: 700 });
   let ny = NOTE.y + 7; noteLines.forEach((l0) => { if (l0 === null) { ny += 0.3; return; } tx(NOTE.x, ny, l0, 2.5); ny += 3.6; });
+  /* S20: GD&T feature control frames — the values printed are the ones measured on the kernel faces when added */
+  const GDT = (opt.gdt || []).filter((q) => q && q.val != null).slice(0, 4);
+  const gdtB = { x: IN.x, y: IN.y + 3, w: 44, h: GDT.length ? 8 + GDT.length * 8 : 0 };
+  if (GDT.length) {
+    /* the frames take their own free corner: views, dimensions, notes, title block, iso/section and the detail stay clear */
+    { const busyG = Lo.rs.concat([{ x: TB.x - 2, y: TB.y - 2, w: TB.w + 4, h: TB.h + 4 }, { x: NOTE.x - 2, y: NOTE.y - 4, w: NOTE.w + 4, h: NOTE.h + 6 }]);
+      if (Lo.isoR) busyG.push({ x: Lo.isoR.x, y: Lo.isoR.y, w: Lo.isoR.w, h: Lo.isoR.h });
+      if (detPl) busyG.push({ x: detPl.x - 2, y: detPl.y - 2, w: detPl.v.box.w * detPl.k + 6, h: detPl.v.box.h * detPl.k + 14 });
+      const ovl = (r, b) => r.x < b.x + b.w && r.x + r.w > b.x && r.y < b.y + b.h && r.y + r.h > b.y;
+      let at = null;
+      for (let y0 = IN.y + 3; y0 + gdtB.h <= IN.y2 && !at; y0 += 3) for (let x0 = IN.x; x0 + gdtB.w <= IN.x2 && !at; x0 += 3) {
+        const r0 = { x: x0, y: y0, w: gdtB.w, h: gdtB.h };
+        if (!busyG.some((b) => ovl(r0, b))) at = r0;
+      }
+      if (at) { gdtB.x = at.x; gdtB.y = at.y; } }
+    tx(gdtB.x, gdtB.y + 2.4, 'GD&T — measured on the kernel faces', 2.4, { weight: 700 });
+    GDT.forEach((q, i) => { const y0 = gdtB.y + 4 + i * 8, x0 = gdtB.x;
+      ln(x0, y0, x0 + 41, y0, 'TITLE', LW.frame); ln(x0, y0 + 7, x0 + 41, y0 + 7, 'TITLE', LW.frame);
+      ln(x0, y0, x0, y0 + 7, 'TITLE', LW.frame); ln(x0 + 41, y0, x0 + 41, y0 + 7, 'TITLE', LW.frame);
+      ln(x0 + 9, y0, x0 + 9, y0 + 7, 'TITLE'); ln(x0 + 31, y0, x0 + 31, y0 + 7, 'TITLE');
+      tx(x0 + 2, y0 + 5.1, q.sym, 3.4); tx(x0 + 10.5, y0 + 5, (+q.val).toFixed(3), 3.1); tx(x0 + 32.5, y0 + 5, q.datum || '', 3.1); });
+  }
   const avoid = s6Avoid(texts, lines);   /* S6c: a dimension text never sits on a visible line */
   /* ---- SVG ---- */
   const hitR = (v, b) => ui ? `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="#2a6df4" fill-opacity="0" stroke="none" pointer-events="all" class="dv-hit"/>` : '';
@@ -12226,21 +12398,34 @@ function drawingSheet(p, vw, circles = [], ui = false, planes = [], geo = null, 
       s6Hatch(loops, 1.6).forEach(([ax0, ay0, bx0, by0]) => ln(ax0, ay0, bx0, by0, 'HATCH', 0.18));
       tx(ix, iy + iso.box.h * ik + 6, 'Section A–A (cut at Y = ' + r1(SEC.y) + ' mm; hatching from the kernel cut face)', 2.5, { fill: '#333' }); }
     else tx(ix, iy + iso.box.h * ik + 6, 'Isometric view (reference, not to scale)', 2.5, { fill: '#333' }); } }
+  if (detPl) { const db = detPl.v.box, dk = detPl.k;
+    const cw0 = db.x + db.w / 2, ch0 = db.y + db.h / 2;
+    detG = (ui ? '<g data-view="detail" class="dv">' : '') + `<defs><clipPath id="detClipB" clipPathUnits="userSpaceOnUse"><circle cx="${cw0.toFixed(3)}" cy="${ch0.toFixed(3)}" r="${DET.r.toFixed(3)}"/></clipPath></defs>` +
+      `<g transform="translate(${detPl.x.toFixed(2)} ${detPl.y.toFixed(2)}) scale(${dk.toFixed(5)}) translate(${(-db.x).toFixed(3)} ${(-db.y).toFixed(3)})" fill="none" stroke="#000" stroke-width="${(0.35 / dk).toFixed(4)}" stroke-linejoin="round"><g clip-path="url(#detClipB)">${detPl.v.visible.map((d) => `<path d="${d}"/>`).join('')}</g></g>` + (ui ? '</g>' : '');
+    /* the window edge itself is not part of the part: only a thin circle marks where the detail stops */
+    texts.push({ circ: true, x: detPl.x + db.w * dk / 2, y: detPl.y + db.h * dk / 2, r: DET.r * dk });
+    const [mx, my] = S(DET.view, DET.u, DET.w), mr = DET.r * k;
+    detMark = `<circle cx="${mx.toFixed(2)}" cy="${my.toFixed(2)}" r="${mr.toFixed(2)}" fill="none" stroke="#000" stroke-width="0.4" stroke-dasharray="3 1.4"/>`;
+    tx(mx + mr * 0.72 + 1.2, my - mr * 0.72 - 1.2, 'B', 4.2, { weight: 700 });
+    tx(detPl.x, detPl.y + db.h * dk + 6.5, `DETAIL B (${scaleText(dk)}) — window Ø${r1(2 * DET.r)} mm, cut in the kernel` + (dk < (+DET.mag || 2) - 1e-9 ? ` (asked ${scaleText(+DET.mag || 2)}, no room for it)` : ''), 2.5, { fill: '#333' }); }
   const svgL = lines.map((l) => `<line x1="${l.x1.toFixed(2)}" y1="${l.y1.toFixed(2)}" x2="${l.x2.toFixed(2)}" y2="${l.y2.toFixed(2)}" stroke="#000" stroke-width="${l.w}"${l.dash ? ` stroke-dasharray="${l.dash}"` : ''}/>`).join('');
   const svgA = arrows.map(([x, y, dx, dy]) => { const L0 = 2.8, W0 = 0.9, bx0 = x - dx * L0, by0 = y - dy * L0; return `<path d="M${x.toFixed(2)} ${y.toFixed(2)}L${(bx0 - dy * W0).toFixed(2)} ${(by0 + dx * W0).toFixed(2)}L${(bx0 + dy * W0).toFixed(2)} ${(by0 - dx * W0).toFixed(2)}z" fill="#000"/>`; }).join('');
   const svgT = texts.map((t) => t.circ ? `<circle cx="${t.x}" cy="${t.y}" r="${t.r}" fill="none" stroke="#000" stroke-width="0.25"/>` :
     `<text x="${t.x.toFixed(2)}" y="${t.y.toFixed(2)}" font-size="${t.h}"${t.anchor ? ` text-anchor="${t.anchor}"` : ''}${t.weight ? ` font-weight="${t.weight}"` : ''}${t.fill ? ` fill="${t.fill}"` : ''}${t.rot ? ` transform="rotate(${t.rot} ${t.x.toFixed(2)} ${t.y.toFixed(2)})"` : ''}>${esc(t.t)}</text>`).join('');
   const pickG = ui && opt._pick && place[opt._pick.v] ? (() => { const [x, y] = S(opt._pick.v, opt._pick.p[0], opt._pick.p[1]); return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="1.6" fill="none" stroke="#2a6df4" stroke-width="0.5"/><circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="0.5" fill="#2a6df4"/>`; })() : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}" font-family="'osifont','ISOCPEUR','Arial Narrow','DejaVu Sans Condensed',Arial,sans-serif">` +
-    `<rect width="${W}" height="${H}" fill="#fff"/>` + VN.map(g).join('') + isoG + svgL + svgA + svgT + pickG + '</svg>';
+    `<rect width="${W}" height="${H}" fill="#fff"/>` + VN.map(g).join('') + isoG + detMark + detG + svgL + svgA + svgT + pickG + '</svg>';
   /* v65.1: how much the views, their dimensions, the iso view, the notes and the title block overlap or leave the frame (0 = clean) */
   const occ = VN.map((v) => { const pl = place[v], b = pl.v.box; return { x: pl.x - mg(v, 'left'), y: pl.y - mg(v, 'top'), w: b.w * k + mg(v, 'left') + mg(v, 'right'), h: b.h * k + mg(v, 'top') + mg(v, 'bottom') + 4 }; });
   if (isoPl) occ.push({ x: isoPl.x - 2, y: isoPl.y - 2, w: iso.box.w * isoPl.k + 4, h: iso.box.h * isoPl.k + 10 });
+  if (detPl) occ.push({ x: detPl.x - 2, y: detPl.y - 2, w: detPl.v.box.w * detPl.k + 4, h: detPl.v.box.h * detPl.k + 12 });
+  if (GDT.length) occ.push({ x: gdtB.x, y: gdtB.y, w: gdtB.w, h: gdtB.h });
   const ov = (a0, b0) => Math.max(0, Math.min(a0.x + a0.w, b0.x + b0.w) - Math.max(a0.x, b0.x)) * Math.max(0, Math.min(a0.y + a0.h, b0.y + b0.h) - Math.max(a0.y, b0.y));
   const noteBox = { x: NOTE.x, y: NOTE.y - 2, w: NOTE.w, h: NOTE.h }, frameIn = { x: FR.x + 1, y: FR.y + 1, w: FR.w - 2, h: FR.h - 2 };
   let bad = 0; occ.forEach((r, i) => { bad += r.w * r.h - ov(r, frameIn) + ov(r, TB) + ov(r, noteBox); for (let j = i + 1; j < occ.length; j++) bad += ov(r, occ[j]); });
   return { svg, bad, snaps, extraDropped, extraOk, scale: k, views: VN.map((v) => ({ name: v, ...place[v] })), iso: isoPl, lines, texts: texts.filter((t) => !t.circ), circs: texts.filter((t) => t.circ), arrows, sz, holes,
-    textHits: avoid.hits, textMoved: avoid.moved, oblique, section: SEC ? { y: SEC.y, loops: SEC.loops.length } : null };
+    textHits: avoid.hits, textMoved: avoid.moved, oblique, section: SEC ? { y: SEC.y, loops: SEC.loops.length } : null,
+    detail: detPl ? { view: DET.view, x: detPl.x, y: detPl.y, k: detPl.k, box: detPl.v.box, r: DET.r, mag: detPl.k, asked: +DET.mag > 0 ? +DET.mag : 2 } : null, gdt: GDT.length };
 }
 function drawingDXF(p, sheet) {
   /* polylines sampled from the same SVG paths, in sheet millimetres (y up for DXF) */
@@ -12256,6 +12441,14 @@ function drawingDXF(p, sheet) {
   if (sheet.iso) { const pl = sheet.iso; for (const d of pl.v.visible) { const el = document.createElementNS(ns, 'path'); el.setAttribute('d', d); host.append(el);
     let len = 0; try { len = el.getTotalLength(); } catch (e) { len = 0; } const n = Math.max(2, Math.min(400, Math.ceil(len / 0.5))), pts = [];
     for (let i = 0; i <= n; i++) { const q = el.getPointAtLength(len * i / n); pts.push([pl.x + (q.x - pl.v.box.x) * pl.k, pl.y + (q.y - pl.v.box.y) * pl.k]); } poly(pts, 'ISO'); el.remove(); } }
+  if (sheet.detail && sheetCtx && sheetCtx.detail) { const pl = sheet.detail, det = sheetCtx.detail;
+    const cx0 = pl.x + pl.box.w * pl.k / 2, cy0 = pl.y + pl.box.h * pl.k / 2, rr0 = det.r * pl.k;   /* the detail stops at its window circle */
+    for (const d of det.proj.visible) { const el = document.createElementNS(ns, 'path'); el.setAttribute('d', d); host.append(el);
+      let len = 0; try { len = el.getTotalLength(); } catch (e) { len = 0; } const n = Math.max(2, Math.min(400, Math.ceil(len / 0.5))), run = [];
+      const flush = () => { if (run.length > 1) poly(run.slice(), 'DETAIL'); run.length = 0; };
+      for (let i = 0; i <= n; i++) { const q = el.getPointAtLength(len * i / n), x0 = pl.x + (q.x - pl.box.x) * pl.k, y0 = pl.y + (q.y - pl.box.y) * pl.k;
+        if (Math.hypot(x0 - cx0, y0 - cy0) <= rr0 + 1e-9) run.push([x0, y0]); else flush(); }
+      flush(); el.remove(); } }
   host.remove();
   /* dimensions, centre lines, border, zones and title block: the same primitives as the SVG */
   for (const l of sheet.lines) ents.push(`0\nLINE\n8\n${l.layer}\n10\n${l.x1.toFixed(3)}\n20\n${(H - l.y1).toFixed(3)}\n11\n${l.x2.toFixed(3)}\n21\n${(H - l.y2).toFixed(3)}`);
@@ -12367,13 +12560,83 @@ function drawingDialog(p, vw, circles, planes = [], geo = null) {
         h('button', { class: 'x', 'aria-label': L('Remove', 'Hapus'), onclick: () => { D().extra.splice(i, 1); re(); listExtra(); save(); } }, '✕'))); }); };
   const today = new Date().toISOString().slice(0, 10);
   const s6 = s6ctx || {};
+  /* S20: every time the section moves, the kernel is asked what that cut removes and how much face it exposes */
+  const secMsg = h('p', { class: 'm dr-addmsg', role: 'status' });
+  const secReport = async (y) => {
+    try { const R0 = await kernel(), bb0 = partShape.boundingBox.bounds, si = s20Section(R0, partShape, bb0[0], bb0[1], y);
+      const txt = L(`Section A–A at Y = ${f(si.y, 2)} mm: the kernel removed ${f(si.removed, 2)} mm³ of the ${f(si.before, 2)} mm³ part and exposes ${f(si.cutArea, 2)} mm² of cut face in ${si.faces} face${si.faces === 1 ? '' : 's'}.`,
+        `Potongan A–A di Y = ${f(si.y, 2)} mm: kernel membuang ${f(si.removed, 2)} mm³ dari part ${f(si.before, 2)} mm³ dan membuka ${f(si.cutArea, 2)} mm² muka potong dalam ${si.faces} muka.`);
+      secMsg.textContent = txt; say(para(txt));
+    } catch (err) { secMsg.textContent = String(err.message || err); }
+  };
   const sec0 = p.drawing && p.drawing.section ? p.drawing.section : null, yMid = s6.mid || 0;
   const yIn = h('input', { type: 'number', step: '0.5', value: sec0 && sec0.y != null ? sec0.y : yMid, disabled: !s6.make, onchange: async (e) => { if (!s6.make) return; const y = +e.target.value;
-    try { const sec = await s6.make(y); sheetCtx = { ...(sheetCtx || {}), section: sec }; D().section = { on: true, y }; re(); save(); } catch (err) { warn.textContent = String(err.message || err); } } });
+    try { const sec = await s6.make(y); sheetCtx = Object.assign(sheetCtx || {}, { section: sec }); D().section = { on: true, y }; re(); save(); await secReport(y); } catch (err) { warn.textContent = String(err.message || err); } } });
   const secChk = h('input', { type: 'checkbox', checked: !!(sec0 && sec0.on), disabled: !s6.make, onchange: async (e) => {
     if (!s6.make) return;
-    if (!e.target.checked) { D().section = { on: false, y: +yIn.value }; sheetCtx = { ...(sheetCtx || {}), section: null }; re(); save(); return; }
-    try { const sec = await s6.make(+yIn.value); sheetCtx = { ...(sheetCtx || {}), section: sec }; D().section = { on: true, y: +yIn.value }; re(); save(); } catch (err) { e.target.checked = false; warn.textContent = String(err.message || err); } } });
+    if (!e.target.checked) { D().section = { on: false, y: +yIn.value }; sheetCtx = Object.assign(sheetCtx || {}, { section: null }); re(); save(); return; }
+    try { const sec = await s6.make(+yIn.value); sheetCtx = Object.assign(sheetCtx || {}, { section: sec }); D().section = { on: true, y: +yIn.value }; re(); save(); await secReport(+yIn.value); } catch (err) { e.target.checked = false; warn.textContent = String(err.message || err); } } });
+  /* S20: the detail view (a cylinder window cut out of the part in the kernel) and GD&T (measured on the B-rep faces) */
+  const detBox = h('div', { class: 'dr-det' }), gdtBox = h('div', { class: 'dr-gdt' });
+  const detMsg = h('p', { class: 'm dr-addmsg', role: 'status' }), gdtMsg = h('p', { class: 'm dr-addmsg', role: 'status' });
+  const detCfg = Object.assign({ view: 'front', mag: 5 }, dwgDetailDefault('front'));
+  const detIn = (k0, lab) => h('label', { class: 'dr-f' }, h('span', null, lab), h('input', { type: 'number', step: 'any', 'data-k': k0, value: detCfg[k0], disabled: !s6.make, oninput: (e) => { detCfg[k0] = +e.target.value; } }));
+  const addDet = async () => {
+    if (!s6.make) return;
+    try {
+      const R0 = await kernel();
+      const res = s20Detail(R0, partShape, detCfg.view, +detCfg.u, +detCfg.w, +detCfg.r);
+      if (res.refuse === 'radius') { detMsg.textContent = L('The window radius must be above 0.5 mm.', 'Radius jendela harus di atas 0,5 mm.'); return; }
+      if (res.refuse === 'empty') { detMsg.textContent = L('That window holds 0.00 mm³ of the part (measured); move its centre onto the part.', 'Jendela itu memuat 0,00 mm³ part (terukur); geser pusatnya ke badan part.'); return; }
+      if (!res.box) { detMsg.textContent = L('The kernel could not project that window.', 'Kernel tidak bisa memproyeksikan jendela itu.'); return; }
+      const keep = s6ctx.detail || null;
+      s6ctx.detail = { view: res.view, u: res.u, w: res.w, r: res.r, mag: +detCfg.mag || 5, proj: { visible: res.visible, box: res.box } };
+      const sh = drawingSheet(p, vw, circles, true, planes);
+      if (!sh.detail) { s6ctx.detail = keep; detMsg.textContent = L('The sheet has no free space for the detail view: move a view or lower the magnification.', 'Lembar tidak punya ruang bebas untuk detail view: geser tampak atau turunkan perbesarannya.'); return; }
+      D().detail = { view: res.view, u: res.u, w: res.w, r: res.r, mag: +detCfg.mag || 5 };
+      re(); save(); buildDet();
+      const drawn = sh.detail.mag, asked = +detCfg.mag || 5, room = drawn < asked - 1e-9 ? (L(` (asked ${scaleText(asked)}: the sheet has no room for it)`, ` (diminta ${scaleText(asked)}: lembar tidak punya ruangnya)`)) : '';
+      const txt = L(`Detail B drawn at ${scaleText(drawn)}${room} (${res.view} view): the Ø${r1d(2 * res.r)} mm window the kernel cut holds ${f(res.vol, 2)} mm³ of the part${res.holes.length ? ', with ' + res.holes.map((h) => 'Ø' + r1d(h.d) + ' mm').join(', ') + ' measured inside it' : ', no full hole inside it'}.`,
+        `Detail B digambar pada ${scaleText(drawn)}${room} (tampak ${res.view}): jendela Ø${r1d(2 * res.r)} mm yang dipotong kernel memuat ${f(res.vol, 2)} mm³ part${res.holes.length ? ', dengan ' + res.holes.map((h) => 'Ø' + r1d(h.d) + ' mm').join(', ') + ' terukur di dalamnya' : ', tanpa lubang penuh di dalamnya'}.`);
+      detMsg.textContent = txt; say(para(txt));
+    } catch (err) { detMsg.textContent = String(err.message || err); }
+  };
+  const buildDet = () => {
+    detBox.innerHTML = '';
+    if (!s6.make) { detBox.append(h('p', { class: 'm' }, L('A detail view needs a part built in this browser; this drawing comes from generated code.', 'Detail view butuh part yang dibangun di browser ini; gambar ini dari kode yang dihasilkan.'))); return; }
+    const d0 = (p.drawing && p.drawing.detail) || null;
+    detBox.append(
+      h('label', { class: 'dr-f' }, h('span', null, L('View', 'Tampak')), h('select', { 'data-k': 'detView', onchange: (e) => { detCfg.view = e.target.value; Object.assign(detCfg, dwgDetailDefault(detCfg.view)); buildDet(); } },
+        [['front', L('Front', 'Depan')], ['top', L('Top', 'Atas')], ['left', L('Left', 'Kiri')]].map(([v, t]) => h('option', { value: v, selected: detCfg.view === v }, t)))),
+      detIn('u', L('Centre U (mm)', 'Pusat U (mm)')), detIn('w', L('Centre W (mm)', 'Pusat W (mm)')), detIn('r', L('Window radius (mm)', 'Radius jendela (mm)')),
+      h('label', { class: 'dr-f' }, h('span', null, L('Magnification (ISO 5455)', 'Perbesaran (ISO 5455)')), h('select', { 'data-k': 'detMag', onchange: (e) => { detCfg.mag = +e.target.value; } },
+        S20_MAG.map((m) => h('option', { value: String(m), selected: +detCfg.mag === m }, scaleText(m))))),
+      h('div', { class: 'pact' }, h('button', { class: 'chip', 'data-do': 'detAdd', onclick: addDet }, L('Add detail view', 'Tambah detail view')),
+        d0 ? h('button', { class: 'chip', 'data-do': 'detDel', onclick: () => { delete D().detail; if (s6ctx) s6ctx.detail = null; re(); save(); buildDet(); } }, L('Remove', 'Hapus')) : null),
+      detMsg,
+      h('p', { class: 'm' }, d0 ? L(`On the sheet: ${d0.view} view, window Ø${r1d(2 * +d0.r)} mm at ${scaleText(+d0.mag || 2)}, cut in the kernel.`, `Di lembar: tampak ${d0.view}, jendela Ø${r1d(2 * +d0.r)} mm pada ${scaleText(+d0.mag || 2)}, dipotong di kernel.`)
+        : L('The window is a cylinder the kernel cuts out of the part; its projection is the detail view. The centre and radius start at the largest round edge the kernel measured in that view.', 'Jendela adalah silinder yang dipotong kernel dari part; proyeksinya menjadi detail view. Pusat dan radius awalnya diambil dari tepi bulat terbesar yang diukur kernel pada tampak itu.')));
+  };
+  let gdtM = null;
+  const buildGdt = () => {
+    gdtBox.innerHTML = '';
+    if (!s6.make) { gdtBox.append(h('p', { class: 'm' }, L('GD&T is measured on the faces of the part built in this browser; this drawing comes from generated code.', 'GD&T diukur dari muka part yang dibangun di browser ini; gambar ini dari kode yang dihasilkan.'))); return; }
+    if (!gdtM) { gdtBox.append(h('p', { class: 'm' }, L('Measuring the kernel faces…', 'Mengukur muka kernel…'))); return; }
+    const fl = gdtM.flat.worst, pe = gdtM.perp.worst;
+    const push = (kind, sym, val, face, datum) => { D().gdt = ((p.drawing && p.drawing.gdt) || []).concat([{ kind, sym, val, face, datum }]).slice(-4); re(); save(); buildGdt(); };
+    gdtBox.append(
+      h('p', { class: 'm' }, L(`Measured: flatness ${fl ? (+fl.dev).toFixed(3) + ' mm on face ' + fl.i + (fl.area != null ? ' (' + f(fl.area, 1) + ' mm²)' : '') : '—'} · perpendicularity ${pe && gdtM.perp.datum ? (+pe.dev).toFixed(3) + ' mm at ' + (+pe.deg).toFixed(3) + '° to datum A (face ' + gdtM.perp.datum.i + ')' : '—'}.`,
+        `Terukur: kerataan ${fl ? (+fl.dev).toFixed(3) + ' mm pada muka ' + fl.i + (fl.area != null ? ' (' + f(fl.area, 1) + ' mm²)' : '') : '—'} · ketegaklurusan ${pe && gdtM.perp.datum ? (+pe.dev).toFixed(3) + ' mm pada ' + (+pe.deg).toFixed(3) + '° terhadap datum A (muka ' + gdtM.perp.datum.i + ')' : '—'}.`)),
+      h('div', { class: 'dr-2' },
+        h('button', { class: 'chip', 'data-do': 'gdtFlat', disabled: !fl, onclick: () => push('flat', '▱', fl.dev, fl.i, '') }, `▱ ${fl ? (+fl.dev).toFixed(3) : '—'} · ${L('Flatness', 'Kerataan')}`),
+        h('button', { class: 'chip', 'data-do': 'gdtPerp', disabled: !(pe && gdtM.perp.datum), onclick: () => push('perp', '⊥', pe.dev, pe.i, 'A') }, `⊥ ${pe ? (+pe.dev).toFixed(3) : '—'} · ${L('Perpendicularity', 'Ketegaklurusan')}`)),
+      h('p', { class: 'm' }, L('The model’s faces are exact B-rep planes, so the measured form deviation is 0.000 mm: the frame on the sheet states that measurement, not a manufacturing tolerance.', 'Muka model adalah bidang B-rep eksak, jadi simpangan bentuk terukur 0,000 mm: frame di lembar menyatakan hasil ukur itu, bukan toleransi manufaktur.')),
+      gdtMsg);
+    ((p.drawing && p.drawing.gdt) || []).forEach((q, i) => gdtBox.append(h('div', { class: 'dr-x' }, h('span', null, `${q.sym} ${(+q.val).toFixed(3)}${q.datum ? ' · ' + q.datum : ''} · ${q.kind}`),
+      h('button', { class: 'x', 'aria-label': L('Remove', 'Hapus'), onclick: () => { D().gdt.splice(i, 1); re(); save(); buildGdt(); } }, '✕'))));
+  };
+  buildDet(); buildGdt();
+  if (s6.make) setTimeout(async () => { try { const R0 = await kernel(); gdtM = { flat: s20Flatness(R0, partShape), perp: s20Perp(R0, partShape) }; } catch (e) { gdtM = null; } buildGdt(); }, 0);
   const side = h('div', { class: 'dr-side' },
     h('b', null, L('Title block', 'Kotak judul')),
     field('title', L('Title', 'Judul'), p.name || 'Part'), field('docNo', L('Drawing number', 'Nomor gambar'), 'IDR-' + String(p.id || '').toUpperCase()),
@@ -12386,6 +12649,9 @@ function drawingDialog(p, vw, circles, planes = [], geo = null) {
     h('label', { class: 'dr-f' }, h('span', null, L('Section A–A (remove the front half)', 'Potongan A–A (buang separuh depan)')), secChk),
     h('label', { class: 'dr-f' }, h('span', null, L('Cut at Y (mm, from the kernel bounds)', 'Potong di Y (mm, dari batas kernel)')), yIn),
     h('p', { class: 'm' }, s6.make ? L('The section is cut in the kernel and hatched from the cut face; its outline and hatching go into SVG, DXF and the PDF.', 'Potongan dibuat di kernel dan diarsir dari muka potong; garis dan arsirnya masuk SVG, DXF, dan PDF.') : L('A section view needs a part built in this browser; this drawing comes from generated code.', 'Gambar potongan butuh part yang dibangun di browser ini; gambar ini dari kode yang dihasilkan.')),
+    secMsg,
+    h('b', null, L('Detail view (kernel window)', 'Detail view (jendela kernel)')), detBox,
+    h('b', null, L('GD&T (measured on the kernel faces)', 'GD&T (diukur dari muka kernel)')), gdtBox,
     h('b', null, L('Annotations (engineer input)', 'Anotasi (masukan engineer)')),
     field('finish', L('Surface finish (ISO 21920/1302)', 'Kekasaran (ISO 21920/1302)'), 'Ra 3.2'),
     field('tol', L('Special tolerance', 'Toleransi khusus'), 'Ø12 H7'),
