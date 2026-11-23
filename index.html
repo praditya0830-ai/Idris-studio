@@ -6509,7 +6509,7 @@ const N = (k, en, id, unit, def, extra = {}) => ({ k, en, id, unit, def, t: 'num
 const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
-const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', mold: 'move', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
+const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
 /* ---- P1d: welded frames. Two numbers on every row come from its standard's table: A (mm²) and the mass
  * per metre (kg/m). The kernel builds a SIMPLIFIED section — sharp corners, no corner or root radius — so its
  * area and the table area differ; the difference is shown, never hidden. No table value is guessed: a size
@@ -6595,6 +6595,104 @@ function sketchOptions() {
 }
 /* the sketches a weldment step may point at */
 function weldSketchOptions() { return sketchOptions(); }
+/* ---- S18: the mould steps. Shrinkage is the kernel scaling the body by the factor the table gives; the parting line
+ * is the kernel's section of the body with the parting plane; a shut-off surface is a cylinder whose radius the kernel
+ * measured on a concave hole wall, fused back into the hole. No diameter and no factor is invented: the table rows
+ * carry their range and are marked as typical, and the kernel measures every number that is reported. ---- */
+const SHRINK = {
+  ABS: { s: 0.5, rng: '0.3–0.8' }, PP: { s: 1.5, rng: '1.0–2.5' }, 'PE-HD': { s: 2.0, rng: '1.5–3.0' },
+  PS: { s: 0.5, rng: '0.4–0.7' }, 'PA66': { s: 1.5, rng: '1.0–2.0' }, PC: { s: 0.6, rng: '0.5–0.8' },
+  POM: { s: 2.0, rng: '1.8–2.5' }, 'PVC-U': { s: 0.5, rng: '0.2–0.6' },
+};
+/* the material picker; the first entry is a starting point, not a silent choice, and every row shows its range */
+const shrinkOptions = () => Object.keys(SHRINK).map((k) => {
+  const t = SHRINK[k], lab = `${k} — ${L('typical mould shrinkage', 'susut cetak tipikal')} ${t.s} % (${L('range', 'rentang')} ${t.rng} %)${k === 'ABS' ? ` · ${L('default selection — change to your resin', 'pilihan default — ganti ke resinmu')}` : ''}`;
+  return [k, [lab, lab]];
+});
+/* every concave cylinder whose axis is the pull direction: a hole the mould would need a side action for */
+function mouldHoles(R, OC3, shape) {
+  const out = [];
+  if (!OC3) return out;
+  for (const f of shape.faces) {
+    if (f.geomType !== 'CYLINDRE') continue;
+    const ad = new OC3.BRepAdaptor_Surface(f.wrapped, false), cyl = ad.Cylinder(), ax = cyl.Axis(), loc = ax.Location(), dir = ax.Direction();
+    try {
+      const d = [dir.X(), dir.Y(), dir.Z()], pt = f.pointOnSurface(0.5, 0.5), n = f.normalAt(pt);
+      const px = pt.x - loc.X(), py = pt.y - loc.Y(), pz = pt.z - loc.Z(), al = px * d[0] + py * d[1] + pz * d[2];
+      const rad = [px - al * d[0], py - al * d[1], pz - al * d[2]], rl = Math.hypot(...rad) || 1;
+      const dot = (n.x * rad[0] + n.y * rad[1] + n.z * rad[2]) / rl;
+      const b = f.boundingBox.bounds;
+      /* dot < 0: the wall faces the hole (a fillet faces away, so a rounded corner is never plugged) */
+      if (dot < 0 && Math.abs(Math.abs(d[2]) - 1) < 1e-6) out.push({ r: cyl.Radius(), x: loc.X(), y: loc.Y(), z0: b[0][2], z1: b[1][2] });
+    } finally { ad.delete(); cyl.delete(); ax.delete(); loc.delete(); dir.delete(); }
+  }
+  return out;
+}
+/* the parting line: the kernel's section of the body with the plane Z = z, as its measured length and its loops */
+function mouldSection(R, OC3, shape, z) {
+  if (!OC3) return null;
+  const pln = new OC3.gp_Pln(new OC3.gp_Pnt(0, 0, z), new OC3.gp_Dir(0, 0, 1));
+  const mk = new OC3.BRepBuilderAPI_MakeFace(pln), face = mk.Face();
+  const sec = new OC3.BRepAlgoAPI_Section(shape.wrapped, face);
+  try {
+    sec.Approximation(true); sec.Build();
+    if (!sec.IsDone()) return null;
+    const shp = sec.Shape();
+    if (shp.IsNull()) return null;
+    const es = [];
+    for (let ex = new OC3.TopExp_Explorer(shp, OC3.TopAbs_ShapeEnum.TopAbs_EDGE); ex.More(); ex.Next()) es.push(R.cast(ex.Current()));
+    let per = es.reduce((n, e) => n + e.length, 0);
+    /* the section comes back as loose edges, so a loop is a run of edges that share an end point: two edges that meet
+       belong to the same loop. A closed circle is one edge whose two ends are the same point. */
+    const key = (v) => [v.x, v.y, v.z].map((n) => Math.round(n * 1e6)).join(','), par = es.map((_, i) => i);
+    const find = (i) => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+    const seen = new Map();
+    es.forEach((e, i) => { for (const v of [e.startPoint, e.endPoint]) { const k = key(v); if (seen.has(k)) par[find(i)] = find(seen.get(k)); else seen.set(k, i); } });
+    const loops = new Set(es.map((_, i) => find(i))).size;
+    return per > 1e-6 ? { per, loops, edges: es.length } : null;
+  } finally { pln.delete(); mk.delete(); face.delete(); sec.delete(); }
+}
+/* ---- S17: weldments (Batch 3). A gusset and a weld bead are closed prisms the kernel extrudes at the inside corner
+ * of two members. Every corner is read from the sketch: the point two straight lines share and the two directions
+ * that leave it. Nothing here guesses a corner or a face position. ---- */
+/* the corner at (x, y): the two straight lines that end there, and their directions away from it */
+function weldCorner(ents, x, y) {
+  const near = (p) => Math.hypot(p[0] - x, p[1] - y) <= 1e-6;
+  const use = [];
+  for (const e of ents || []) {
+    if (!e || e.t !== 'line' || e.c) continue;
+    if (!(Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) > 1e-9)) continue;
+    if (near(e.a)) use.push({ from: e.a, to: e.b }); else if (near(e.b)) use.push({ from: e.b, to: e.a });
+    if (use.length === 2) break;
+  }
+  if (use.length < 2) return null;
+  const dir = (z) => { const dx = z.to[0] - z.from[0], dy = z.to[1] - z.from[1], l = Math.hypot(dx, dy); return [dx / l, dy / l]; };
+  const u = dir(use[0]), v = dir(use[1]), cross = u[0] * v[1] - u[1] * v[0];
+  if (Math.abs(cross) < 1e-9) return null;
+  return { c: [x, y], u, v, angle: Math.abs(Math.atan2(cross, u[0] * v[0] + u[1] * v[1])) };
+}
+/* the inside corner of the two profile faces: where one member's face meets the other member's face. For two square
+ * sections of width w at an angle φ the offset from the sketch corner is (w/2)/(1+cos φ) along both inward normals. */
+function weldFaceCorner(k, w) {
+  const perp = (d) => [-d[1], d[0]], pick = (n, o) => (n[0] * o[0] + n[1] * o[1] >= 0 ? n : [-n[0], -n[1]]);
+  const nu = pick(perp(k.u), k.v), nv = pick(perp(k.v), k.u);
+  const a = (w / 2) / (1 + nu[0] * nv[0] + nu[1] * nv[1]);
+  return { p: [k.c[0] + a * (nu[0] + nv[0]), k.c[1] + a * (nu[1] + nv[1])], nu, nv };
+}
+/* a closed triangle, extruded by the kernel along +Z: the corners are the face corner and one leg along each face */
+function weldTriSolid(R, pts, z0, h) {
+  return R.draw().movePointerTo(pts[0]).lineTo(pts[1]).lineTo(pts[2]).close().sketchOnPlane('XY', z0).extrude(h, [0, 0, 1]);
+}
+/* a fillet bead: legs a along both faces, section ½·a²·sinφ, standing the profile's own section height w at the joint */
+function weldBeadSolid(R, k, prof, leg, at) {
+  const w = weldWidth(prof), f = weldFaceCorner(k, w);
+  return weldTriSolid(R, [f.p, [f.p[0] + k.u[0] * leg, f.p[1] + k.u[1] * leg], [f.p[0] + k.v[0] * leg, f.p[1] + k.v[1] * leg]], at - w / 2, w);
+}
+/* a gusset plate: a triangle of legs lg and lh on the top face of the members, t thick, upward from that face */
+function weldGussetSolid(R, k, prof, lg, lh, t, at) {
+  const w = weldWidth(prof), f = weldFaceCorner(k, w);
+  return weldTriSolid(R, [f.p, [f.p[0] + k.u[0] * lg, f.p[1] + k.u[1] * lg], [f.p[0] + k.v[0] * lh, f.p[1] + k.v[1] * lh]], at + w / 2, t);
+}
 const FEAT = {
   shape: { en: 'Shape', id: 'Shape', fields: [S('kind', 'Shape', 'Bentuk', [['box', ['Box', 'Balok']], ['cyl', ['Cylinder', 'Silinder']], ['tube', ['Tube', 'Tabung']], ['sphere', ['Sphere', 'Bola']]], 'box'),
       N('L', 'Length X', 'Panjang X', 'mm', 100, { show: (p) => p.kind === 'box' }), N('W', 'Width Y', 'Lebar Y', 'mm', 60, { show: (p) => p.kind === 'box' }),
@@ -6638,6 +6736,16 @@ const FEAT = {
       N('angle', 'Angle', 'Sudut', '\u00b0', 360, { min: 1, step: 1 }),
       S('op', 'Result', 'Hasil', OPS, 'add')],
     label: (p) => `${L('Revolve', 'Putar')} ${p.angle}\u00b0 \u00b7 ${p.axis}${p.op === 'cut' ? ' \u00b7 ' + L('cut', 'potong') : ''}` },
+  /* S18: the three mould steps. */
+  parting: { en: 'Parting Line', id: 'Parting Line', fields: [N('z', 'Parting plane Z', 'Bidang pisah Z', 'mm', 10)],
+    label: (p) => `${L('Parting line at Z =', 'Garis pisah di Z =')} ${p.z} mm` },
+  shutoff: { en: 'Shut-off Surfaces', id: 'Shut-off Surfaces', fields: [N('minD', 'Smallest hole to close', 'Lubang terkecil yang ditutup', 'mm', 0, { min: 0 })],
+    label: (p) => `${L('Close round holes', 'Tutup lubang bundar')}${+p.minD > 0 ? ` ≥ Ø${p.minD}` : ''}` },
+  shrink: { en: 'Shrinkage Scale', id: 'Shrinkage Scale', fields: [
+      S('mat', 'Material', 'Material', shrinkOptions(), 'ABS'),
+      N('pct', 'Shrinkage (0 = the table value)', 'Susut (0 = nilai tabel)', '%', 0),
+      S('about', 'Scale about', 'Skala terhadap', [['centre', ['The part centre', 'Pusat part']], ['origin', ['The origin', 'Titik nol']]], 'centre')],
+    label: (p) => `${p.mat} · ${+p.pct > 0 ? p.pct : SHRINK[p.mat].s} %` },
   mold: { en: 'Core / Cavity', id: 'Core / Cavity', fields: [
       N('margin', 'Block margin around the part', 'Margin blok di sekeliling part', 'mm', 10, { min: 0 }),
       N('parting', 'Parting plane Z', 'Bidang pisah Z', 'mm', 0)],
@@ -6713,7 +6821,7 @@ const FEAT = {
   surfthick: { en: 'Thicken', id: 'Thicken', fields: [N('t', 'Wall thickness', 'Tebal dinding', 'mm', 2, { min: 0.05 })],
     label: (p) => `${L('Thicken', 'Tebalkan')} ${p.t} mm` },
 };
-const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'mold', 'draft', 'dim', 'measure',
+const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'mold', 'parting', 'shutoff', 'shrink', 'draft', 'dim', 'measure',
   'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
 const defaults = (type) => Object.fromEntries(FEAT[type].fields.map((x) => [x.k, x.def]));
@@ -6891,6 +6999,43 @@ async function buildPart(pArg) {
           }
         }
         ft.note = L(`${n} end cap(s), ${q.t} mm plate, ${q.profile}.`, `${n} tutup ujung, pelat ${q.t} mm, ${q.profile}.`);
+      } else if (ft.type === 'shrink') {
+        /* S18: the cavity is cut from an oversized part: the kernel scales the body by (1 + s) about a point, so the
+           volume grows by that factor cubed. The part is then the cavity size, not the nominal part; the note says so. */
+        if (!body) throw new Error(L('Shrinkage scales a part: build one first.', 'Skala susut butuh part: bangun dulu.'));
+        const mat = SHRINK[q.mat];
+        if (!mat) throw new Error(L('Pick a material from the table, or type your own shrinkage.', 'Pilih material dari tabel, atau ketik susutmu sendiri.'));
+        const pct = +q.pct > 0 ? +q.pct : mat.s;
+        if (!(pct > 0 && pct <= 10)) throw new Error(L('Shrinkage must be above 0 % and at most 10 %.', 'Susut harus di atas 0 % dan paling besar 10 %.'));
+        const fac = 1 + pct / 100, [mn0, mx0] = bb(), c = q.about === 'origin' ? [0, 0, 0] : [0, 1, 2].map((k) => (mn0[k] + mx0[k]) / 2);
+        const v0 = R.measureVolume(body), sz0 = [0, 1, 2].map((k) => mx0[k] - mn0[k]);
+        body = body.scale(fac, c);
+        const v1 = R.measureVolume(body), b1 = body.boundingBox.bounds, sz1 = [0, 1, 2].map((k) => b1[1][k] - b1[0][k]);
+        ft.note = L(`Shrinkage ${f(pct, 2)} % (${q.pct > 0 ? L('typed', 'diketik') : `${L('table value for', 'nilai tabel untuk')} ${q.mat}, ${L('typical', 'tipikal')} ${mat.rng} %`}): ×${f(fac, 4)} about ${q.about === 'origin' ? L('the origin', 'titik nol') : L('the part centre', 'pusat part')}. Volume ${f(v0, 0)} → ${f(v1, 0)} mm³ (×${f(fac ** 3, 4)} = ${f(fac ** 3, 3)}), size ${sz0.map((x) => f(x, 1)).join(' × ')} → ${sz1.map((x) => f(x, 1)).join(' × ')} mm. The part is now the cavity size, not the nominal part.`,
+          `Susut ${f(pct, 2)} % (${q.pct > 0 ? 'diketik' : `nilai tabel ${q.mat}, tipikal ${mat.rng} %`}): ×${f(fac, 4)} terhadap ${q.about === 'origin' ? 'titik nol' : 'pusat part'}. Volume ${f(v0, 0)} → ${f(v1, 0)} mm³ (×${f(fac ** 3, 4)}), ukuran ${sz0.map((x) => f(x, 1)).join(' × ')} → ${sz1.map((x) => f(x, 1)).join(' × ')} mm. Part ini sekarang seukuran cavity, bukan part nominal.`);
+      } else if (ft.type === 'parting') {
+        /* S18: the parting line is where the part's own surface meets the parting plane: the kernel sections the body
+           with the plane and the step reports the length and the loops it measured. */
+        if (!body) throw new Error(L('A parting line needs a part to cut.', 'Garis pisah butuh part untuk dipotong.'));
+        const z = +q.z, [mn, mx] = bb();
+        if (!(z > mn[2] && z < mx[2])) throw new Error(L(`The parting plane must cut through the part: Z ${f(mn[2], 2)} to ${f(mx[2], 2)} mm, not ${f(z, 2)} mm.`, `Bidang pisah harus memotong part: Z ${f(mn[2], 2)} sampai ${f(mx[2], 2)} mm, bukan ${f(z, 2)} mm.`));
+        const sec = mouldSection(R, OC3, body, z);
+        if (!sec) throw new Error(L(`The plane at Z = ${f(z, 2)} mm only touches the part: move it inside.`, `Bidang di Z = ${f(z, 2)} mm hanya menyentuh part: geser ke dalam.`));
+        ft.parting = sec;
+        ft.note = L(`Parting line at Z = ${f(z, 2)} mm: ${f(sec.per, 2)} mm long in ${sec.loops} closed loop(s), ${sec.edges} edge(s), cut by the kernel as the section of the body with the plane.`, `Garis pisah di Z = ${f(z, 2)} mm: panjang ${f(sec.per, 2)} mm dalam ${sec.loops} loop tertutup, ${sec.edges} tepi, dipotong kernel sebagai irisan body dengan bidangnya.`);
+      } else if (ft.type === 'shutoff') {
+        /* S18: every concave hole wall along the pull direction gets a cylinder of the radius the kernel measured, and
+           the kernel fuses it back: the hole is filled by geometry, not by a flag. A rounded corner faces the other
+           way and is never plugged; a hole on another axis is counted and left alone. */
+        if (!body) throw new Error(L('Shut-off surfaces close holes in a part: build one first.', 'Shut-off menutup lubang di part: bangun part dulu.'));
+        const minD = +q.minD || 0, all = mouldHoles(R, OC3, body), holes = all.filter((h) => 2 * h.r >= minD - 1e-9);
+        if (!holes.length) throw new Error(L(`The kernel found no round hole with its axis along the pull direction (+Z)${minD > 0 ? ` at Ø${f(minD, 1)} or more` : ''}. Only concave cylindrical walls are closed, so a fillet is not one of them.`, `Kernel tidak menemukan lubang bundar dengan sumbu searah tarik (+Z)${minD > 0 ? ` berukuran Ø${f(minD, 1)} ke atas` : ''}. Hanya dinding silinder cekung yang ditutup, jadi fillet tidak termasuk.`));
+        const v0 = R.measureVolume(body), plugs = [];
+        for (const h of holes) plugs.push({ r: h.r, h: h.z1 - h.z0, sh: R.makeCylinder(h.r, h.z1 - h.z0, [h.x, h.y, h.z0], [0, 0, 1]) });
+        for (const pl of plugs) apply(pl.sh, 'add');
+        const grew = R.measureVolume(body) - v0, vol = plugs.reduce((n, p2) => n + Math.PI * p2.r ** 2 * p2.h, 0);
+        ft.shut = { holes: holes.length, grew };
+        ft.note = L(`Closed ${holes.length} round hole(s) along +Z: Ø${holes.map((h) => f(2 * h.r, 1)).join(', ')} mm, ${f(grew, 1)} mm³ filled (πr²·h sums to ${f(vol, 1)} mm³; kernel). A rounded corner is not a hole and is left alone.`, `Menutup ${holes.length} lubang bundar searah +Z: Ø${holes.map((h) => f(2 * h.r, 1)).join(', ')} mm, ${f(grew, 1)} mm³ terisi (Σπr²·h = ${f(vol, 1)} mm³; kernel). Sudut bulat bukan lubang dan dibiarkan.`);
       } else if (ft.type === 'sweep') {
         /* P1c: a named profile sketch swept along a named path sketch, read as a 3D wire on its own plane. The kernel
            sweeps the profile wire along that wire and refuses a path that leaves no solid. */
@@ -8444,10 +8589,10 @@ const RIBBON = [
       T('Gusset', 'gusset', 'no', 'A triangular plate in a corner. The kernel builds flat plates, not the triangle between two members yet, so it is grey until the corner is picked in the viewport.', 'Pelat segitiga di sudut. Kernel membangun pelat datar, belum segitiga antara dua member, jadi abu-abu sampai sudutnya bisa diklik di viewport.', ''), T('Weld Bead', 'weld', 'no', 'Weld geometry and symbol.', 'Geometri dan simbol las.', 'Fillet Weld'),
       T('Cut List', 'list', 'on', 'Profile, length, quantity and mass for the shop, read from the members the kernel built.', 'Profil, panjang, jumlah, dan massa untuk bengkel, dibaca dari member yang dibangun kernel.', '', 'weldCutListShow')]]]],
   ['mold', 'Mold', 'Mold', [
-    ['Mold', [T('Draft Analysis', 'draft', 'on', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.', '', 'dfmDraft'), T('Parting Line', 'split', 'no', 'The silhouette where the mould opens. The core/cavity step cuts at a parting plane Z you type; a parting line traced from the silhouette is not built yet.', 'Siluet tempat cetakan terbuka. Langkah core/cavity memotong di bidang Z yang kamu ketik; garis pisah dari siluet belum ada.', 'Silhouette'),
-      T('Shut-off Surfaces', 'fill', 'no', 'Close through-holes for the mould.', 'Tutup lubang tembus untuk cetakan.', '')
+    ['Mold', [T('Draft Analysis', 'draft', 'on', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.', '', 'dfmDraft'), T('Parting Line', 'split', 'on', 'The line where the part\'s own surface meets the parting plane, cut by the kernel at the Z you type: the step reports the perimeter it measures and how many closed loops it found. It does not change the body.', 'Garis tempat permukaan part bertemu bidang pisah, dipotong kernel di Z yang kamu ketik: langkahnya melaporkan keliling yang diukur dan berapa loop tertutup yang ditemukan. Body tidak berubah.', 'Silhouette', P('parting')),
+      T('Shut-off Surfaces', 'fill', 'on', 'Close every round hole whose axis is the pull direction (+Z): the kernel measures each concave hole wall and fuses a cylinder of that radius back in, so a fillet is never mistaken for a hole. The step reports the diameters and the volume it filled.', 'Tutup setiap lubang bundar yang sumbunya searah tarik (+Z): kernel mengukur tiap dinding lubang yang cekung lalu menyatukan silinder berjari-jari itu, jadi fillet tidak pernah disangka lubang. Langkahnya melaporkan diameter dan volume yang diisi.', '', P('shutoff')),
       /* the block above minus the part already closes a hole that ends inside the block */, T('Core / Cavity', 'comb', 'on', 'Split a block around the part into core and cavity with the kernel: block margin, parting plane Z, both volumes reported on the step. The part itself is not changed.', 'Bagi blok di sekeliling part menjadi core dan cavity dengan kernel: margin blok, bidang pisah Z, kedua volume dilaporkan di langkahnya. Part-nya sendiri tidak berubah.', 'Tooling Split', P('mold')),
-      T('Shrinkage Scale', 'scale', 'no', 'Scale for plastic shrinkage. The block follows the part size; a shrinkage factor per material is not in the table yet.', 'Skala untuk susut plastik. Blok mengikuti ukuran part; faktor susut per material belum ada di tabel.', '')]]]],
+      T('Shrinkage Scale', 'scale', 'on', 'Scale the part by the mould shrinkage: the kernel scales the body by (1 + s) about a point you choose, and the step reports the volume and the size before and after. The factor comes from the material table (marked typical, with its range) or from what you type.', 'Skala part dengan susut cetak: kernel menskalakan body sebesar (1 + s) terhadap titik yang kamu pilih, dan langkahnya melaporkan volume serta ukuran sebelum dan sesudah. Faktornya dari tabel material (ditandai tipikal, dengan rentangnya) atau dari angka yang kamu ketik.', '', P('shrink'))]]]],
   ['asm', 'Assembly', 'Assembly', [
     ['Components', [T('Insert Component', 'part', 'mk1', 'Bring saved parts into one assembly.', 'Masukkan part tersimpan ke satu assembly.', 'Place, Insert'),
       T('Move / Rotate Component', 'move', 'mk1', 'Drag a part in the assembly.', 'Geser atau putar part di assembly.', 'Free Move'),
