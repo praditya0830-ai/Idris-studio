@@ -6518,7 +6518,7 @@ const N = (k, en, id, unit, def, extra = {}) => ({ k, en, id, unit, def, t: 'num
 const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
-const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
+const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', gusset: 'gusset', weld: 'weld', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
 /* ---- P1d: welded frames. Two numbers on every row come from its standard's table: A (mm²) and the mass
  * per metre (kg/m). The kernel builds a SIMPLIFIED section — sharp corners, no corner or root radius — so its
  * area and the table area differ; the difference is shown, never hidden. No table value is guessed: a size
@@ -6769,6 +6769,21 @@ const FEAT = {
       return [S('sketch', 'Sketch', 'Sketch', o, o[0][0]), S('profile', 'Profile', 'Profil', weldProfileOptions(), 'SHS 40x40x3'),
         N('t', 'Plate thickness', 'Tebal pelat', 'mm', 3, { min: 0.5 }), S('op', 'Result', 'Hasil', OPS, 'add')]; },
     label: (p) => `${L('End caps', 'Tutup ujung')} ${p.t} mm · ${p.profile}` },
+  /* S17: the three weldment steps. The corner is read from two lines that share an end at the X, Y you type, so a
+     sketch with several corners still builds the one the engineer means. */
+  gusset: { en: 'Gusset', id: 'Gusset', get fields() {
+      const o = weldSketchOptions();
+      return [S('sketch', 'Sketch', 'Sketch', o, o[0][0]), S('profile', 'Profile', 'Profil', weldProfileOptions(), 'SHS 40x40x3'),
+        N('lg', 'Leg along the first line', 'Kaki sepanjang garis pertama', 'mm', 40, { min: 1 }), N('lh', 'Leg along the second line', 'Kaki sepanjang garis kedua', 'mm', 30, { min: 1 }),
+        N('t', 'Plate thickness', 'Tebal pelat', 'mm', 4, { min: 0.5 }), N('cx', 'Corner X', 'Sudut X', 'mm', 0), N('cy', 'Corner Y', 'Sudut Y', 'mm', 0),
+        S('op', 'Result', 'Hasil', OPS, 'add')]; },
+    label: (p) => `${L('Gusset', 'Gusset')} ${p.lg}×${p.lh}×${p.t} @ ${p.cx}, ${p.cy}` },
+  weld: { en: 'Weld Bead', id: 'Weld Bead', get fields() {
+      const o = weldSketchOptions();
+      return [S('sketch', 'Sketch', 'Sketch', o, o[0][0]), S('profile', 'Profile', 'Profil', weldProfileOptions(), 'SHS 40x40x3'),
+        N('leg', 'Weld leg', 'Kaki las', 'mm', 6, { min: 0.5 }), N('cx', 'Corner X', 'Sudut X', 'mm', 0), N('cy', 'Corner Y', 'Sudut Y', 'mm', 0),
+        S('op', 'Result', 'Hasil', OPS, 'add')]; },
+    label: (p) => `${L('Weld bead', 'Bead las')} ${p.leg} mm @ ${p.cx}, ${p.cy}` },
   sweep: { en: 'Swept Boss/Base', id: 'Swept Boss/Base', get fields() {
       const o = sketchOptions();
       return [S('profile', 'Profile sketch', 'Sketch profil', o, o[0][0]), S('path', 'Path sketch', 'Sketch lintasan', o, o.length > 1 ? o[1][0] : o[0][0]), S('op', 'Result', 'Hasil', OPS, 'add')]; },
@@ -6865,7 +6880,7 @@ const FEAT = {
       S('material', 'Material', 'Material', [['steel', ['Steel', 'Baja']], ['stainless', ['Stainless', 'Stainless']], ['aluminium', ['Aluminium', 'Aluminium']], ['brass', ['Brass', 'Kuningan']]])],
     label: (p) => L('Convert to sheet metal', 'Ubah jadi sheet metal') },
 };
-const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'mold', 'parting', 'shutoff', 'shrink', 'draft', 'dim', 'measure',
+const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'gusset', 'weld', 'mold', 'parting', 'shutoff', 'shrink', 'draft', 'dim', 'measure',
   'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick',
   'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
@@ -7132,6 +7147,25 @@ async function buildPart(pArg) {
         const grew = R.measureVolume(body) - v0, vol = plugs.reduce((n, p2) => n + Math.PI * p2.r ** 2 * p2.h, 0);
         ft.shut = { holes: holes.length, grew };
         ft.note = L(`Closed ${holes.length} round hole(s) along +Z: Ø${holes.map((h) => f(2 * h.r, 1)).join(', ')} mm, ${f(grew, 1)} mm³ filled (πr²·h sums to ${f(vol, 1)} mm³; kernel). A rounded corner is not a hole and is left alone.`, `Menutup ${holes.length} lubang bundar searah +Z: Ø${holes.map((h) => f(2 * h.r, 1)).join(', ')} mm, ${f(grew, 1)} mm³ terisi (Σπr²·h = ${f(vol, 1)} mm³; kernel). Sudut bulat bukan lubang dan dibiarkan.`);
+      } else if (ft.type === 'gusset' || ft.type === 'weld') {
+        /* S17: the plate or the bead is a closed triangle the kernel extrudes, placed at the inside corner of the two
+           profile faces. The corner comes from the sketch lines, so it is the engineer's corner, not the body box. */
+        const bead = ft.type === 'weld', prof = WELD_PROFILES[q.profile];
+        if (!prof) throw new Error(L('Pick a profile from the table.', 'Pilih profil dari tabel.'));
+        if (bead && prof.kind !== 'shs') throw new Error(L('A fillet bead needs two flat faces that meet at a right angle: this table builds it on square hollow sections only. Pick an SHS profile.', 'Bead fillet butuh dua muka datar yang bertemu siku: tabel ini membangunnya hanya pada square hollow section. Pilih profil SHS.'));
+        if (!bead && prof.kind === 'chs') throw new Error(L('A gusset plate sits on a flat face, and a round tube (CHS) has none. Pick SHS, L, UPN or IPE.', 'Pelat gusset duduk di muka datar, dan tabung bundar (CHS) tidak punya. Pilih SHS, L, UPN, atau IPE.'));
+        const A = pickSketch(q.sketch);
+        if (A.s.plane !== 'XY') throw new Error(L('Gussets and beads are placed from a sketch on XY in this build.', 'Gusset dan bead ditempatkan dari sketch di XY pada build ini.'));
+        const cx = +q.cx || 0, cy = +q.cy || 0, k = weldCorner(A.s.ents || [], cx, cy);
+        if (!k) throw new Error(L(`No two straight lines meet at (${f(cx, 1)}, ${f(cy, 1)}) in that sketch. Type a corner: an end two lines share.`, `Tidak ada dua garis lurus yang bertemu di (${f(cx, 1)}, ${f(cy, 1)}) pada sketch itu. Ketik sebuah sudut: ujung yang dipakai dua garis.`));
+        const before = body ? R.measureVolume(body) : 0;
+        const solid = bead ? weldBeadSolid(R, k, prof, pos(q.leg), A.at) : weldGussetSolid(R, k, prof, pos(q.lg), pos(q.lh), pos(q.t), A.at);
+        const prism = R.measureVolume(solid), ang = k.angle * 180 / Math.PI;
+        apply(solid, q.op || 'add');
+        const grew = body ? R.measureVolume(body) - before : 0;
+        ft.note = bead
+          ? L(`Fillet bead at the corner (${f(cx, 1)}, ${f(cy, 1)}): leg ${f(+q.leg, 1)} mm on both faces, section ½·a²·sin ${f(ang, 1)}°, ${f(weldWidth(prof), 1)} mm along the joint. Prism ${f(prism, 1)} mm³, the body grew ${f(grew, 1)} mm³ (kernel).`, `Bead fillet di sudut (${f(cx, 1)}, ${f(cy, 1)}): kaki ${f(+q.leg, 1)} mm di kedua muka, penampang ½·a²·sin ${f(ang, 1)}°, ${f(weldWidth(prof), 1)} mm sepanjang sambungan. Prisma ${f(prism, 1)} mm³, body bertambah ${f(grew, 1)} mm³ (kernel).`)
+          : L(`Gusset plate at the corner (${f(cx, 1)}, ${f(cy, 1)}): legs ${f(+q.lg, 1)} and ${f(+q.lh, 1)} mm at ${f(ang, 1)}°, ${f(+q.t, 1)} mm thick, on the top face. Prism ½·lg·lh·sin ${f(ang, 1)}°·t = ${f(prism, 1)} mm³, the body grew ${f(grew, 1)} mm³ (kernel).`, `Pelat gusset di sudut (${f(cx, 1)}, ${f(cy, 1)}): kaki ${f(+q.lg, 1)} dan ${f(+q.lh, 1)} mm pada ${f(ang, 1)}°, tebal ${f(+q.t, 1)} mm, di muka atas. Prisma ½·lg·lh·sin ${f(ang, 1)}°·t = ${f(prism, 1)} mm³, body bertambah ${f(grew, 1)} mm³ (kernel).`);
       } else if (ft.type === 'sweep') {
         /* P1c: a named profile sketch swept along a named path sketch, read as a 3D wire on its own plane. The kernel
            sweeps the profile wire along that wire and refuses a path that leaves no solid. */
@@ -7478,7 +7512,7 @@ function partTool(k, preset, label) {
   if (k === 'measure') { partArm = null; partSel = 'measure'; cadTab = 'design'; renderCad(); return; }
   const first = !state.part.features.some((f) => f.type === 'shape' || f.type === 'push');
   /* Push/Pull, Revolve and Smart Dimension all work on a sketch before there is a body */
-  if (first && !['shape', 'sketch', 'push', 'revolve', 'sweep', 'loft', 'rib', 'dim', 'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick',
+  if (first && !['shape', 'sketch', 'push', 'revolve', 'sweep', 'loft', 'rib', 'dim', 'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick', 'member', 'gusset', 'weld',
     'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
   if (k === 'push' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Extrude needs a sketch: draw one first.', 'Extrude butuh sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'revolve' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Revolve needs a sketch: draw the profile first.', 'Revolve butuh sketch: buat profilnya dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
@@ -8792,8 +8826,8 @@ const RIBBON = [
       T('Forming Tool', 'form', 'no', 'Louvres, embosses, lances.', 'Louvre, emboss, lance.', 'Punch'), T('Convert to Sheet Metal', 'flat', 'on', 'Take thickness and bend radius from the plate already open, so the sheet-metal steps can work on it. The thickness is measured from the body; the volume does not change.', 'Ambil tebal dan radius tekuk dari pelat yang sudah terbuka, supaya langkah sheet metal bisa bekerja di atasnya. Tebalnya diukur dari bodi; volumenya tidak berubah.', '', { part: 'smconvert' })]]]],
   ['weld', 'Weldments', 'Weldment', [
     ['Frame', [T('Structural Member', 'member', 'on', 'Standard profiles along straight sketch lines: SHS and CHS (EN 10219), L (EN 10056), UPN and IPE (EN 10365), each row naming its standard. Ends are cut at shared corners on request.', 'Profil standar sepanjang garis sketch lurus: SHS dan CHS (EN 10219), L (EN 10056), UPN dan IPE (EN 10365), tiap baris menyebut standarnya. Ujung dipotong di sudut bersama bila diminta.', 'Frame Generator', P('member')),
-      T('Trim/Extend', 'trim', 'no', 'Trim members against each other. Today the member step cuts its own ends at shared corners (half the profile each end); trimming one member against another is not built.', 'Potong member satu sama lain. Saat ini langkah member memotong ujungnya sendiri di sudut bersama (setengah profil tiap ujung); memotong member terhadap member lain belum ada.', 'Notch, Miter'), T('End Cap', 'endcap', 'on', 'A plate of the profile size at both ends of every member in the sketch.', 'Pelat seukuran profil di kedua ujung tiap member pada sketch.', '', P('endcap')),
-      T('Gusset', 'gusset', 'no', 'A triangular plate in a corner. The kernel builds flat plates, not the triangle between two members yet, so it is grey until the corner is picked in the viewport.', 'Pelat segitiga di sudut. Kernel membangun pelat datar, belum segitiga antara dua member, jadi abu-abu sampai sudutnya bisa diklik di viewport.', ''), T('Weld Bead', 'weld', 'no', 'Weld geometry and symbol.', 'Geometri dan simbol las.', 'Fillet Weld'),
+      T('Trim/Extend', 'trim', 'no', 'Cut one member back where another runs through it. On a hollow section the walls cross in separate pieces, so the kernel cut measured here breaks the frame into four separate solids (one corner of two SHS 40×40×3 members is 2706 mm³ of crossing walls). Grey until the joint is modelled as a cope on the member, not a boolean on the walls; today the member step cuts its own ends at shared corners instead.', 'Potong member di tempat member lain menembusnya. Pada penampang berongga dindingnya bersilangan sebagai potongan terpisah, jadi potongan kernel yang diukur di sini memecah rangka menjadi empat solid terpisah (satu sudut dua member SHS 40×40×3 = 2706 mm³ dinding bersilangan). Abu-abu sampai sambungannya dimodelkan sebagai cope pada member, bukan boolean pada dinding; sekarang langkah member memotong ujungnya sendiri di sudut bersama.', 'Notch, Miter'), T('End Cap', 'endcap', 'on', 'A plate of the profile size at both ends of every member in the sketch.', 'Pelat seukuran profil di kedua ujung tiap member pada sketch.', '', P('endcap')),
+      T('Gusset', 'gusset', 'on', 'A triangular plate on the top face of a corner: two legs along the faces and the thickness you type, extruded by the kernel and measured. The corner is read from two sketch lines that share an end at the X, Y you type.', 'Pelat segitiga di muka atas sebuah sudut: dua kaki sepanjang muka dan tebal yang kamu ketik, ditarik oleh kernel dan diukur. Sudutnya dibaca dari dua garis sketch yang berbagi ujung di X, Y yang kamu ketik.', '', P('gusset')), T('Weld Bead', 'weld', 'on', 'A fillet weld bead along the inside of a corner: leg length on both faces, the profile\'s own section height along the joint, extruded by the kernel and measured. Built on SHS, whose two faces meet at a right angle.', 'Bead las fillet di sepanjang sisi dalam sebuah sudut: panjang kaki di kedua muka, setinggi penampang profil sepanjang sambungan, ditarik oleh kernel dan diukur. Dibangun pada SHS, yang dua mukanya bertemu siku.', 'Fillet Weld', P('weld')),
       T('Cut List', 'list', 'on', 'Profile, length, quantity and mass for the shop, read from the members the kernel built.', 'Profil, panjang, jumlah, dan massa untuk bengkel, dibaca dari member yang dibangun kernel.', '', 'weldCutListShow')]]]],
   ['mold', 'Mold', 'Mold', [
     ['Mold', [T('Draft Analysis', 'draft', 'on', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.', '', 'dfmDraft'), T('Parting Line', 'split', 'on', 'The line where the part\'s own surface meets the parting plane, cut by the kernel at the Z you type: the step reports the perimeter it measures and how many closed loops it found. It does not change the body.', 'Garis tempat permukaan part bertemu bidang pisah, dipotong kernel di Z yang kamu ketik: langkahnya melaporkan keliling yang diukur dan berapa loop tertutup yang ditemukan. Body tidak berubah.', 'Silhouette', P('parting')),
