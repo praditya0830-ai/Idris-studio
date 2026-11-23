@@ -13384,6 +13384,8 @@ function sheetMetalEdit(focus) {
   page.append(h('div', { class: 'lphdrow' }, h('span', null, 'Sheet Metal'),
       h('small', null, L('bend allowance · flat pattern', 'bend allowance · flat pattern'))),
     h('div', { class: 'sm-in-panel', id: 'smdlg' }, inner));
+  /* S15: the tool's own page comes first; the Properties section stays at the bottom of it */
+  { const props = page.querySelector('#cadProps'); if (props) page.append(props); }
   setLpTab('edit');
   if (focus === 'flat') { const b = $('#sm-dxf'); if (b && b.scrollIntoView) b.scrollIntoView({ block: 'nearest' }); }
   return window.__lastFlat;
