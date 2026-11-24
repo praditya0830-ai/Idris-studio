@@ -6504,7 +6504,7 @@ const SW_AT = new WeakMap();
 const PMAT = { aluminium: ['Aluminium 6061-T6', 2.70], steel: ['Structural steel S235', 7.85], stainless: ['Stainless 304 (annealed)', 8.00], titanium: ['Titanium Ti-6Al-4V', 4.43], brass: ['Brass CW614N', 8.47], pla: ['PLA (FDM, 100 % infill)', 1.24], abs: ['ABS (FDM, 100 % infill)', 1.05], nylon: ['Nylon PA12 (SLS/FDM)', 1.01] };   /* v67: = solver table v0.39 */
 /* ISO 261 coarse threads → common tap-drill sizes (ISO 2306) */
 const TAP = { M3: 2.5, M4: 3.3, M5: 4.2, M6: 5.0, M8: 6.8, M10: 8.5, M12: 10.2, M16: 14.0 };
-let partSel = null, partArm = null, partBusy = false, partInfo = null, partSeq = 0;
+let partSel = null, partArm = null, partBusy = false, partInfo = null, partSeq = 0, cadPanel = null;
 const PARTS_KEY = 'idris-parts';
 const loadParts = () => { try { const l = JSON.parse(localStorage.getItem(PARTS_KEY) || '[]'); return Array.isArray(l) ? l.filter((x) => x && Array.isArray(x.features)) : []; } catch (e) { return []; } };
 /** the open part is kept as "last part" and in a small library (newest first, 20 max) so a new part never overwrites an older one */
@@ -6916,6 +6916,11 @@ function smFlatDxf(model) {
 /* rebuild: run every feature in order; a feature that fails is marked and skipped, the rest still runs */
 async function buildPart(pArg) {
   const R = await kernel(), p = pArg || state.part; if (!p) return null;
+  /* S21e: named sizes are resolved before any step runs, so a parameter drives every field that names it. A step
+     whose field names a parameter the part does not define is refused with that name (badParams). */
+  /* guarded so the tests that lift buildPart on its own still run it (they do not need named sizes) */
+  const prm = typeof s21eResolve === 'function' ? s21eResolve(p) : { bad: [] }, badParams = {};
+  for (const b of prm.bad) (badParams[b.ft.id] = badParams[b.ft.id] || []).push(b.name);
   let body = null, lastTool = null, lastOp = 'add', sketch = null; const sketches = [];
   const bb = () => body ? body.boundingBox.bounds : [[0, 0, 0], [0, 0, 0]];
   const apply = (tool, op) => { if (!body) { if (op === 'cut') throw new Error(L('Nothing to cut yet: start with Shape.', 'Belum ada yang bisa dipotong: mulai dengan Shape.')); body = tool.clone(); }
@@ -7006,6 +7011,8 @@ async function buildPart(pArg) {
   for (const ft of p.features) {
     ft.err = null; ft.note = null; if (ft.off) continue; const q = ft.p;
     try {
+      if (badParams[ft.id]) { const names = [...new Set(badParams[ft.id])].map((n) => '\u201c' + n + '\u201d').join(', ');
+        throw new Error(L(`Unknown parameter ${names}: define it in Manage \u2192 Parameters, or type a number in that field.`, `Parameter ${names} tidak dikenal: definisikan di Manage \u2192 Parameters, atau ketik angka di field itu.`)); }
       const pos = (v) => { if (!(+v > 0)) throw new Error(L('Sizes must be above 0 mm.', 'Ukuran harus di atas 0 mm.')); return +v; };
       if (ft.type === 'shape') {
         let t;
@@ -7546,7 +7553,7 @@ function partTool(k, preset, label) {
   if (k === 'push' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Extrude needs a sketch: draw one first.', 'Extrude butuh sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'revolve' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Revolve needs a sketch: draw the profile first.', 'Revolve butuh sketch: buat profilnya dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'dim' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Smart Dimension drives a sketch size: draw a sketch first.', 'Smart Dimension mengatur ukuran sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
-  partArm = { type: k, p: { ...defaults(k), ...(preset || {}) }, n: label || null, d: label && typeof RIB_ALL !== 'undefined' ? (RIB_ALL.find((t) => t.n === label) || {}) : null }; partSel = null; cadTab = 'design';
+  partArm = { type: k, p: { ...defaults(k), ...(preset || {}) }, n: label || null, d: label && typeof RIB_ALL !== 'undefined' ? (RIB_ALL.find((t) => t.n === label) || {}) : null }; partSel = null; cadTab = 'design'; cadPanel = null;
   /* S10-A: opening a tool shows the panel that holds its form, scrolls the form into view and focuses its first field */
   if (narrow() || document.body.classList.contains('hide-chat')) setChat(true);
   renderCad(); setLpTab('edit');
@@ -7565,8 +7572,8 @@ function pform(type, p, onOk, okLabel, onCancel) {
   const draw = () => { box.innerHTML = '';
     FEAT[type].fields.forEach((x) => { if (x.show && !x.show(p)) return; if (x.first === false && !state.part.features.some((f) => f.type === 'shape' || f.type === 'push') && !partSel) return;
       const lab = h('label', null, h('span', null, L(x.en, x.id)));
-      if (x.t === 'num') lab.append(h('span', { class: 'pnum' }, h('input', { type: 'number', inputmode: 'decimal', value: p[x.k], step: x.step || 'any', min: x.min ?? 0, 'data-k': x.k,
-        oninput: (e) => { p[x.k] = e.target.value === '' ? '' : Number(e.target.value); ghost(); } }), x.unit ? h('em', null, x.unit) : null));
+      if (x.t === 'num') lab.append(h('span', { class: 'pnum' }, h('input', { type: 'text', inputmode: 'decimal', value: (p.e && p.e[x.k] !== undefined) ? p.e[x.k] : (p[x.k] ?? ''), step: x.step || 'any', 'data-k': x.k,
+        oninput: (e) => { const raw = e.target.value.trim(); if (p.e) delete p.e[x.k]; p[x.k] = raw === '' ? '' : (s21eNum(raw) ? Number(raw) : raw); ghost(); } }), x.unit ? h('em', null, x.unit) : null));
       else if (x.t === 'txt') lab.append(h('span', { class: 'pnum' }, h('input', { type: 'text', value: p[x.k] ?? x.def ?? '', 'data-k': x.k, spellcheck: 'false',
         oninput: (e) => { p[x.k] = e.target.value; ghost(); } })));
       else lab.append(h('select', { 'data-k': x.k, onchange: (e) => { p[x.k] = e.target.value; draw(); ghost(); } }, x.opts.map(([v, t]) => h('option', { value: v, selected: v === p[x.k] }, L(...t)))));
@@ -8022,6 +8029,41 @@ function s21cConvert(dw, idf) {
   return { ents, refused: [...new Set(refused)], lines, circles, skipped };
 }
 /* ---- end S21c helpers ---- */
+/* ---- S21e: named parameters. A size field may hold a number or the name of a parameter, so one number drives
+ * several steps. Values are resolved once per build, before any step runs; a field that names a parameter the part
+ * does not define is refused by the step that uses it, with the name — never read as 0 or as NaN. A configuration is
+ * a named set of parameter overrides, so the same tree builds at two sizes. Pure data maths: tests/s21e-params.test.mjs
+ * lifts this block and runs it in Node against the real kernel. ---- */
+const s21eNum = (v) => typeof v === 'number' ? Number.isFinite(v) : (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)));
+/** the parameter values the active configuration builds with (a configuration overrides single names) */
+function s21eTable(p) {
+  const t = {}, cfgs = (p && p.configs) || [], cfg = cfgs.find((c) => c && c.name === ((p && p.config) || 'Default'));
+  for (const [k, v] of Object.entries((p && p.params) || {})) {
+    const over = cfg && cfg.params && Object.prototype.hasOwnProperty.call(cfg.params, k) ? cfg.params[k] : null;
+    t[k] = s21eNum(over) ? Number(over) : Number(v);
+  }
+  return t;
+}
+/** resolve every numeric field of every feature in place; a name that is not defined comes back in `bad` */
+function s21eResolve(p) {
+  const table = s21eTable(p), bad = [], used = new Set();
+  for (const ft of (p && p.features) || []) {
+    const spec = (typeof FEAT !== 'undefined' && FEAT[ft.type] && FEAT[ft.type].fields) || [];
+    for (const f of spec) {
+      if (f.t !== 'num') continue;
+      const shadow = ft.e && ft.e[f.k] !== undefined ? ft.e[f.k] : undefined;
+      const v = shadow !== undefined ? shadow : ft.p[f.k];
+      if (s21eNum(v)) { ft.p[f.k] = Number(v); continue; }
+      const name = String(v == null ? '' : v).trim();
+      if (!name) continue;
+      ft.e = ft.e || {}; ft.e[f.k] = name;
+      if (!Object.prototype.hasOwnProperty.call(table, name) || !Number.isFinite(table[name])) { bad.push({ ft, k: f.k, name }); continue; }
+      ft.p[f.k] = table[name]; used.add(name);
+    }
+  }
+  return { bad, used, table };
+}
+/* ---- end S21e helpers ---- */
 
 /* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
  * Both are real OpenCascade geometry, never a polygon stand-in: the ellipse is two ellipse arcs, the closed spline is
@@ -8350,6 +8392,59 @@ function openSketchSession(tool, editId) {
     /* the tool list starts at the top: no focus scroll, and the pane is reset after the render */
     const pane = document.querySelector('#cadProps'); if (pane) pane.scrollTop = 0;
     const i = document.querySelector('#cadProps .skform input'); if (i && narrow()) i.focus({ preventScroll: true }); });
+}
+/* S21e: Manage → Parameters / Configurations, one panel. The table holds the named sizes; a step field that holds a
+ * name instead of a number uses that size at build time. A configuration is a named set of overrides, and
+ * switching it rebuilds the part through the kernel, so both configurations are real builds, not labels. */
+function openParamsPanel() {
+  if (!state.part) startPart();
+  cadPanel = 'params'; partArm = null; partSel = null; cadTab = 'design';
+  renderCad(); setLpTab('edit');
+}
+function prRebuild() { clearTimeout(prRebuild.t); prRebuild.t = setTimeout(() => { if (state.part) rebuildPart(); }, 300); }
+function renderParamsPanel(pr) {
+  const p = state.part; if (!p) return;
+  p.params = p.params || {};
+  p.configs = (p.configs && p.configs.length) ? p.configs : [{ name: 'Default', params: {} }];
+  if (!p.configs.some((c) => c.name === p.config)) p.config = p.configs[0].name;
+  const cfg = p.configs.find((c) => c.name === p.config) || p.configs[0];
+  cfg.params = cfg.params || {};
+  const names = Object.keys(p.params);
+  const store = (e, k) => { const raw = e.target.value.trim(); p.params[k] = s21eNum(raw) ? Number(raw) : raw; };
+  const rename = (e, k) => {
+    const v = e.target.value.trim();
+    if (!v || v === k || Object.prototype.hasOwnProperty.call(p.params, v)) return false;
+    const val = p.params[k]; delete p.params[k]; p.params[v] = val;
+    for (const c of p.configs) if (c.params && Object.prototype.hasOwnProperty.call(c.params, k)) { c.params[v] = c.params[k]; delete c.params[k]; }
+    return true;
+  };
+  const rowIn = (kind, k, val, onchange) => h('input', { type: 'text', inputmode: 'decimal', 'data-pr': kind, 'data-pn': k, value: val == null ? '' : String(val), spellcheck: 'false',
+    oninput: (e) => { if (kind === 'val') store(e, k); else if (kind === 'over') { cfg.params[k] = e.target.value.trim() === '' ? undefined : (s21eNum(e.target.value) ? Number(e.target.value) : e.target.value); if (cfg.params[k] === undefined) delete cfg.params[k]; } },
+    onchange: (e) => { if (kind === 'name') { if (!rename(e, k)) return; } onchange && onchange(); rebuildPart(); } });
+  pr.append(h('h2', null, h('span', null, L('Parameters', 'Parameter')), h('span', { class: 'phd' }, h('small', null, 'S21e'))));
+  pr.append(h('p', { class: 'hint' }, L('A parameter is a named size. Type its name into any number field of a step (Box L, Extrude distance, Scale ×k, hole Ø) and that step builds with the value here; change the value and every step that names it is rebuilt. A name that is not defined here is refused by that step, with the name — it is never read as 0.', 'Parameter adalah ukuran bernama. Ketik namanya di field angka mana pun pada sebuah langkah (Box L, jarak Extrude, Scale ×k, Ø lubang) dan langkah itu dibangun dengan nilai di sini; ubah nilainya dan semua langkah yang menyebutnya dibangun ulang. Nama yang tidak didefinisikan di sini ditolak oleh langkah itu, dengan namanya — tidak pernah dibaca sebagai 0.')));
+  if (!names.length) pr.append(h('p', { class: 'hint' }, L('No parameter yet. Add one, then type its name into a step.', 'Belum ada parameter. Tambahkan satu, lalu ketik namanya di sebuah langkah.')));
+  else pr.append(h('table', { class: 'cutlist' }, h('tr', null, h('th', null, L('Name', 'Nama')), h('th', null, L('Value (mm)', 'Nilai (mm)')),
+    cfg.name !== 'Default' ? h('th', { title: L('Override for this configuration; empty = use the value', 'Nilai khusus konfigurasi ini; kosong = pakai nilai utama') }, cfg.name) : null, h('th', null, '')),
+  ...names.map((k) => h('tr', null, h('td', null, rowIn('name', k, k, () => renderCad())),
+    h('td', null, rowIn('val', k, p.params[k], null)),
+    cfg.name !== 'Default' ? h('td', null, rowIn('over', k, cfg.params[k], null)) : null,
+    h('td', null, h('button', { class: 'pfx', 'data-pr': 'del', 'data-pn': k, title: L('Delete this parameter', 'Hapus parameter ini'), onclick: () => { delete p.params[k]; for (const c of p.configs) if (c.params) delete c.params[k]; rebuildPart(); } }, '×'))))));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip', 'data-pr': 'add', onclick: () => {
+    let n = 1; while (Object.prototype.hasOwnProperty.call(p.params, 'P' + n)) n++;
+    p.params['P' + n] = 10; renderCad(); } }, L('Add parameter', 'Tambah parameter'))));
+  pr.append(h('h3', null, L('Configurations', 'Konfigurasi')));
+  pr.append(h('p', { class: 'hint' }, L('A configuration is a named set of parameter values for this same feature tree. Switch it and the part is rebuilt by the kernel at that size.', 'Konfigurasi adalah kumpulan nilai parameter bernama untuk pohon fitur yang sama. Ganti konfigurasinya dan part dibangun ulang oleh kernel pada ukuran itu.')));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Active configuration', 'Konfigurasi aktif')),
+    h('select', { 'data-pr': 'cfg', onchange: (e) => { p.config = e.target.value; rebuildPart(); } },
+      p.configs.map((c) => h('option', { value: c.name, selected: c.name === p.config }, c.name)))));
+  pr.append(h('div', { class: 'sktools' },
+    h('button', { class: 'chip', 'data-pr': 'cfg-add', onclick: () => {
+      let n = 1; while (p.configs.some((c) => c.name === 'Config ' + n)) n++;
+      p.configs.push({ name: 'Config ' + n, params: {} }); p.config = 'Config ' + n; renderCad(); } }, L('Add configuration', 'Tambah konfigurasi')),
+    p.config !== 'Default' ? h('button', { class: 'chip', 'data-pr': 'cfg-del', onclick: () => {
+      p.configs = p.configs.filter((c) => c.name !== p.config); if (!p.configs.length) p.configs = [{ name: 'Default', params: {} }];
+      p.config = p.configs[0].name; rebuildPart(); } }, L('Delete this configuration', 'Hapus konfigurasi ini')) : null));
 }
 function skCommit(list, note) {
   const a = skSession(); if (!a) return; a.p.ents = list; a.pend = []; a.pen = [];
@@ -8758,7 +8853,8 @@ function renderPartCad() {
       h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : (TOOL_GROUPS.find((g) => g[0] === partArm.type) || [null, null, ''])[2]),
       pform(partArm.type, partArm.p, () => { p.features.push({ id: Date.now().toString(36), type: partArm.type, p: { ...partArm.p } }); partSel = p.features.length - 1; const fit = p.features.length === 1; partArm = null; viewer.setPreview(null); hideSkLabel(); if (narrow()) setChat(false); setLpTab('tree'); rebuildPart(fit); },
         L('Add & build', 'Tambah & bangun'), () => { partArm = null; viewer.setPreview(null); hideSkLabel(); renderCad(); setLpTab('tree'); }));
-  } else if (fsel && fsel.type === 'sketch' && fsel.p.prof === 'ents') {
+  } else if (cadPanel === 'params' && !fsel) { renderParamsPanel(pr); }
+  else if (fsel && fsel.type === 'sketch' && fsel.p.prof === 'ents') {
     /* P1a: a lines-and-arcs sketch keeps its entities: show them, and reopen the session to change them */
     const ents = fsel.p.ents || [], dof = p1DOF(ents, fsel.p.rels || [], fsel.p.dims || []), loop = p1OuterLoop(ents);
     pr.append(h('h2', null, h('span', null, `${partSel + 1}. ${featName(fsel)}`), h('span', { class: 'phd' }, h('small', null, FEAT[fsel.type].label(fsel.p)))),
@@ -9133,8 +9229,8 @@ const RIBBON = [
       T('Export STL', 'step', 'on', 'Mesh for 3D printing.', 'Mesh untuk cetak 3D.', 'Save As STL', 'expStl'),
       T('Import STEP', 'imp', 'mk1', 'Open a STEP file from another CAD.', 'Buka file STEP dari CAD lain.', 'Open, Insert Part'),
       T('Report', 'rep', 'on', 'Every number with its source: the open part (POST /report/part) or the gearbox report.', 'Semua angka dengan sumbernya: part yang terbuka (POST /report/part) atau laporan gearbox.', 'Print, Report', 'reportAny')]],
-    ['Design', [T('Parameters', 'param', 'mk1', 'Named sizes that drive several features.', 'Ukuran bernama yang mengendalikan beberapa fitur.', 'Equations, User Parameters, Global Variables'),
-      T('Configurations', 'config', 'no', 'Sizes of the same part in one file.', 'Beberapa ukuran part yang sama dalam satu file.', 'Design Table, iPart, Family Table'),
+    ['Design', [      T('Parameters', 'param', 'on', 'Named sizes that drive several features: type a parameter\u2019s name into any number field of a step, change the value, and every step that names it is rebuilt. A name that is not defined is refused by that step, with the name. A degenerate value (0 or empty) is refused where it is used.', 'Ukuran bernama yang mengendalikan beberapa fitur: ketik nama parameter di field angka mana pun pada sebuah langkah, ubah nilainya, dan semua langkah yang menyebutnya dibangun ulang. Nama yang tidak didefinisikan ditolak langkah itu, dengan namanya. Nilai yang tidak masuk akal (0 atau kosong) ditolak di tempat dipakai.', 'Equations, User Parameters, Global Variables', 'params'),
+      T('Configurations', 'config', 'on', 'Named sets of parameter values for the same feature tree: switch the configuration and the part rebuilds at that size, and each configuration is a real build through the kernel.', 'Kumpulan nilai parameter bernama untuk pohon fitur yang sama: ganti konfigurasinya dan part dibangun ulang pada ukuran itu, dan tiap konfigurasi adalah build nyata lewat kernel.', 'Design Table, iPart, Family Table', 'params'),
       T('Rename Part', 'edit', 'on', 'Change the name of the open part.', 'Ganti nama part yang terbuka.', '', 'rename')]]]],
 ];
 const RIB_ALL = RIBBON.flatMap(([tab, en, id, groups]) => groups.flatMap(([g, tools]) => tools.map((t) => Object.assign(t, { tab, tabEn: en, tabId: id, grp: g }))));
@@ -9157,6 +9253,7 @@ function ribAct(a, name) {
   if (!a) return;
   if (typeof a === 'object' && a.sk) return openSketchSession(a.sk, a.editId);
   if (typeof a === 'object' && a.part) return partTool(a.part, a.p, name);
+  if (a === 'params') return openParamsPanel();
   if (a === 'library') return openLibrary();
   if (a === 'calculators') return calculatorsTool();
   if (a === 'measure') return !state.part && state.variants.length ? cadTabGo('check') : partTool('measure');

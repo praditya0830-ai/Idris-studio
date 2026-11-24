@@ -94,8 +94,8 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 
 | Tool | State | Why it is grey | What it needs | Batch |
 | --- | --- | --- | --- | --- |
-| Parameters | `mk1` | feature fields are edited one step at a time | a named parameter table, expressions in numeric fields, and a rebuild that resolves them in dependency order | 5 |
-| Configurations | `no` | one feature tree per part | named configurations that override parameters and feature states, with the same rebuild and a test that both configurations build | 5 |
+| Parameters | `on` (shipped) | `s21eResolve`: a named size table, and a numeric field may hold a parameter's name instead of a number. Values are resolved before any step runs, so one number drives several steps; a name that is not defined is refused by the step that uses it, with the name | — (arithmetic between parameters, e.g. `L * 2`, is the next step; today a field holds one name or one number) | 5 |
+| Configurations | `on` (shipped) | `s21eTable`: named configurations that override single parameter values; switching one rebuilds the part through the kernel, so both are real builds | — (per-configuration feature suppression is not in this batch) | 5 |
 
 ## The batches
 
@@ -156,11 +156,22 @@ failed step is marked in the tree and skipped. Kernel test: `tests/s21c-scale.te
 Split needs `buildPart` to hold several bodies (it holds one `body` today). Neither is a rename away, so both stay
 grey with those reasons.
 
-### Batch 5 — Parameters and Configurations
+### Batch 5 — Parameters and Configurations (shipped)
 
-A parameter table (`L`, `W`, `R` …), expressions in numeric fields, and named configurations. No kernel work.
-Acceptance: changing a parameter rebuilds every step that uses it; a configuration switch rebuilds and the mass
-properties differ; an undefined parameter is refused by name.
+Manage → Parameters opens the table: a named size, and any numeric field of any step can hold that name instead of a
+number (the field remembers the name in the step's shadow map, so the form still shows it after the build resolves
+it). Values are resolved once per build, before any step runs, and a name the part does not define is refused **by
+the step that uses it**, with the name — never read as 0 or NaN. Configurations are named override sets of those
+values: switching one rebuilds the part through the kernel.
+
+Kernel test `tests/s21e-params.test.mjs`: `L = 40` → 24 000 mm³, `L = 50` → 30 000 mm³ (the step was not baked), a
+configuration with `L = 60` → 36 000 and back to Default → 30 000, an undefined name (`Width`) refused by the box
+step with its name and no body built, one parameter driving both a Box `L` and an Extrude distance, and a typed
+number left untouched. Browser test `tests/s21e-params.spec.mjs`: the Manage tab, the panel, naming a size, typing
+the name into the box's `L` field, changing the value, adding a configuration that overrides it, switching back, and
+the refusal — with no page error.
+
+Not in this batch: arithmetic between parameters (`L * 2`) and per-configuration suppression of a step.
 
 ### Batch 6 — the surfaces that need new kernel wrappers
 
