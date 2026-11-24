@@ -6519,7 +6519,7 @@ const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel
 const TX = (k, en, id, def, extra = {}) => ({ k, en, id, def, t: 'txt', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
-const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', gusset: 'gusset', weld: 'weld', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
+const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', gusset: 'gusset', weld: 'weld', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim', scale: 'scale' };
 /* ---- P1d: welded frames. Two numbers on every row come from its standard's table: A (mm²) and the mass
  * per metre (kg/m). The kernel builds a SIMPLIFIED section — sharp corners, no corner or root radius — so its
  * area and the table area differ; the difference is shown, never hidden. No table value is guessed: a size
@@ -6815,6 +6815,11 @@ const FEAT = {
       N('u', 'Position along the plane', 'Posisi sepanjang bidang', 'mm', 0), N('v', 'Position across the plane', 'Posisi melintang bidang', 'mm', 0),
       S('op', 'Result', 'Hasil', OPS, 'add')],
     label: (p) => `“${p.s}” ${p.h} mm · ${p.depth} mm ${p.op === 'cut' ? L('deboss', 'deboss') : L('emboss', 'emboss')}` },
+  /* S21c: Scale is the kernel's own scale about a point. It scales the whole body, so the step says that in its
+     note; it is not a feature-level scale and it is not offered as one. One factor, uniform, refused when ≤ 0. */
+  scale: { en: 'Scale', id: 'Skala', fields: [N('k', 'Factor', 'Faktor', '', 1.5, { min: 0.001 }),
+      S('about', 'Scale about', 'Skala terhadap', [['origin', ['The origin', 'Titik nol']], ['centre', ['The body centre', 'Pusat body']]], 'origin')],
+    label: (p) => `${L('Scale', 'Skala')} ×${p.k} · ${p.about === 'centre' ? L('centre', 'pusat') : L('origin', 'titik nol')}` },
   dim: { get en() { return 'Smart Dimension'; }, get id() { return 'Smart Dimension'; },
     /* the sketch steps are read when the form is drawn, so a new sketch shows up immediately */
     get fields() {
@@ -6893,7 +6898,7 @@ const FEAT = {
       S('material', 'Material', 'Material', [['steel', ['Steel', 'Baja']], ['stainless', ['Stainless', 'Stainless']], ['aluminium', ['Aluminium', 'Aluminium']], ['brass', ['Brass', 'Kuningan']]])],
     label: (p) => L('Convert to sheet metal', 'Ubah jadi sheet metal') },
 };
-const PART_TOOLS = ['shape', 'sketch', 'text', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'gusset', 'weld', 'mold', 'parting', 'shutoff', 'shrink', 'draft', 'dim', 'measure',
+const PART_TOOLS = ['shape', 'sketch', 'text', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'gusset', 'weld', 'mold', 'parting', 'shutoff', 'shrink', 'draft', 'dim', 'scale', 'measure',
   'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick',
   'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
@@ -7300,6 +7305,19 @@ async function buildPart(pArg) {
         if (!(pitch > 0)) throw new Error(L('Pick a metric size from the table.', 'Pilih ukuran metrik dari tabel.'));
         pos(q.depth);
         ft.note = L(`${q.M}×${pitch} cosmetic thread over ${f(+q.depth, 1)} mm at ${f(+q.x, 1)}, ${f(+q.y, 1)}: ISO 261 pitch, ISO 2306 tap drill Ø${TAP[q.M]}. Not modelled, so the volume does not change.`, `Ulir kosmetik ${q.M}×${pitch} sepanjang ${f(+q.depth, 1)} mm di ${f(+q.x, 1)}, ${f(+q.y, 1)}: pitch ISO 261, bor tap ISO 2306 Ø${TAP[q.M]}. Tidak dimodelkan, jadi volume tidak berubah.`);
+      } else if (ft.type === 'scale') {
+        /* S21c: the kernel scales the body about a point; the note says it is the whole body, and that the volume
+           changes by the factor cubed, so nobody reads this as a feature-level scale. */
+        if (!body) throw new Error(L('Scale needs a body: build one first.', 'Skala butuh body: bangun dulu.'));
+        const k = +q.k;
+        if (!(k > 0)) throw new Error(L('The scale factor must be above 0. Negative factors mirror and split the body, which this step does not do.', 'Faktor skala harus di atas 0. Faktor negatif mencerminkan dan memecah body, yang tidak dilakukan langkah ini.'));
+        const [mn, mx] = bb();
+        const c = q.about === 'centre' ? [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2] : [0, 0, 0];
+        const before = R.measureVolume(body);
+        body = body.clone().scale(k, c);
+        const after = R.measureVolume(body);
+        if (!(after > 0)) throw new Error(L('The kernel returned an empty body at that factor: nothing was scaled.', 'Kernel mengembalikan body kosong pada faktor itu: tidak ada yang diskalakan.'));
+        ft.note = L(`The whole body scaled by ${f(k, 3)} about ${q.about === 'centre' ? 'its centre' : 'the origin'}: ${f(before, 1)} → ${f(after, 1)} mm³ (×${f(after / before, 4)}).`, `Seluruh body diskalakan ${f(k, 3)} kali terhadap ${q.about === 'centre' ? 'pusatnya' : 'titik nol'}: ${f(before, 1)} → ${f(after, 1)} mm³ (×${f(after / before, 4)}).`);
       } else if (ft.type === 'draft') {
         if (!body) throw new Error(L('Draft needs a body.', 'Draft butuh body.'));
         const ang = +q.angle; if (!(ang > 0 && ang <= 45)) throw new Error(L('The draft angle must be above 0\u00b0 and at most 45\u00b0.', 'Sudut draft harus di atas 0\u00b0 dan paling besar 45\u00b0.'));
@@ -9101,7 +9119,7 @@ const RIBBON = [
       T('Mirror Body', 'mirror', 'on', 'Mirror the whole body and join it.', 'Cerminkan seluruh body lalu gabungkan.', 'Symmetry (body)', P('bodies', { kind: 'mirror' })),
       T('Move/Copy Body', 'move', 'on', 'Move the body by X, Y, Z.', 'Geser body sejauh X, Y, Z.', 'Translate, Move', P('bodies', { kind: 'move' })),
       T('Split', 'split', 'no', 'Split a body with a plane.', 'Belah body dengan bidang.', 'Split Body'),
-      T('Scale', 'scale', 'no', 'Scale the body.', 'Skala body.', ''),
+      T('Scale', 'scale', 'on', 'Scale the whole body by one factor about the origin or its centre, with the kernel doing the scaling and the step reporting the volume before and after (×k³). Negative factors are refused: this step does not mirror or split the body.', 'Skala seluruh body dengan satu faktor terhadap titik nol atau pusatnya, kernel yang melakukan skalanya dan langkahnya melaporkan volume sebelum dan sesudah (×k³). Faktor negatif ditolak: langkah ini tidak mencerminkan atau memecah body.', 'Body Scale', P('scale')),
       T('Thicken', 'thick', 'no', 'Turn a surface into a solid. It is one tool with one name: the working copy is Surface → Thicken, and the button below opens exactly that tool. This grey copy is not a second implementation.', 'Ubah surface menjadi solid. Ini satu alat dengan satu nama: yang berjalan adalah Surface → Thicken, dan tombol di bawah membuka alat itu. Salinan abu-abu ini bukan implementasi kedua.', '', null, ['Open Surface → Thicken', 'Buka Surface → Thicken', { part: 'surfthick' }])]],
     ['Reference', [T('Plane', 'plane', 'mk1', 'Reference plane by offset, angle or three points. Today: sketch on XY, XZ, YZ with an offset.', 'Bidang referensi dengan offset, sudut, atau tiga titik. Saat ini: sketch di XY, XZ, YZ dengan offset.', 'Construction Plane, Datum Plane', null, ALT_SK),
       T('Axis', 'axis', 'mk1', 'Reference axis for revolves and patterns.', 'Sumbu referensi untuk revolve dan pola.', 'Datum Axis'),
