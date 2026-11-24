@@ -32,9 +32,9 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 | Spline | `on` (this batch) | closed cubic-Bézier spline through typed points, real kernel edges | — (partial spline / control-point spline is a later step) | 1 |
 | Ellipse | `on` (this batch) | `drawEllipse` in the kernel, extruded/revolved as usual | — (partial ellipse later) | 1 |
 | Sketch Correction | `on` (this batch) | P1b proposals (join, horizontal, vertical, equal, parallel, perpendicular) with accept/reject/undo, and typed sizes are never changed by a proposal | — (the ribbon now opens the sketcher on its correction list) | 1 |
-| Convert Entities | `no` | nothing | the model edges must be projected into the sketch plane (the drawing code already does this with HLR) and mapped back to sketch lines/arcs | 2 |
-| Mirror Entities | `mk1` | mirror an entity is pure 2D maths; `p1Solve` already re-solves relations | a sketch-session tool that mirrors the selection about a centre line, keeps construction lines out, and stays editable | 2 |
-| Sketch Pattern | `mk1` | `repeat` exists for features, not for sketch entities | linear/circular copies of entities with their relations, and a refusal when a copy cannot stay inside the loop | 2 |
+| Convert Entities | `no` | nothing | the drawing code projects the model with HLR, but it hands back flattened polylines. Converting an edge into a real sketch line or arc needs an edge→entity mapping that is not wired yet | 2b |
+| Mirror Entities | `on` (shipped) | `p1Mirror`: an exact 2D reflection of the selected entities about a centre line; a mirrored arc is still an arc | — (copies carry no relations of their own, and the note says so) | 2 |
+| Sketch Pattern | `on` (shipped) | `p1Pattern`: linear (dx, dy) and circular (angle about a centre) copies, 2–200 instances, inside the same sketch step | — (same note about relations) | 2 |
 | Text | `no` | the kernel bundle has `drawText`, no font file is shipped | a licensed font asset (opentype), then the emboss/cut path (see Wrap/Emboss) | 8 |
 
 ### Features
@@ -50,7 +50,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 | Curve Pattern | `no` | `repeat` translates/rotates a feature | replay a feature along a sampled path with orientation and instance culling | 8 |
 | Fill Pattern | `no` | `repeat` | instance placement inside a boundary with a point-in-face test and a spacing/angle rule | 8 |
 | Split | `no` | one `body` in `buildPart` | multi-body support first (a part can hold several bodies), then a splitter (`BRepAlgoAPI_Splitter`) | 4 |
-| Scale | `no` | the kernel can scale a shape | the step, uniform vs per-axis, the "this scales the whole body, not the feature" warning, and a rebuild test | 4 |
+| Scale | `on` (shipped) | the kernel's `shape.scale(k, point)`, one uniform factor about the origin or the body centre, with the volume before/after in the note | non-uniform and negative factors stay out: the step says why instead of splitting the body | 4 |
 | Coordinate System | `no` | nothing | nothing consumes a named CSYS: mates and patterns take field values, exports take the model origin. Grey until a consumer exists | — |
 | Thicken (Features tab) | `no`, by design | Surface → Thicken does the work | nothing: this copy exists only so the tool is where SolidWorks users look. It now opens Surface → Thicken instead of asking IDRIS in chat. Do not implement it twice | 0 |
 
@@ -122,12 +122,16 @@ Tests: `tests/s21-sketch-curves.test.mjs` (kernel: volumes, faces, refusals, reb
 `tests/s21-sketch-curves.spec.mjs` (browser: ribbon click → form → Add & build → tree → edit → rebuild → no page
 error).
 
-### Batch 2 — the rest of Sketch's modify tools
+### Batch 2 — Mirror Entities and Sketch Pattern (shipped)
 
-Mirror Entities, Sketch Pattern, Convert Entities. No new kernel capability: mirror and pattern are 2D transforms
-the solver already handles; Convert Entities reuses the drawing projection (HLR) and maps the projected edges to
-sketch entities. Acceptance: the copies stay in the same sketch step, a mirrored arc stays an arc, a converted
-edge is a real projected line/arc (not a polyline), and a sketch with converts rebuilds when the body moves.
+Both run from the sketch panel: select the entities (viewport click or the entity list), set the centre line or the
+spacing, press the button, and the copies are added to the same sketch step. A mirrored arc stays an arc because it
+is three reflected points, and the kernel builds the sketch exactly as before. Kernel test:
+`tests/s21b-sketch-modify.test.mjs` (a half profile mirrored into a closed 40 × 10 one is 2 000 mm³). Browser test:
+`tests/s21b-sketch-modify.spec.mjs`.
+
+**Batch 2b — Convert Entities.** Still grey: HLR projection hands back flattened polylines, and turning those into
+real sketch lines and arcs (so a converted bore is a circle, not 40 segments) is the work this batch needs.
 
 ### Batch 3 — Reference Plane and Reference Axis
 
@@ -136,11 +140,16 @@ revolves can point at an axis. Prerequisite for Boundary, Curve Pattern and Fill
 an offset/angled plane extrudes to the same volume as the equivalent `XY + offset` sketch, and the grid and normal
 view follow the plane.
 
-### Batch 4 — the solid features the kernel can already do
+### Batch 4 — Scale (shipped), then Dome and Split
 
-Scale (uniform and per-axis, with the "whole body" warning), Dome (spherical cap trimmed by the face outline), and
-Split once multi-body exists. Acceptance: scale changes the measured volume by the factor cubed (or per axis), the
-rebuild is exact, and Split produces two bodies that each have their own step and volume.
+**Shipped: Scale.** One uniform factor about the origin or the body centre, the kernel scaling the body and the
+step reporting the measured volume before and after (×k³). Negative and zero factors are refused on screen, and a
+failed step is marked in the tree and skipped. Kernel test: `tests/s21c-scale.test.mjs`; browser test:
+`tests/s21c-scale.spec.mjs`.
+
+**Batch 4b — Dome and Split.** Dome needs the top face's outline as a region to trim a spherical cap against;
+Split needs `buildPart` to hold several bodies (it holds one `body` today). Neither is a rename away, so both stay
+grey with those reasons.
 
 ### Batch 5 — Parameters and Configurations
 
