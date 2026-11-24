@@ -51,7 +51,7 @@ await openTab('Sketch');
   const s = await slotState();
   check('Mirror Entities runs now', () => ok(s['Mirror Entities'] === false, 'still grey: ' + JSON.stringify(s)));
   check('Sketch Pattern runs now', () => ok(s['Sketch Pattern'] === false, 'still grey: ' + JSON.stringify(s)));
-  check('Convert Entities stays grey: it needs the edge-to-entity mapping', () => ok(s['Convert Entities'] === true, JSON.stringify(s)));
+  check('Convert Entities runs now (Batch 2b) — its own spec covers it', () => ok(s['Convert Entities'] === false, JSON.stringify(s)));
 }
 
 console.log('\nMirror Entities: half a profile becomes the whole one');
