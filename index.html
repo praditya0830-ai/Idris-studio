@@ -7930,6 +7930,39 @@ function p1Drawing(R, ents) {
   const out = pen.close();
   return out && typeof out.done === 'function' ? out.done() : out;
 }
+/* ---- P1a/S21b: sketching modify. Mirror and pattern are exact 2D transforms of the entities, so a mirrored arc is
+ * still an arc (three reflected points) and a patterned line is still a line; the copies are real entities with
+ * their own ids, and the sketch is built by the kernel exactly like anything else drawn. A copy carries no
+ * relations of its own — the note says so instead of pretending it is solved. */
+const p1Reflect = (p, a, b) => { const d = p1Unit(p1Sub(b, a)), v = p1Sub(p, a), t = v[0] * d[0] + v[1] * d[1], q = p1Add(a, p1Mul(d, t)); return [2 * q[0] - p[0], 2 * q[1] - p[1]]; };
+const p1Rotate2 = (p, c, rad) => { const dx = p[0] - c[0], dy = p[1] - c[1], co = Math.cos(rad), si = Math.sin(rad); return [c[0] + dx * co - dy * si, c[1] + dx * si + dy * co]; };
+const p1MapEnt = (e, fn, id) => e.t === 'line' ? { id, t: 'line', a: fn(e.a), b: fn(e.b), c: 0 }
+  : e.t === 'arc' ? { id, t: 'arc', s: fn(e.s), e: fn(e.e), m: fn(e.m), c: 0 }
+    : { id, t: 'point', p: fn(e.p), c: 0 };
+/** the mirror of the selected entities about a line; null when there is no line or nothing is selected */
+function p1Mirror(ents, ids, line, nextId) {
+  if (!line || line.t !== 'line') return null;
+  const sel = (ents || []).filter((e) => (ids || []).includes(e.id));
+  if (!sel.length || (line.id && ids.includes(line.id))) return null;
+  return sel.map((e) => p1MapEnt(e, (p) => p1Reflect(p, line.a, line.b), nextId()));
+}
+/** n−1 copies of the selection, linearly by (dx, dy) or about (cx, cy) by `angle` (0 = one full turn split evenly) */
+function p1Pattern(ents, ids, cfg, nextId) {
+  const sel = (ents || []).filter((e) => (ids || []).includes(e.id));
+  const n = Math.round(+(cfg && cfg.count));
+  if (!sel.length || !(n >= 2 && n <= 200)) return null;
+  const out = [];
+  if (cfg.kind === 'circle') {
+    const step = Math.abs(+cfg.angle) > 1e-9 ? +cfg.angle : 360 / n;
+    const c = [+cfg.cx || 0, +cfg.cy || 0];
+    for (let i = 1; i < n; i++) for (const e of sel) out.push(p1MapEnt(e, (p) => p1Rotate2(p, c, step * i * Math.PI / 180), nextId()));
+    return out;
+  }
+  const dx = +cfg.dx || 0, dy = +cfg.dy || 0;
+  if (!dx && !dy) return null;
+  for (let i = 1; i < n; i++) for (const e of sel) out.push(p1MapEnt(e, (p) => [p[0] + dx * i, p[1] + dy * i], nextId()));
+  return out;
+}
 /* ---- end P1a helpers */
 
 /* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
@@ -8246,7 +8279,8 @@ function openSketchSession(tool, editId) {
   const base = editId ? (state.part.features.find((f) => f.id === editId) || {}).p : null;
   const p = base ? JSON.parse(JSON.stringify(base)) : { prof: 'ents', plane: 'XY', at: 'top', off: 0, ents: [], rels: [], dims: [], u: 0, v: 0 };
   p.prof = 'ents'; p.ents = p.ents || []; p.rels = p.rels || []; p.dims = p.dims || [];
-  partArm = { type: 'sketch', p, n: L('Sketch (lines & arcs)', 'Sketch (garis & busur)'), editId: editId || null, tool: tool || 'line', pend: [], pen: [], rad: 5, dist: 5, val: 30 };
+  partArm = { type: 'sketch', p, n: L('Sketch (lines & arcs)', 'Sketch (garis & busur)'), editId: editId || null, tool: tool || 'line', pend: [], pen: [], rad: 5, dist: 5, val: 30,
+    mir: null, pat: { kind: 'line', count: 3, dx: 20, dy: 0, angle: 0, cx: 0, cy: 0 } };
   partSel = null; skSel = []; skPtr = null; cadTab = 'design';
   /* on a wide screen the session panel takes the left column; on a phone/tablet the tree stays a drawer */
   if (!narrow()) document.body.classList.add('sketching');
@@ -8270,6 +8304,12 @@ function skFinishChain() { const a = skSession(); if (!a) return; a.pen = []; a.
 function skClick(pt) {
   const a = skSession(); if (!a) return; const p = a.p;
   const ents = p.ents || [];
+  /* S21b: with Mirror or Pattern open a click is a selection, not a new entity */
+  if (a.tool === 'smirror' || a.tool === 'spat') {
+    const hit = p1Hit(pt, ents, 2.5);
+    if (hit) skSel = skSel.includes(hit.id) ? skSel.filter((x) => x !== hit.id) : [...skSel, hit.id].slice(-20);
+    renderCad(); return;
+  }
   const add = (ent, extra) => { a.p.ents = [...ents, ent]; if (extra) a.p.rels = [...(p.rels || []), extra]; a.p.ents = p1Solve(a.p.ents, a.p.rels, a.p.dims); renderCad(); requestAnimationFrame(skOverlay); };
   if (a.tool === 'line' || a.tool === 'cline') {
     const con = a.tool === 'cline' ? 1 : 0;
@@ -8425,6 +8465,27 @@ document.addEventListener('keydown', (e) => {
 });
 /* orbiting away from the plane raises the angle hint; it comes down as soon as the view is normal again */
 { const pv = viewer.onView; viewer.onView = (m) => { if (pv) pv(m); if (typeof updateNormalHint === 'function') updateNormalHint(); }; }
+/* S21b: Mirror Entities and Sketch Pattern act on the selection through the panel, so the line and the spacing are
+ * the values you typed, not a guess at where you clicked. The copies are real entities and the sketch is rebuilt. */
+function skMirrorApply() {
+  const a = skSession(); if (!a) return; const ents = a.p.ents || [];
+  const line = ents.find((e) => e.id === a.mir);
+  if (!skSel.length) { a.note = L('Select the entities to mirror first: click them in the entity list below, or use Add Relation to click them.', 'Pilih dulu entitas yang mau dicerminkan: klik di daftar entitas di bawah, atau pakai Add Relation untuk mengkliknya.'); return renderCad(); }
+  if (!line) { a.note = L('Pick a centre line as the mirror line: draw one with Centerline first (it is never part of the profile).', 'Pilih centerline sebagai garis cermin: gambar dulu dengan Centerline (centerline tidak pernah jadi bagian profil).'); return renderCad(); }
+  const copies = p1Mirror(ents, skSel, line, skNextId);
+  if (!copies) { a.note = L('The mirror line cannot be one of the selected entities: pick a centre line that is not being mirrored.', 'Garis cermin tidak boleh termasuk entitas yang dicerminkan: pilih centerline yang tidak ikut dicermin.'); return renderCad(); }
+  skSel = copies.map((c) => c.id);
+  return skCommit([...ents, ...copies], L(`${copies.length} entities mirrored about ${line.id}. A copy carries no relations of its own.`, `${copies.length} entitas dicerminkan terhadap ${line.id}. Salinan tidak membawa relasi sendiri.`));
+}
+function skPatternApply() {
+  const a = skSession(); if (!a) return; const ents = a.p.ents || [], cfg = a.pat || {};
+  if (!skSel.length) { a.note = L('Select the entities to pattern first: click them in the entity list below.', 'Pilih dulu entitas yang mau dipola: klik di daftar entitas di bawah.'); return renderCad(); }
+  const copies = p1Pattern(ents, skSel, cfg, skNextId);
+  if (!copies) { a.note = L('A pattern needs 2 to 200 instances and a real step: a spacing that is not 0 (linear) or an angle that is not 0 (circular).', 'Pola butuh 2 sampai 200 instance dan langkah nyata: jarak bukan 0 (linear) atau sudut bukan 0 (melingkar).'); return renderCad(); }
+  skSel = copies.map((c) => c.id);
+  const n = Math.round(+cfg.count);
+  return skCommit([...ents, ...copies], L(`${copies.length} copies in a ${cfg.kind === 'circle' ? `circular (${Math.abs(+cfg.angle) > 1e-9 ? cfg.angle + '°' : (360 / n).toFixed(2) + '°'})` : `linear (${cfg.dx || 0}, ${cfg.dy || 0})`} pattern of ${n}. A copy carries no relations of its own.`, `${copies.length} salinan pada pola ${cfg.kind === 'circle' ? `melingkar (${Math.abs(+cfg.angle) > 1e-9 ? cfg.angle + '°' : (360 / n).toFixed(2) + '°'})` : `linear (${cfg.dx || 0}, ${cfg.dy || 0})`} sebanyak ${n}. Salinan tidak membawa relasi sendiri.`));
+}
 /* P1b: accept, reject and undo the corrections; the undo stack keeps the entity list before each fix */
 function skCorrectOne(prop) { const a = skSession(); if (!a) return; const p = a.p;
   const before = JSON.parse(JSON.stringify(p.ents || []));
@@ -8447,7 +8508,8 @@ function renderSketchPanel(pr) {
   const tools = [['line', L('Line', 'Garis')], ['cline', L('Centerline', 'Centerline')], ['arc3', L('Arc 3-point', 'Busur 3 titik')],
     ['arcCenter', L('Arc centre', 'Busur pusat')], ['arcTangent', L('Tangent arc', 'Busur tangen')], ['point', L('Point', 'Titik')],
     ['fillet', L('Sketch Fillet', 'Fillet sketch')], ['offset', L('Offset', 'Offset')], ['trim', L('Trim', 'Trim')], ['extend', L('Extend', 'Extend')],
-    ['dim', L('Smart Dimension', 'Smart Dimension')], ['rel', L('Add Relation', 'Tambah relasi')], ['fix', L('Sketch Correction', 'Koreksi sketch')]];
+    ['dim', L('Smart Dimension', 'Smart Dimension')], ['rel', L('Add Relation', 'Tambah relasi')], ['fix', L('Sketch Correction', 'Koreksi sketch')],
+    ['smirror', L('Mirror Entities', 'Cermin entitas')], ['spat', L('Sketch Pattern', 'Pola sketch')]];
   pr.append(h('h2', null, h('span', null, a.n || L('Sketch', 'Sketch')), h('span', { class: 'phd' }, h('small', null, 'P1a'))));
   pr.append(h('div', { class: 'sktools', role: 'toolbar', 'aria-label': L('Sketch tools', 'Alat sketch') },
     tools.map(([k, label]) => h('button', { class: 'chip' + (a.tool === k ? ' primary' : ''), 'aria-pressed': a.tool === k ? 'true' : 'false', onclick: () => { a.tool = k; a.pend = []; a.pen = []; skSel = []; a.note = null; renderCad(); requestAnimationFrame(skOverlay); } }, label))));
@@ -8461,9 +8523,39 @@ function renderSketchPanel(pr) {
     row(L('Dimension value', 'Nilai dimensi'), h('input', { type: 'number', min: 0.1, step: 'any', value: a.val, oninput: (e) => { a.val = e.target.value; } }))));
   if (a.tool === 'rel') pr.append(h('div', { class: 'sktools' }, ['horizontal', 'vertical', 'coincident', 'equal', 'parallel', 'perpendicular', 'tangent', 'fix']
     .map((k) => h('button', { class: 'chip', onclick: () => skRelation(k) }, k))));
+  /* S21b: the two modify tools. The selection comes from the viewport or the list, the line and the spacing are
+     typed here, and the copies are added to this same sketch step. */
+  if (a.tool === 'smirror') {
+    const lines = ents.filter((e) => e.t === 'line' && e.c);
+    if (lines.length && !lines.some((e) => e.id === a.mir)) a.mir = lines[0].id;
+    pr.append(h('h3', null, L('Mirror Entities', 'Cermin entitas')),
+      h('p', { class: 'hint' }, L('Click the entities to mirror (or pick them in the list), choose the centre line, then press Mirror. The copies stay in this sketch.', 'Klik entitas yang mau dicerminkan (atau pilih di daftar), pilih centerline-nya, lalu tekan Cermin. Salinannya tetap di sketch ini.')),
+      h('label', { class: 'skrow' }, h('span', null, L('Mirror line (centre line)', 'Garis cermin (centerline)')),
+        h('select', { 'data-sk': 'mirror', onchange: (e) => { a.mir = e.target.value; } },
+          lines.length ? lines.map((e) => h('option', { value: e.id, selected: a.mir === e.id }, e.id))
+            : [h('option', { value: '', selected: true }, L('(no centre line yet)', '(belum ada centerline)'))])),
+      h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-sk': 'mirror-go', onclick: skMirrorApply }, L('Mirror selection', 'Cermin pilihan') + ` (${skSel.length})`)));
+  }
+  if (a.tool === 'spat') {
+    const cfg = a.pat || (a.pat = { kind: 'line', count: 3, dx: 20, dy: 0, angle: 0, cx: 0, cy: 0 });
+    const num = (k, label, unit) => h('label', { class: 'skrow' }, h('span', null, label),
+      h('input', { type: 'number', step: 'any', 'data-sk': 'pat-' + k, value: cfg[k], oninput: (e) => { cfg[k] = e.target.value; } }));
+    pr.append(h('h3', null, L('Sketch Pattern', 'Pola sketch')),
+      h('p', { class: 'hint' }, L('Select the entities, set the instances and the step, then press Pattern. Copies carry no relations of their own.', 'Pilih entitas, isi jumlah instance dan langkahnya, lalu tekan Pola. Salinan tidak membawa relasi sendiri.')),
+      h('label', { class: 'skrow' }, h('span', null, L('Pattern', 'Pola')),
+        h('select', { 'data-sk': 'pat-kind', onchange: (e) => { cfg.kind = e.target.value; a.pat = cfg; renderCad(); } },
+          [['line', L('Linear', 'Linear')], ['circle', L('Circular', 'Melingkar')]].map(([v, t]) => h('option', { value: v, selected: cfg.kind === v }, t)))),
+      num('count', L('Instances (incl. the first)', 'Jumlah (termasuk yang pertama)')),
+      cfg.kind === 'circle' ? num('angle', L('Angle step (0 = even)', 'Sudut langkah (0 = rata)'), '\u00b0') : num('dx', L('Step X', 'Langkah X'), 'mm'),
+      cfg.kind === 'circle' ? num('cy', L('Centre Y', 'Pusat Y'), 'mm') : num('dy', L('Step Y', 'Langkah Y'), 'mm'),
+      cfg.kind === 'circle' ? num('cx', L('Centre X', 'Pusat X'), 'mm') : null,
+      h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-sk': 'pat-go', onclick: skPatternApply }, L('Pattern selection', 'Pola pilihan') + ` (${skSel.length})`)));
+  }
   pr.append(        h('p', { class: 'hint' }, a.tool === 'fix'
     ? L('Sketch Correction reads the entities you have drawn. Every fix appears below as a proposal; accept, reject or undo it, and a size you typed is never changed.', 'Koreksi sketch membaca entitas yang sudah kamu gambar. Tiap perbaikan muncul di bawah sebagai usulan; terima, tolak, atau batalkan, dan ukuran yang kamu ketik tidak pernah diubah.')
-    : L(`Click in the viewport to draw. Line and Centerline chain until you double-click or press Esc. ${skSel.length ? skSel.length + ' selected.' : ''}`, `Klik di viewport untuk menggambar. Line dan Centerline menyambung sampai kamu dobel-klik atau tekan Esc. ${skSel.length ? skSel.length + ' terpilih.' : ''}`)));
+    : (a.tool === 'smirror' || a.tool === 'spat')
+      ? L('Click entities in the viewport to select them, set the values above, then press the button. Nothing is added until you do.', 'Klik entitas di viewport untuk memilih, isi nilainya di atas, lalu tekan tombolnya. Belum ada yang ditambahkan sampai kamu tekan.')
+      : L(`Click in the viewport to draw. Line and Centerline chain until you double-click or press Esc. ${skSel.length ? skSel.length + ' selected.' : ''}`, `Klik di viewport untuk menggambar. Line dan Centerline menyambung sampai kamu dobel-klik atau tekan Esc. ${skSel.length ? skSel.length + ' terpilih.' : ''}`)));
   if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
   pr.append(ents.length ? h('div', { class: 'skstat ' + dof.status }, h('b', null, dof.status === 'fully' ? L('Fully defined', 'Fully defined') : dof.status === 'over' ? L('Over-defined', 'Over-defined') : L('Under-defined', 'Under-defined')),
     h('span', null, dof.status === 'under' ? L(`${dof.dof} free parameter(s)`, `${dof.dof} parameter bebas`) : dof.status === 'over' ? L(`${-dof.dof} redundant relation(s)`, `${-dof.dof} relasi berlebih`) : L('every parameter is fixed', 'semua parameter terkunci')),
@@ -8483,7 +8575,8 @@ function renderSketchPanel(pr) {
   const skItem = (e) => {
     const kind = e.t === 'line' ? (e.c ? L('Centerline', 'Centerline') : L('Line', 'Garis')) : e.t === 'arc' ? L('Arc', 'Busur') : L('Point', 'Titik');
     const size = e.t === 'point' ? `${f(e.p[0], 1)}, ${f(e.p[1], 1)}` : `${f(p1Length(e), 1)} mm${e.t === 'arc' ? ' · R' + f(p1Radius(e), 1) : ''}`;
-    return h('li', { class: skSel.includes(e.id) ? 'on' : '', onclick: () => { skSel = skSel.includes(e.id) ? skSel.filter((x) => x !== e.id) : [...skSel, e.id].slice(-2); renderCad(); requestAnimationFrame(skOverlay); } },
+    return h('li', { class: skSel.includes(e.id) ? 'on' : '', onclick: () => { const cap = (a.tool === 'smirror' || a.tool === 'spat') ? 200 : 2;
+      skSel = skSel.includes(e.id) ? skSel.filter((x) => x !== e.id) : [...skSel, e.id].slice(-cap); renderCad(); requestAnimationFrame(skOverlay); } },
       h('b', null, kind), h('span', null, size));
   };
   pr.append(h('ol', { class: 'sklist' }, ...(ents.length ? ents.map(skItem) : [h('li', { class: 'pempty' }, L('Nothing yet: pick Line and click two points.', 'Belum ada: pilih Line lalu klik dua titik.'))])));
@@ -8827,8 +8920,8 @@ const RIBBON = [
       T('Convert Entities', 'proj', 'no', 'Project model edges into the sketch.', 'Proyeksikan tepi model ke sketch.', 'Project, Include, Use Edge'),
       T('Trim', 'trim', 'on', 'Cut the clicked piece of a line or arc where it crosses another.', 'Potong bagian garis atau busur yang diklik di titik persilangan.', 'Power Trim', { sk: 'trim' }),
       T('Extend', 'extend', 'on', 'Lengthen the clicked end of a line or arc to the next entity.', 'Perpanjang ujung garis atau busur yang diklik sampai entitas berikutnya.', '', { sk: 'extend' }),
-      T('Mirror Entities', 'smir', 'mk1', 'Mirror sketch lines about a centerline.', 'Cerminkan garis sketch terhadap centerline.', 'Sketch Mirror'),
-      T('Sketch Pattern', 'spat', 'mk1', 'Linear or circular pattern inside the sketch.', 'Pola linear atau melingkar di dalam sketch.', 'Linear / Circular Sketch Pattern')]],
+      T('Mirror Entities', 'smir', 'on', 'Mirror the selected sketch entities about a centre line: the kernel-wise copies are still lines and arcs, they stay in the same sketch step, and they are rebuilt with it. The mirror line is a centre line, never part of the profile.', 'Cerminkan entitas sketch terpilih terhadap centerline: salinannya tetap garis dan busur, tetap di langkah sketch yang sama, dan dibangun ulang bersamanya. Garis cerminnya centerline, bukan bagian profil.', 'Sketch Mirror', { sk: 'smirror' }),
+      T('Sketch Pattern', 'spat', 'on', 'Linear (step X, Y) or circular (angle about a centre) pattern of the selected sketch entities, 2 to 200 instances, inside the same sketch step. A copy carries no relations of its own, and the note says so.', 'Pola linear (langkah X, Y) atau melingkar (sudut terhadap pusat) dari entitas sketch terpilih, 2 sampai 200 instance, di langkah sketch yang sama. Salinan tidak membawa relasi sendiri, dan catatannya menyebut itu.', 'Linear / Circular Sketch Pattern', { sk: 'spat' })]] ,
     ['Constrain', [T('Smart Dimension', 'dim', 'on', 'Drive one size of a sketch. The dimension becomes a step in the tree: change it and the whole part rebuilds.', 'Mengatur satu ukuran sketch. Dimensi menjadi langkah di pohon: ubah nilainya dan seluruh part dibangun ulang.', 'Sketch Dimension', P('dim')),
       T('Add Relation', 'rel', 'on', 'Coincident, horizontal, vertical, parallel, perpendicular, tangent, equal, fix — click the lines/arcs, then the relation.', 'Coincident, horizontal, vertikal, sejajar, tegak lurus, tangen, sama, fix — klik garis/busurnya, lalu relasinya.', 'Constraints, Geometric Constraints', { sk: 'rel' })]],
     ['IDRIS', [T('Sketch Correction', 'fix', 'on', 'Opens the line-and-arc sketcher on its correction list: IDRIS finds lines that do not meet, overlap, hang loose or are almost horizontal/vertical, and every fix is a proposal you accept, reject or undo. Nothing moves until you say so, and the sketch is rebuilt by the kernel when you save it.', 'Membuka sketcher garis dan busur pada daftar koreksinya: IDRIS menemukan garis yang tidak menyambung, bertumpuk, menggantung, atau hampir horizontal/vertikal, dan tiap perbaikan adalah usulan yang kamu terima, tolak, atau batalkan. Tidak ada yang bergerak sampai kamu setuju, dan sketch dibangun kernel saat kamu simpan.', 'Repair Sketch, Check Sketch for Feature', { sk: 'fix' }, ['Open the sketcher', 'Buka sketcher', { sk: 'ents' }], true)]]]],
