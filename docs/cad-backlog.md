@@ -41,7 +41,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 
 | Tool | State | What the code has | What is missing | Batch |
 | --- | --- | --- | --- | --- |
-| Boundary Boss/Base | `no` | loft between sketches | a two-direction boundary fill (curves in U and V) — no `MakeFilling`/boundary builder in the wrapper | 6 |
+| Boundary Boss/Base | `no` | loft between sketches | a two-direction boundary fill (curves in U and V): `BRepOffsetAPI_MakeFilling` is in the kernel, the wrapper that feeds it two curve sets is not | 6 |
 | Variable Fillet | `no` | constant-radius `fillet()` with edge finders | `BRepFilletAPI_MakeFillet` with a radius per point along the edge, plus a way to pick that edge | 7 |
 | Dome | `no` | sphere, cut, fuse | a cap trimmed by the face outline and fused; the honest version is a spherical cap intersected with the face region | 4 |
 | Wrap / Emboss | `no` | nothing | project a sketch onto a face (planar or cylindrical) and thicken along the normals: `BRepProj_Projection` + offset, neither wrapped | 7 |
@@ -59,7 +59,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 | Tool | State | What the code has | What is missing | Batch |
 | --- | --- | --- | --- | --- |
 | Boundary Surface | `no` | loft/sweep/planar | the same two-direction boundary fill as Boundary Boss/Base | 6 |
-| Filled Surface | `no` | Planar Surface covers flat patches | a filling builder (`BRepOffsetAPI_MakeFilling`) with continuity and support faces | 6 |
+| Filled Surface | `no` | Planar Surface covers flat patches | a filling builder (`BRepOffsetAPI_MakeFilling`) with continuity and support faces, plus picking the boundary edges: the class is in the kernel, the JS wrapper and the edge picker are not | 6 |
 | Trim Surface | `no` | knit, offset | trim one shell with another or with a sketch: the splitter on shells, then the kept side | 6 |
 | Delete Face | `no` | nothing | remove faces and heal the gap (`ShapeFix`), and redefine the solid when the gap cannot be healed | 6 |
 
@@ -176,9 +176,21 @@ Not in this batch: arithmetic between parameters (`L * 2`) and per-configuration
 ### Batch 6 — the surfaces that need new kernel wrappers
 
 Boundary Surface, Filled Surface, Trim Surface, Delete Face, and Boundary Boss/Base. This is the first batch that
-adds OpenCascade bindings (`BRepOffsetAPI_MakeFilling`, the splitter on shells, `ShapeFix`). Each tool must report
-the area/volume the kernel measures, and a trim or a delete that cannot be healed must say so instead of returning
-a shell with a hole.
+writes OpenCascade bindings. Each tool must report the area/volume the kernel measures, and a trim or a delete that
+cannot be healed must say so instead of returning a shell with a hole.
+
+**Measured, not assumed (probe of `R.getOC()` in the bundled kernel):** the raw OpenCascade module already exposes
+`BRepOffsetAPI_MakeFilling`, `BRepAlgoAPI_Splitter`, `BRepAlgoAPI_Section`, `BRepFilletAPI_MakeFillet`,
+`BRepFilletAPI_MakeChamfer`, `BRepOffsetAPI_MakeThickSolid`, `BRepAdaptor_Surface`, `TopExp_Explorer`,
+`BRepBuilderAPI_MakeFace/MakeWire/MakeSolid/MakeSewing/Transform`, `BRepCheck_Analyzer` and
+`BRepExtrema_DistShapeShape`, so the JS wrapper is what is missing, not the binding. Not in this build:
+`BRepLProp_SLProps`, `GeomLProp_SLProps`, `BRepProj_Projection`, `ShapeFix_Shape`, `BRep_Builder`, `TopExp`,
+`GCPnts_QuasiUniformDeflection`.
+
+That changes two things in this backlog: Boundary/Filled Surface (batch 6) and Variable Fillet (batch 7) can be
+written against `R.getOC()` without a new WASM build, and Curvature/Zebra (batch 11) has to measure curvature from
+`BRepAdaptor_Surface` (its `D2`/`DN` derivatives) instead of the missing `LProp` classes, or wait for a kernel
+rebuild. Every tool still has to pass the same five rules at the top of this document.
 
 ### Batch 7 — Variable Fillet, Wrap/Emboss, Text
 
