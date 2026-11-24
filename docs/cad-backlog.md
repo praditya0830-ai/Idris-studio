@@ -1,0 +1,209 @@
+# CAD backlog: the grey tools, and what it takes to turn each one on
+
+This is the audit behind the grey buttons in the ribbon, and the plan for turning them on one small batch at a
+time. It is written against the code that ships in `index.html` (branch `studio/drawing-full` + this batch), the
+kernel in `kernel/` (replicad on OpenCascade WASM), and the tests in `tests/`.
+
+## The rule this backlog follows
+
+A tool is `on` only when all five hold:
+
+1. clicking it opens the workflow that builds the thing — not a label change;
+2. the geometry comes from the kernel (or from a solver that actually runs), never from a stand-in shape;
+3. the result is a step in the feature tree that can be edited, deleted and rebuilt;
+4. invalid input is refused with the measured or named reason;
+5. there is a kernel test and a browser test for the click path, the geometry, the rebuild and no page error.
+
+Everything else stays grey with its reason in the tooltip and the popover. A grey button costs an engineer one
+click; a green button that does not build costs them a part.
+
+`RIB_ST` therefore keeps three honest non-running states: `no` (not in IDRIS yet), `mk1` (coming in Mark 1) and
+`gb` (only for gearbox designs). A tool that is grey is never hidden.
+
+## What is grey today, tool by tool
+
+`on` = runs, `no` = not built, `mk1` = planned, `gb` = gearbox only. "Batch" is the batch that turns it on; "—"
+means it is not scheduled in this backlog because the gap is bigger than a batch.
+
+### Sketch
+
+| Tool | State | What the code has | What is missing | Batch |
+| --- | --- | --- | --- | --- |
+| Spline | `on` (this batch) | closed cubic-Bézier spline through typed points, real kernel edges | — (partial spline / control-point spline is a later step) | 1 |
+| Ellipse | `on` (this batch) | `drawEllipse` in the kernel, extruded/revolved as usual | — (partial ellipse later) | 1 |
+| Sketch Correction | `on` (this batch) | P1b proposals (join, horizontal, vertical, equal, parallel, perpendicular) with accept/reject/undo, and typed sizes are never changed by a proposal | — (the ribbon now opens the sketcher on its correction list) | 1 |
+| Convert Entities | `no` | nothing | the model edges must be projected into the sketch plane (the drawing code already does this with HLR) and mapped back to sketch lines/arcs | 2 |
+| Mirror Entities | `mk1` | mirror an entity is pure 2D maths; `p1Solve` already re-solves relations | a sketch-session tool that mirrors the selection about a centre line, keeps construction lines out, and stays editable | 2 |
+| Sketch Pattern | `mk1` | `repeat` exists for features, not for sketch entities | linear/circular copies of entities with their relations, and a refusal when a copy cannot stay inside the loop | 2 |
+| Text | `no` | the kernel bundle has `drawText`, no font file is shipped | a licensed font asset (opentype), then the emboss/cut path (see Wrap/Emboss) | 8 |
+
+### Features
+
+| Tool | State | What the code has | What is missing | Batch |
+| --- | --- | --- | --- | --- |
+| Boundary Boss/Base | `no` | loft between sketches | a two-direction boundary fill (curves in U and V) — no `MakeFilling`/boundary builder in the wrapper | 6 |
+| Variable Fillet | `no` | constant-radius `fillet()` with edge finders | `BRepFilletAPI_MakeFillet` with a radius per point along the edge, plus a way to pick that edge | 7 |
+| Dome | `no` | sphere, cut, fuse | a cap trimmed by the face outline and fused; the honest version is a spherical cap intersected with the face region | 4 |
+| Wrap / Emboss | `no` | nothing | project a sketch onto a face (planar or cylindrical) and thicken along the normals: `BRepProj_Projection` + offset, neither wrapped | 7 |
+| Reference Plane | `no` | sketches sit on the strings `XY`/`XZ`/`YZ` + offset | a plane registry: `buildPart` and the viewer take a plane object, sketches reference it by id, and the grid follows | 3 |
+| Reference Axis | `no` | patterns turn about a field value | the same registry for axes, and the pattern/revolve fields that can point at one | 3 |
+| Curve Pattern | `no` | `repeat` translates/rotates a feature | replay a feature along a sampled path with orientation and instance culling | 8 |
+| Fill Pattern | `no` | `repeat` | instance placement inside a boundary with a point-in-face test and a spacing/angle rule | 8 |
+| Split | `no` | one `body` in `buildPart` | multi-body support first (a part can hold several bodies), then a splitter (`BRepAlgoAPI_Splitter`) | 4 |
+| Scale | `no` | the kernel can scale a shape | the step, uniform vs per-axis, the "this scales the whole body, not the feature" warning, and a rebuild test | 4 |
+| Coordinate System | `no` | nothing | nothing consumes a named CSYS: mates and patterns take field values, exports take the model origin. Grey until a consumer exists | — |
+| Thicken (Features tab) | `no`, by design | Surface → Thicken does the work | nothing: this copy exists only so the tool is where SolidWorks users look. It now opens Surface → Thicken instead of asking IDRIS in chat. Do not implement it twice | 0 |
+
+### Surface
+
+| Tool | State | What the code has | What is missing | Batch |
+| --- | --- | --- | --- | --- |
+| Boundary Surface | `no` | loft/sweep/planar | the same two-direction boundary fill as Boundary Boss/Base | 6 |
+| Filled Surface | `no` | Planar Surface covers flat patches | a filling builder (`BRepOffsetAPI_MakeFilling`) with continuity and support faces | 6 |
+| Trim Surface | `no` | knit, offset | trim one shell with another or with a sketch: the splitter on shells, then the kept side | 6 |
+| Delete Face | `no` | nothing | remove faces and heal the gap (`ShapeFix`), and redefine the solid when the gap cannot be healed | 6 |
+
+### Sheet Metal
+
+| Tool | State | Why it is grey | What it needs | Batch |
+| --- | --- | --- | --- | --- |
+| Hem | `no` | the sector model's 180° fold puts the outer surface back through the plate, so the kernel merges the sheet with itself (measured, in the tooltip) | a fold model that carries material on one side of the neutral line, not an annular sector | 9 |
+| Jog | `no` | the second bend leaves the lower plate inside the web it just made: the sheet passes through itself | the same fold model, with a web between the two bends | 9 |
+| Forming Tool | `no` | louvres/embosses/lances are a punch library, not a bend | a punch form library and the deformed-sheet build | 9 |
+
+### Weldments
+
+| Tool | State | Why it is grey | What it needs | Batch |
+| --- | --- | --- | --- | --- |
+| Trim/Extend | `no` | on a hollow section the walls of two members cross as separate pieces: the boolean breaks the frame into four solids (one corner of two SHS 40×40×3 is 2 706 mm³ of crossing walls) | model the joint as a cope on the member (a profile-shaped notch), not a boolean on the walls. `member.trim` already cuts shared corners; that is the shape this must grow from | 10 |
+
+### Assembly
+
+| Tool | State | Why it is grey | What it needs | Batch |
+| --- | --- | --- | --- | --- |
+| Motion Study | `no` | the kernel builds static solids; the app's mates are **measured**, not solved. An animation needs a driving constraint, a time step and a kinematic solve | a constraint solver and a time-domain integrator, in the engine, with the assembly rebuilt each step. Until that runs, the closest real answer is Collision Detection along a travel, which is `on` | — (blocked) |
+
+### Evaluate
+
+| Tool | State | What the code has | What is missing | Batch |
+| --- | --- | --- | --- | --- |
+| Curvature / Zebra | `no` | face normals and areas; the viewer draws B-rep faces | per-face curvature (`BRepLProp_SLProps`) and a reflection-line shader. The measurement is a kernel job, the stripes are a render job | 11 |
+| Edit Sizes on the Model | `gb` | the gearbox solver rebuilds and re-checks | nothing for a part: it is **by design** gearbox-only. A part is edited through its feature tree (edit the step, rebuild), which is the honest path; the grey button says "for gearbox designs" and offers the gearbox demo. Keep this restriction | — (keep) |
+
+### Manage
+
+| Tool | State | Why it is grey | What it needs | Batch |
+| --- | --- | --- | --- | --- |
+| Parameters | `mk1` | feature fields are edited one step at a time | a named parameter table, expressions in numeric fields, and a rebuild that resolves them in dependency order | 5 |
+| Configurations | `no` | one feature tree per part | named configurations that override parameters and feature states, with the same rebuild and a test that both configurations build | 5 |
+
+## The batches
+
+Each batch is one PR, one branch, one set of tests. A batch ships only the tools whose rows above are complete.
+
+### Batch 0 — this PR: the audit, and the two duplicates made honest
+
+* this document, with the measured reasons the grey tools already carry;
+* Features → Thicken redirects to Surface → Thicken (one implementation, one name);
+* no status is moved to `on` in this batch.
+
+Tests: no behaviour change beyond the redirect; `git diff --check`, the existing unit suite.
+
+### Batch 1 — this PR: the first sketch curves (Ellipse, closed spline, Sketch Correction entry)
+
+* Sketch → Ellipse: major/minor diameter, real ellipse arcs, extruded/revolved/swept like any profile;
+* Sketch → Spline: a closed cubic-Bézier spline through typed points, exact through every point, closed on itself;
+* both refused with a named reason (minor > major, < 3 points, duplicate points, self-crossing list);
+* both are sketch steps in the tree, editable, and rebuild; Smart Dimension can drive the ellipse's major diameter;
+* Sketch Correction's ribbon button opens the sketcher on its correction list (the P1b proposals were already
+  implemented but unreachable from the ribbon).
+
+Tests: `tests/s21-sketch-curves.test.mjs` (kernel: volumes, faces, refusals, rebuild, dimension) and
+`tests/s21-sketch-curves.spec.mjs` (browser: ribbon click → form → Add & build → tree → edit → rebuild → no page
+error).
+
+### Batch 2 — the rest of Sketch's modify tools
+
+Mirror Entities, Sketch Pattern, Convert Entities. No new kernel capability: mirror and pattern are 2D transforms
+the solver already handles; Convert Entities reuses the drawing projection (HLR) and maps the projected edges to
+sketch entities. Acceptance: the copies stay in the same sketch step, a mirrored arc stays an arc, a converted
+edge is a real projected line/arc (not a polyline), and a sketch with converts rebuilds when the body moves.
+
+### Batch 3 — Reference Plane and Reference Axis
+
+`buildPart` and the viewer learn a plane/axis object; a sketch can name one instead of `XY + offset`; patterns and
+revolves can point at an axis. Prerequisite for Boundary, Curve Pattern and Fill Pattern. Acceptance: a sketch on
+an offset/angled plane extrudes to the same volume as the equivalent `XY + offset` sketch, and the grid and normal
+view follow the plane.
+
+### Batch 4 — the solid features the kernel can already do
+
+Scale (uniform and per-axis, with the "whole body" warning), Dome (spherical cap trimmed by the face outline), and
+Split once multi-body exists. Acceptance: scale changes the measured volume by the factor cubed (or per axis), the
+rebuild is exact, and Split produces two bodies that each have their own step and volume.
+
+### Batch 5 — Parameters and Configurations
+
+A parameter table (`L`, `W`, `R` …), expressions in numeric fields, and named configurations. No kernel work.
+Acceptance: changing a parameter rebuilds every step that uses it; a configuration switch rebuilds and the mass
+properties differ; an undefined parameter is refused by name.
+
+### Batch 6 — the surfaces that need new kernel wrappers
+
+Boundary Surface, Filled Surface, Trim Surface, Delete Face, and Boundary Boss/Base. This is the first batch that
+adds OpenCascade bindings (`BRepOffsetAPI_MakeFilling`, the splitter on shells, `ShapeFix`). Each tool must report
+the area/volume the kernel measures, and a trim or a delete that cannot be healed must say so instead of returning
+a shell with a hole.
+
+### Batch 7 — Variable Fillet, Wrap/Emboss, Text
+
+Variable Fillet: `BRepFilletAPI_MakeFillet` with a radius law along the picked edge, refused when the radius does
+not fit. Wrap/Emboss and Text: the sketch projected onto a face, then thickened or cut; Text needs the font asset
+first, and the tool must name the font.
+
+### Batch 8 — Curve Pattern and Fill Pattern
+
+Replay a feature along a path (with orientation) and fill a boundary with instances. Both need Batch 3 and a
+point-in-face test. Acceptance: the instance count is what the spacing implies on the measured path/area, and a
+pattern that would leave the boundary is refused or clipped with the count it used.
+
+### Batch 9 — sheet metal Hem, Jog, Forming Tool
+
+Replace the annular-sector fold model with one that carries the sheet on one side of the neutral line, then Hem
+and Jog become geometry; Forming Tool needs a punch form library. The flat pattern must keep developing the same
+allowance, and the existing sheet-metal tests must still pass unchanged.
+
+### Batch 10 — Weldments Trim/Extend
+
+Model the joint as a cope on the member, not a boolean on the walls. Acceptance: trimming two SHS 40×40×3 members
+at a corner gives **one** solid per member with the cope cut, not four separate solids, and the cut list keeps its
+two rows.
+
+### Batch 11 — Curvature / Zebra
+
+Measure curvature on each face (`BRepLProp_SLProps`) and draw it as colour or reflection lines. Acceptance: a
+cylinder reports 1/R everywhere within tolerance, a plane reports 0, and the view says which quantity it shows.
+
+### Not scheduled
+
+* **Motion Study** — needs a kinematic solver and a time step in the engine. Until that exists the button stays
+  grey with that reason; Collision Detection answers the static question today.
+* **Coordinate System** — nothing in the app consumes a named CSYS. Revisit when mates or exports need one.
+* **Edit Sizes on the Model** — gearbox-only by design; a part is edited through its feature tree.
+
+## The engine-side gaps, in one place
+
+| Capability | In the kernel wrapper today | Needed by |
+| --- | --- | --- |
+| variable-radius fillet | no (`fillet(radius, finder)` only) | Variable Fillet |
+| surface filling / boundary | no | Filled Surface, Boundary Surface, Boundary Boss |
+| trim/split on shells | no | Trim Surface, Split |
+| heal / remove face | no | Delete Face |
+| projection of a sketch onto a face | no | Wrap/Emboss, Text |
+| curvature at a point on a face | no | Curvature / Zebra |
+| cope on a hollow section | no | Weldments Trim/Extend |
+| fold model with material on one side | no (sector model) | Hem, Jog |
+| named plane / axis as a sketch host | no (strings + offset) | Reference Plane/Axis, Curve/Fill Pattern |
+| multi-body part | no (one `body`) | Split, Delete Face on one body |
+| parameter table + expressions | no | Parameters, Configurations |
+| kinematic solver with time | no (mates are measured) | Motion Study |
