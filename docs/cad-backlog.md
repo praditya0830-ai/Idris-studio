@@ -35,20 +35,16 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 | Convert Entities | `on` (shipped) | `s21cConvert`: the kernel's HLR projection of the model, converted curve by curve — a projected line stays a line, a projected circle becomes two three-point arcs, so the sketch stays lines and arcs and builds exactly. A projected ellipse or spline is refused by name, never flattened | — (a projected B-spline stays out until the sketch can hold splines proper) | 2b |
 | Mirror Entities | `on` (shipped) | `p1Mirror`: an exact 2D reflection of the selected entities about a centre line; a mirrored arc is still an arc | — (copies carry no relations of their own, and the note says so) | 2 |
 | Sketch Pattern | `on` (shipped) | `p1Pattern`: linear (dx, dy) and circular (angle about a centre) copies, 2–200 instances, inside the same sketch step | — (same note about relations) | 2 |
-| Text | `on` (this batch) | `idrisTextRects`: a 5×7 block font bundled in the page as a cell table, fused cell by cell into one closed profile and extruded as a boss or cut as a deboss, with the profile area and the measured volume in the note | proportional letterforms and multi-line text: the bundled font is a single 5×7 cell grid, and a character it does not carry is refused by name | A |
+| Text | `no` | the kernel bundle has `drawText`, no font file is shipped | a licensed font asset (opentype), then the emboss/cut path (see Wrap/Emboss) | 8 |
 
 ### Features
 
 | Tool | State | What the code has | What is missing | Batch |
 | --- | --- | --- | --- | --- |
-<<<<<<< HEAD
-| Boundary Boss/Base | `no` | loft between sketches | a two-direction boundary fill (curves in U and V) — no `MakeFilling`/boundary builder in the wrapper | 6 |
-=======
 | Boundary Boss/Base | `on` (shipped) | `s21kBoundarySolid`: the same two-direction boundary as Boundary Surface (`s21iBoundary`: the first direction is lofted by the kernel, every curve of the second must land on that loft, and the second direction's own loft is measured when there are two or more) is made into a solid — the patch is offset by the thickness (`BRepOffsetAPI_MakeOffsetShape`), a wall is lofted from each boundary curve of the patch to the matching curve of the offset (`BRepOffsetAPI_ThruSections`), and patch, offset and walls are sewn into one shell (`BRepBuilderAPI_Sewing`) and made a solid (`BRepBuilderAPI_MakeSolid`); both thickness directions are built and the one that adds material to the body — decided by the kernel's volumes — is fused in, and the step records both patch areas and the volume added | the curves come from the **body**, not from loose sketch entities (a sketch is picked up once it is a body, exactly as for Boundary Surface); a patch whose walls cannot be closed into a valid positive-volume solid is refused with the thickness it could not close, and a patch that lies inside the body adds nothing and is refused instead of silently doing nothing | 6 |
->>>>>>> 4995cc5 (Boundary Boss/Base thickens the two-direction patch into a solid the kernel measures)
-| Variable Fillet | `no` | constant-radius `fillet()` with edge finders | `BRepFilletAPI_MakeFillet` with a radius per point along the edge, plus a way to pick that edge | 7 |
+| Variable Fillet | `on` (shipped) | `s21lVariableFillet`: one edge picked in the viewport or the panel list and a radius at each end, built by the kernel's own fillet builder (`BRepFilletAPI_MakeFillet` with `Add(r1, r2, edge)`, a rational radius law), with the material it removed and the volume before and after measured; two equal radii give exactly the constant fillet's volume (`(1 − π/4)·r²·L` to 1e-6) | a radius at more than two points along the edge (a typed law, or several handles) is not in this batch: the two ends are the law | 7 |
 | Dome | `no` | sphere, cut, fuse | a cap trimmed by the face outline and fused; the honest version is a spherical cap intersected with the face region | 4 |
-| Wrap / Emboss | `no` | nothing | project a sketch onto a face (planar or cylindrical) and thicken along the normals: `BRepProj_Projection` + offset, neither wrapped | 7 |
+| Wrap / Emboss | `no` | nothing | project a sketch onto a face (planar or cylindrical) and thicken along the normals. `BRepProj_Projection` is **not** in the bundled kernel (probed), and `GeomAPI_ProjectPointOnSurf` alone projects points, not curves, so the wrap has to be built from the face's own surface (`sketchOnFace` does this already: `BRep_Tool.Surface` + `GeomLib.To3d` + `BRepLib.BuildCurves3d`) and then offset and walled like Boundary Boss/Base. A planar face is a second path (extrude and cut). Not in batch 7 | 7 (partial) |
 | Reference Plane | `no` | sketches sit on the strings `XY`/`XZ`/`YZ` + offset | a plane registry: `buildPart` and the viewer take a plane object, sketches reference it by id, and the grid follows | 3 |
 | Reference Axis | `no` | patterns turn about a field value | the same registry for axes, and the pattern/revolve fields that can point at one | 3 |
 | Curve Pattern | `no` | `repeat` translates/rotates a feature | replay a feature along a sampled path with orientation and instance culling | 8 |
@@ -62,14 +58,10 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 
 | Tool | State | What the code has | What is missing | Batch |
 | --- | --- | --- | --- | --- |
-| Boundary Surface | `no` | loft/sweep/planar | the same two-direction boundary fill as Boundary Boss/Base | 6 |
-<<<<<<< HEAD
-| Filled Surface | `no` | Planar Surface covers flat patches | a filling builder (`BRepOffsetAPI_MakeFilling`) with continuity and support faces | 6 |
-=======
+| Boundary Surface | `on` (shipped) | `s21iBoundary`: the curves of the body are split into two directions by the panel's switch; the first direction is lofted by the kernel (`BRepOffsetAPI_ThruSections` through each curve as a wire), every curve of the second direction must land on that loft (the gap is `BRepExtrema_DistShapeShape`), and when the second direction holds two curves or more its own loft is measured too and must come to the same patch | — (a true network surface — a Gordon build through crossing curves, which OCCT has no public builder for — is not what this is: the second direction is constrained to the first direction's loft) | 6 |
 | Filled Surface | `on` (shipped) | `s21gFill`: the kernel's `BRepOffsetAPI_MakeFilling` over the boundary edges you pick on the body (viewport click picks the edge nearest the pointer, or tick the list), with the measured patch area in the note | — (continuity/support faces and patches between non-connected edges stay out: the kernel refuses what is not one boundary) | 6 |
->>>>>>> ec32503 (Filled Surface patches the boundary edges you pick, and the kernel measures the patch)
-| Trim Surface | `no` | knit, offset | trim one shell with another or with a sketch: the splitter on shells, then the kept side | 6 |
-| Delete Face | `no` | nothing | remove faces and heal the gap (`ShapeFix`), and redefine the solid when the gap cannot be healed | 6 |
+| Trim Surface | `on` (shipped) | `s21hTrim`: the surface body is split by the plane of a face you pick on the model (`BRepAlgoAPI_Splitter` with a face made on that plane; a viewport click picks the face whose centre is under the pointer, or pick it in the list), and the pieces on the chosen side of that face's normal are kept, with the kept area and the area before measured | — (a cutting plane that misses the surface leaves it whole, and a curved face cannot supply a cutting plane) | 6 |
+| Delete Face | `on` (shipped) | `s21jDelete`: the picked face leaves the body, the kernel patches the opening from the opening's own boundary (`BRepOffsetAPI_MakeFilling`), sews the remaining faces and the patch back into one shell (`BRepBuilderAPI_Sewing`) and makes it a solid again (`BRepBuilderAPI_MakeSolid`); the step is accepted only when `BRepCheck_Analyzer` passes and the volume is positive, and it records the removed area, the patch area and the volume before and after | delete **and patch**, not a redefinition of the solid: neighbour faces are not extended (no `ShapeFix_Shape`, no `BRepTools_ReShape` in this build), so an opening whose patch coincides with the removed face — every planar face — comes back at the same volume; a face with more than one boundary loop is refused (patching only the outer loop would cover the opening inside it), and so is a boundary `MakeFilling` cannot build (a cylinder's seam-bounded barrel) | 6 |
 
 ### Sheet Metal
 
@@ -102,8 +94,8 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 
 | Tool | State | Why it is grey | What it needs | Batch |
 | --- | --- | --- | --- | --- |
-| Parameters | `mk1` | feature fields are edited one step at a time | a named parameter table, expressions in numeric fields, and a rebuild that resolves them in dependency order | 5 |
-| Configurations | `no` | one feature tree per part | named configurations that override parameters and feature states, with the same rebuild and a test that both configurations build | 5 |
+| Parameters | `on` (shipped) | `s21eResolve`: a named size table, and a numeric field may hold a parameter's name instead of a number. Values are resolved before any step runs, so one number drives several steps; a name that is not defined is refused by the step that uses it, with the name | — (arithmetic between parameters, e.g. `L * 2`, is the next step; today a field holds one name or one number) | 5 |
+| Configurations | `on` (shipped) | `s21eTable`: named configurations that override single parameter values; switching one rebuilds the part through the kernel, so both are real builds | — (per-configuration feature suppression is not in this batch) | 5 |
 
 ## The batches
 
@@ -164,11 +156,22 @@ failed step is marked in the tree and skipped. Kernel test: `tests/s21c-scale.te
 Split needs `buildPart` to hold several bodies (it holds one `body` today). Neither is a rename away, so both stay
 grey with those reasons.
 
-### Batch 5 — Parameters and Configurations
+### Batch 5 — Parameters and Configurations (shipped)
 
-A parameter table (`L`, `W`, `R` …), expressions in numeric fields, and named configurations. No kernel work.
-Acceptance: changing a parameter rebuilds every step that uses it; a configuration switch rebuilds and the mass
-properties differ; an undefined parameter is refused by name.
+Manage → Parameters opens the table: a named size, and any numeric field of any step can hold that name instead of a
+number (the field remembers the name in the step's shadow map, so the form still shows it after the build resolves
+it). Values are resolved once per build, before any step runs, and a name the part does not define is refused **by
+the step that uses it**, with the name — never read as 0 or NaN. Configurations are named override sets of those
+values: switching one rebuilds the part through the kernel.
+
+Kernel test `tests/s21e-params.test.mjs`: `L = 40` → 24 000 mm³, `L = 50` → 30 000 mm³ (the step was not baked), a
+configuration with `L = 60` → 36 000 and back to Default → 30 000, an undefined name (`Width`) refused by the box
+step with its name and no body built, one parameter driving both a Box `L` and an Extrude distance, and a typed
+number left untouched. Browser test `tests/s21e-params.spec.mjs`: the Manage tab, the panel, naming a size, typing
+the name into the box's `L` field, changing the value, adding a configuration that overrides it, switching back, and
+the refusal — with no page error.
+
+Not in this batch: arithmetic between parameters (`L * 2`) and per-configuration suppression of a step.
 
 ### Batch 6 — the surfaces that need new kernel wrappers
 
@@ -180,13 +183,6 @@ Kernel test `tests/s21g-fill.test.mjs` (four top edges of a 40 × 30 × 20 box �
 one-edge refusal, the rebuild at another edge order) and browser test `tests/s21g-fill.spec.mjs` (ribbon → panel →
 viewport pick → four ticks → Build → 1 200 mm² and the note, then the one-edge refusal, no page error).
 
-<<<<<<< HEAD
-
-Boundary Surface, Filled Surface, Trim Surface, Delete Face, and Boundary Boss/Base. This is the first batch that
-adds OpenCascade bindings (`BRepOffsetAPI_MakeFilling`, the splitter on shells, `ShapeFix`). Each tool must report
-the area/volume the kernel measures, and a trim or a delete that cannot be healed must say so instead of returning
-a shell with a hole.
-=======
 **Also shipped in this batch: Trim Surface.** Surface → Trim Surface lists the body's planar faces; a viewport click
 picks the face whose centre is under the pointer (the list stays for faces that overlap on screen), and the picked
 face supplies the cutting plane and the normal that decides which half survives. The split is
@@ -269,13 +265,32 @@ That changes two things in this backlog: Boundary/Filled Surface (batch 6) and V
 written against `R.getOC()` without a new WASM build, and Curvature/Zebra (batch 11) has to measure curvature from
 `BRepAdaptor_Surface` (its `D2`/`DN` derivatives) instead of the missing `LProp` classes, or wait for a kernel
 rebuild. Every tool still has to pass the same five rules at the top of this document.
->>>>>>> 4995cc5 (Boundary Boss/Base thickens the two-direction patch into a solid the kernel measures)
 
-### Batch 7 — Variable Fillet, Wrap/Emboss, Text
+### Batch 7 — Variable Fillet (shipped), Wrap/Emboss and Text (still blocked)
 
-Variable Fillet: `BRepFilletAPI_MakeFillet` with a radius law along the picked edge, refused when the radius does
-not fit. Wrap/Emboss and Text: the sketch projected onto a face, then thickened or cut; Text needs the font asset
-first, and the tool must name the font.
+**Shipped: Variable Fillet.** Features → Variable Fillet lists the body's edges (a viewport click picks the nearest
+one, the same picker Boundary Surface uses) and has a radius for each end of the picked edge. The fillet is the
+kernel's own: `BRepFilletAPI_MakeFillet` with `Add(r1, r2, edge)` and a rational radius law — never a loft of
+hand-made sections. The step records the material the kernel removed and the volume before and after, and only
+exists when the returned body passes `BRepCheck_Analyzer`.
+
+Measured on the vertical edge of a 40 × 30 × 20 box: two radii of 5 mm remove 107.3009 mm³, which is
+`(1 − π/4)·5²·20` to 1e-6, so a variable fillet with equal ends is exactly the constant fillet; 2 mm → 6 mm removes
+75.8103 mm³, between the constant 2 mm (17.1682) and 6 mm (154.5133) removals and within 2.5 % of the rolling-ball
+integral `(1 − π/4)·20·(2² + 2·6 + 6²)/3 = 74.3923` — the rational surface is not the exact corner arc at the
+intermediate radii, so the step carries the kernel's 75.8103 and the test asserts the band and the tolerance, not a
+made-up closed form. 100 mm at one end (larger than the 30 mm face it would roll on) is refused by the kernel's own
+validity check with both radii named. Kernel test `tests/s21l-varfillet.test.mjs` (7 checks: the exact equal-radius
+volume, the 2 → 6 band and the B-spline face it must leave behind, the 0 mm and 100 mm refusals, the off-body edge
+index, the no-body refusal, the rebuild twice) and browser test `tests/s21l-varfillet.spec.mjs` (ribbon → box → 12
+edges listed → viewport pick of the top edge → the vertical edge in the list → 5 and 5 mm → Build fillet →
+23 892.70 mm³ of 24 000 mm³, then the 100 mm refusal on the step, no page error).
+
+**Not in this batch, with the reason measured:** Wrap/Emboss needs `BRepProj_Projection`, which the bundled kernel
+does not export (probed), so a wrap has to be built from the face's own surface and then thickened like Boundary
+Boss/Base; Text needs a licensed font asset before any projection can use it. Both stay grey with those reasons in
+their tooltips. The 100 mm refusal above is also how the two-ended law behaves when it does not fit: the kernel
+reports done, the result fails `BRepCheck_Analyzer`, and the step is refused rather than written broken.
 
 ### Batch 8 — Curve Pattern and Fill Pattern
 
@@ -311,18 +326,12 @@ cylinder reports 1/R everywhere within tolerance, a plane reports 0, and the vie
 
 | Capability | In the kernel wrapper today | Needed by |
 | --- | --- | --- |
-| variable-radius fillet | no (`fillet(radius, finder)` only) | Variable Fillet |
-<<<<<<< HEAD
-| surface filling / boundary | no | Filled Surface, Boundary Surface, Boundary Boss |
-| trim/split on shells | no | Trim Surface, Split |
-| heal / remove face | no | Delete Face |
-=======
+| variable-radius fillet | `BRepFilletAPI_MakeFillet` with `Add(radius, edge)` and `Add(r1, r2, edge)` and a rational shape (used by Variable Fillet); the wrapper's `fillet(radius, finder)` still takes one radius | — |
 | surface filling / boundary | `BRepOffsetAPI_MakeFilling` (used by Filled Surface) and `BRepOffsetAPI_ThruSections` on curves as wires (used by Boundary Surface, which checks the second direction with `BRepExtrema_DistShapeShape`); Boundary Boss/Base adds `BRepOffsetAPI_MakeOffsetShape` for the thickness and walls, `BRepBuilderAPI_Sewing` and `BRepBuilderAPI_MakeSolid`; no true network/Gordon surface | — |
 | trim/split on shells | `BRepAlgoAPI_Splitter` on a face (used by Trim Surface); not on a shell with another shell | Split |
 | heal / remove face | no `ShapeFix_Shape` (the master healer) and no `BRepTools_ReShape`; `ShapeFix_Face`, `ShapeFix_Wire`, `ShapeFix_Solid`, `ShapeUpgrade_UnifySameDomain`, `TopExp_Explorer`, `BRepCheck_Analyzer` and `BRepTools.OuterWire` are exported, and Delete Face patches the opening with `BRepOffsetAPI_MakeFilling` + `BRepBuilderAPI_Sewing` instead of extending neighbours; `BRepOffsetAPI_MakeThickSolid` is exported but it will not thicken an open patch (it returns a single face of zero volume), which is why Boundary Boss/Base offsets the patch and lofts its own walls | — |
->>>>>>> 4995cc5 (Boundary Boss/Base thickens the two-direction patch into a solid the kernel measures)
 | projection of a sketch onto a face | no | Wrap/Emboss, Text |
-| curvature at a point on a face | no | Curvature / Zebra |
+| curvature at a point on a face | no `BRepLProp_SLProps` and no `GeomLProp_SLProps`, but `BRep_Tool.Surface` is exported and `Geom_Surface` carries `D0/D1/D2/D3/DN`, so curvature is measurable from the second derivatives without a kernel rebuild | Curvature / Zebra |
 | cope on a hollow section | no | Weldments Trim/Extend |
 | fold model with material on one side | no (sector model) | Hem, Jog |
 | named plane / axis as a sketch host | no (strings + offset) | Reference Plane/Axis, Curve/Fill Pattern |
