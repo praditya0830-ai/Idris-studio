@@ -223,6 +223,14 @@ the gap is closed with a patch on its own boundary. For a planar face that patch
 that was removed, so the healed body comes back at the same volume — the step says so with both numbers instead of
 pretending the solid changed.
 
+**Batch 6 status: closed for its kernel tools.** Filled Surface, Trim Surface, Boundary Surface and Delete Face are
+`on` (PRs #51–#54, stacked, none merged yet). Boundary Boss/Base is the one row of this batch still `no`, and it is
+not a switch: it is the same two-direction boundary patch as Boundary Surface, made into a solid, and `Thicken`
+cannot use a patch that has no profile of its own — so it needs a new wrapper that walks a patch along its normal.
+Everything the batch set out to measure is measured and written into the steps: the filled area, the kept area of a
+trim, both direction areas of a boundary, and for Delete Face the removed area, the patch area and the volume before
+and after, with the kernel's own `BRepCheck_Analyzer` verdict.
+
 
 Boundary Surface, Filled Surface, Trim Surface, Delete Face, and Boundary Boss/Base. This is the first batch that
 writes OpenCascade bindings. Each tool must report the area/volume the kernel measures, and a trim or a delete that
