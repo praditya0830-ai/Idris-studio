@@ -32,7 +32,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 | Spline | `on` (this batch) | closed cubic-Bézier spline through typed points, real kernel edges | — (partial spline / control-point spline is a later step) | 1 |
 | Ellipse | `on` (this batch) | `drawEllipse` in the kernel, extruded/revolved as usual | — (partial ellipse later) | 1 |
 | Sketch Correction | `on` (this batch) | P1b proposals (join, horizontal, vertical, equal, parallel, perpendicular) with accept/reject/undo, and typed sizes are never changed by a proposal | — (the ribbon now opens the sketcher on its correction list) | 1 |
-| Convert Entities | `no` | nothing | the drawing code projects the model with HLR, but it hands back flattened polylines. Converting an edge into a real sketch line or arc needs an edge→entity mapping that is not wired yet | 2b |
+| Convert Entities | `on` (shipped) | `s21cConvert`: the kernel's HLR projection of the model, converted curve by curve — a projected line stays a line, a projected circle becomes two three-point arcs, so the sketch stays lines and arcs and builds exactly. A projected ellipse or spline is refused by name, never flattened | — (a projected B-spline stays out until the sketch can hold splines proper) | 2b |
 | Mirror Entities | `on` (shipped) | `p1Mirror`: an exact 2D reflection of the selected entities about a centre line; a mirrored arc is still an arc | — (copies carry no relations of their own, and the note says so) | 2 |
 | Sketch Pattern | `on` (shipped) | `p1Pattern`: linear (dx, dy) and circular (angle about a centre) copies, 2–200 instances, inside the same sketch step | — (same note about relations) | 2 |
 | Text | `no` | the kernel bundle has `drawText`, no font file is shipped | a licensed font asset (opentype), then the emboss/cut path (see Wrap/Emboss) | 8 |
@@ -130,8 +130,13 @@ is three reflected points, and the kernel builds the sketch exactly as before. K
 `tests/s21b-sketch-modify.test.mjs` (a half profile mirrored into a closed 40 × 10 one is 2 000 mm³). Browser test:
 `tests/s21b-sketch-modify.spec.mjs`.
 
-**Batch 2b — Convert Entities.** Still grey: HLR projection hands back flattened polylines, and turning those into
-real sketch lines and arcs (so a converted bore is a circle, not 40 segments) is the work this batch needs.
+**Batch 2b — Convert Entities (shipped).** The sketch panel's Convert Entities runs the kernel's HLR projection on
+the named plane and walks the returned curves: `LINE` becomes a sketch line, `CIRCLE` becomes two three-point arcs
+on the same circle, a zero-length curve is dropped with a count, and anything else (`ELLIPSE`, `BSPLINE_CURVE`,
+`BEZIER_CURVE` …) is refused by name rather than approximated into a polygon. Kernel test:
+`tests/s21c-convert.test.mjs` (a 40 × 30 × 20 box projects as 4 lines that extrude to 14 400 mm³, XZ of the same
+box is 40 × 20, a circle stays two arcs on r = 10). Browser test: `tests/s21c-convert.spec.mjs` (ribbon → sketcher →
+convert → 4 entities → save → extrude → 38 400 mm³ total, and the no-body refusal).
 
 ### Batch 3 — Reference Plane and Reference Axis
 
