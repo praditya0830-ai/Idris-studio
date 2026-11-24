@@ -1,7 +1,8 @@
 /* S15: the Surface tab in the real page (Batch 1).
  *
  * Checks, at 1366×768 and 1280×800:
- *   1. the eight surface tools are runnable (not aria-disabled), and the four the kernel cannot do yet stay grey;
+ *   1. the eight surface tools are runnable (not aria-disabled), and the one the kernel cannot do yet stays grey
+ *      (Boundary, Filled and Trim Surface left this list as batches 5–6 shipped them);
  *   2. a sketch → Extruded Surface → Thicken chain built through the forms gives a surface body (area from the
  *      kernel, no volume claimed) and then a solid of 3120 mm3 for a 20×10 profile pushed 30 mm, 2 mm thick;
  *   3. no page error at any point.
@@ -42,9 +43,9 @@ await openTab('Surface');
 const tools = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#xrib .xr-t')].map((b) => [b.textContent.trim(), b.getAttribute('aria-disabled') === 'true'])));
 const slot = await tools();
 const live = ['Extruded Surface', 'Revolved Surface', 'Swept Surface', 'Lofted Surface', 'Planar Surface', 'Offset Surface', 'Knit Surface', 'Thicken'];
-const grey = ['Boundary Surface', 'Filled Surface', 'Trim Surface', 'Delete Face'];
+const grey = ['Delete Face'];
 check('the eight surface tools are runnable', () => { const off = live.filter((n) => slot[n] !== false); ok(!off.length, 'still grey: ' + off.join(', ')); });
-check('the four the kernel cannot do stay grey', () => { const on = grey.filter((n) => slot[n] !== true); ok(!on.length, 'runnable although not built: ' + on.join(', ')); });
+check('the one the kernel cannot do stays grey', () => { const on = grey.filter((n) => slot[n] !== true); ok(!on.length, 'runnable although not built: ' + on.join(', ')); });
 
 /* build through the forms, the way an engineer does */
 async function runTool(type, values) {

@@ -6849,6 +6849,8 @@ const FEAT = {
     label: (p) => `${L('Trim by face', 'Trim oleh muka')} ${(+p.face || 0) + 1} · ${p.keep === 'negative' ? L('against the normal', 'lawan normal') : L('along the normal', 'searah normal')}` },
   surffill: { en: 'Filled Surface', id: 'Filled Surface', fields: [N('order', 'Edge order (0–4)', 'Orde tepi (0–4)', '', 2, { min: 0, max: 4, step: 1 })],
     label: (p) => `${L('Filled', 'Terisi')} ${(p.edges || []).length} ${L('edge(s)', 'tepi')}` },
+  surfbound: { en: 'Boundary Surface', id: 'Boundary Surface', fields: [],
+    label: (p) => `${L('Boundary', 'Batas')} ${(p.u || []).length} × ${(p.v || []).length}` },
   surfplane: { en: 'Planar Surface', id: 'Planar Surface', get fields() {
       const o = sketchOptions();
       return [S('sketch', 'Closed loop sketch', 'Sketch loop tertutup', o, o[0][0])]; },
@@ -7317,6 +7319,18 @@ async function buildPart(pArg) {
         surfs.push({ sh, wall: null });
         ft.surf = { kind: 'fill', area };
         ft.note = L(`Filled surface from ${sel.length} boundary edges: area ${f(area, 1)} mm² (kernel). It has no profile of its own, so Thicken cannot use it.`, `Filled surface dari ${sel.length} tepi batas: luas ${f(area, 1)} mm² (kernel). Tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.`);
+      } else if (ft.type === 'surfbound') {
+        /* S21i: the curves come from the body as it stands at this step; the first direction is lofted by the kernel
+           and the second has to land on it, with both lofts measured. */
+        if (!body) throw new Error(L('A boundary surface takes its curves from a body: build one first.', 'Boundary surface mengambil kurvanya dari body: bangun body dulu.'));
+        const be = body.edges || [];
+        const uSel = (q.u || []).map((i) => be[i]).filter(Boolean);
+        const vSel = (q.v || []).map((i) => be[i]).filter(Boolean);
+        const res = s21iBoundary(R, uSel, vSel);
+        surfs.push({ sh: res.shape, wall: null });
+        ft.surf = { kind: 'bound', area: res.uArea, u: res.u, v: res.v };
+        ft.note = L(`Boundary surface from ${res.u} curve(s) in one direction and ${res.v} in the other: area ${f(res.uArea, 1)} mm²${res.vArea != null ? `, and the second direction lofts to ${f(res.vArea, 1)} mm² too` : ''} (kernel). It has no profile of its own, so Thicken cannot use it.`,
+          `Boundary surface dari ${res.u} kurva di satu arah dan ${res.v} di arah lain: luas ${f(res.uArea, 1)} mm²${res.vArea != null ? `, dan loft arah kedua juga ${f(res.vArea, 1)} mm²` : ''} (kernel). Tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.`);
       } else if (ft.type === 'surfplane') {
         const A = pickSketch(q.sketch), P = srfOn(A);
         const area = R.measureArea(P.face);
@@ -8165,6 +8179,63 @@ function s21hTrim(R, shapes, plane, keep, radius = 1000) {
   return out;
 }
 /* ---- end S21h helpers ---- */
+/* ---- S21i: Boundary Surface. Two directions of curves taken from the body. The first direction is lofted by the
+ * kernel itself (BRepOffsetAPI_ThruSections through each curve as a wire), and the second direction has to land on
+ * that loft — the gap is measured with BRepExtrema_DistShapeShape — and, when it holds two curves or more, its own
+ * loft must come to the same patch, both areas measured by the kernel. So the step is a real two-direction boundary,
+ * not one loft with the other set ignored. tests/s21i-bound.test.mjs lifts this block and runs it on the kernel. ---- */
+const s21iPtF = (v) => v && (typeof v.toTuple === 'function' ? v.toTuple() : [v.x, v.y, v.z]);
+const s21iMm = (n) => Number(n).toFixed(1);
+function s21iLoft(R, curves) {
+  const oc = R.getOC();
+  if (!oc || !oc.BRepOffsetAPI_ThruSections || !oc.BRepBuilderAPI_MakeWire) throw new Error('This kernel has no loft through curves.');
+  const mk = new oc.BRepOffsetAPI_ThruSections(false, false, 1e-6);
+  for (const c of curves) {
+    const mw = new oc.BRepBuilderAPI_MakeWire(); mw.Add(c.wrapped);
+    if (!mw.IsDone()) throw new Error('One of those curves could not be turned into a wire.');
+    mk.AddWire(mw.Wire());
+  }
+  mk.Build();
+  if (!mk.IsDone()) throw new Error('The kernel could not loft those curves into one surface.');
+  const sh = R.cast(mk.Shape());
+  if (!sh) throw new Error('The loft came back empty.');
+  return sh;
+}
+/** how far a point is from a shape, measured by the kernel (not estimated from bounding boxes) */
+function s21iGap(R, shape, p) {
+  const oc = R.getOC();
+  if (!oc || !oc.BRepExtrema_DistShapeShape) return NaN;
+  const mk = new oc.BRepBuilderAPI_MakeVertex(new oc.gp_Pnt(p[0], p[1], p[2]));
+  const d = new oc.BRepExtrema_DistShapeShape();
+  d.LoadS1(shape.wrapped); d.LoadS2(mk.Vertex()); d.Perform();
+  return d.IsDone() ? d.Value() : NaN;
+}
+function s21iBoundary(R, uCurves, vCurves, opts = {}) {
+  const u = (uCurves || []).filter(Boolean), v = (vCurves || []).filter(Boolean);
+  if (u.length < 2) throw new Error(`A boundary surface needs at least two curves in the first direction; this has ${u.length}.`);
+  if (v.length < 1) throw new Error(`A boundary surface needs at least one curve in the second direction; this has ${v.length}.`);
+  const tol = opts.tol == null ? 0.5 : +opts.tol;
+  let su;
+  try { su = s21iLoft(R, u); } catch (e) { throw new Error('The kernel could not loft the first direction: keep those curves apart and not twisted.'); }
+  const uArea = R.measureArea(su);
+  if (!(uArea > 1e-6)) throw new Error('The first direction lofted to a surface with no area.');
+  for (let i = 0; i < v.length; i++) {
+    for (const p of [s21iPtF(v[i].startPoint), s21iPtF(v[i].endPoint)]) {
+      if (!p || !p.every(Number.isFinite)) continue;
+      const gap = s21iGap(R, su, p);
+      if (!(gap <= tol)) throw new Error(`Curve ${i + 1} of the second direction does not meet the lofted surface: its end is ${Number.isFinite(gap) ? s21iMm(gap) + ' mm' : 'not measurable'} away.`);
+    }
+  }
+  let vArea = null;
+  if (v.length >= 2) {
+    try { vArea = R.measureArea(s21iLoft(R, v)); } catch (e) { throw new Error('The kernel could not loft the second direction: those guides do not make one surface.'); }
+    if (Math.abs(vArea - uArea) > Math.max(1, uArea * 0.01)) {
+      throw new Error(`The two directions do not bound the same patch: ${s21iMm(uArea)} mm² in the first against ${s21iMm(vArea)} mm² in the second.`);
+    }
+  }
+  return { shape: su, uArea, vArea, u: u.length, v: v.length };
+}
+/* ---- end S21i helpers ---- */
 
 /* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
  * Both are real OpenCascade geometry, never a polygon stand-in: the ellipse is two ellipse arcs, the closed spline is
@@ -8628,6 +8699,55 @@ function renderTrimPanel(pr) {
   } }, L('Trim', 'Potong')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
   if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
 }
+/* S21i: the Boundary Surface panel. One list of the body's edges and a switch for the direction a click adds to, so
+ * the two sets are built by pointing at the model; a curve belongs to one direction at a time. */
+function boundPickIndex(cx, cy) {
+  if (!partShape || !partShape.edges) return null;
+  const r = $('#viewport').getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
+  let best = null, bestD = 14;
+  partShape.edges.forEach((e, i) => {
+    const pts = s21gEdgePts(e).map((w) => viewer.project(w)).filter(Boolean);
+    for (let k = 0; k + 1 < pts.length; k++) { const d = s21gSegDist(x, y, pts[k], pts[k + 1]); if (d < bestD) { bestD = d; best = i; } }
+  });
+  return best;
+}
+/* read the direction and both sets at click time: the panel re-renders between clicks, and a stale copy drops ticks */
+function boundToggle(i) {
+  if (!partArm) return;
+  const p = partArm.p, dir = p.dir === 'v' ? 'v' : 'u', other = dir === 'v' ? 'u' : 'v';
+  p[other] = (p[other] || []).filter((x) => x !== i);
+  const cur = p[dir] || [];
+  p[dir] = cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i];
+}
+function renderBoundPanel(pr) {
+  const a = partArm, p = a.p;
+  if (p.dir !== 'v') p.dir = 'u';
+  p.u = p.u || []; p.v = p.v || [];
+  const edges = (partShape && partShape.edges) || [], mm = (v) => f(v, 1);
+  pr.append(h('h2', null, h('span', null, L('Boundary Surface', 'Boundary Surface')), h('span', { class: 'phd' }, h('small', null, 'S21i'))));
+  pr.append(h('p', { class: 'hint' }, L('A surface bounded by curves in two directions. Choose the direction you are adding to, then click curves in the viewport or tick them below: the first direction is lofted by the kernel, and the second has to land on that loft (its own loft is measured too). Press Build and the step keeps the area the kernel measured.', 'Surface yang dibatasi kurva pada dua arah. Pilih arah yang sedang kamu isi, lalu klik kurvanya di viewport atau centang di bawah: arah pertama di-loft kernel, dan arah kedua harus jatuh di loft itu (loft arah kedua juga diukur). Tekan Bangun dan langkahnya menyimpan luas hasil ukur kernel.')));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Adding to', 'Menambah ke')),
+    h('select', { 'data-k': 'dir', onchange: (e) => { partArm.p.dir = e.target.value === 'v' ? 'v' : 'u'; renderCad(); } },
+      [['u', L('Direction 1 (lofted)', 'Arah 1 (di-loft)')], ['v', L('Direction 2 (guides)', 'Arah 2 (pemandu)')]]
+        .map(([v2, t]) => h('option', { value: v2, selected: p.dir === v2 }, t)))));
+  pr.append(h('h3', null, L('Direction 1', 'Arah 1') + ` (${p.u.length})`,
+    h('span', { class: 'phd' }, h('small', null, L('direction 2', 'arah 2') + ` (${p.v.length})`))));
+  pr.append(edges.length ? h('ol', { class: 'sklist' }, edges.map((e, i) => {
+    const ends = s21gEdgePts(e);
+    const txt = ends.length === 2 ? `(${mm(ends[0][0])}, ${mm(ends[0][1])}, ${mm(ends[0][2])}) → (${mm(ends[1][0])}, ${mm(ends[1][1])}, ${mm(ends[1][2])})` : '—';
+    const d1 = p.u.includes(i), d2 = p.v.includes(i);
+    return h('li', { class: d1 || d2 ? 'on' : '', 'data-bound': String(i), onclick: () => { boundToggle(i); renderCad(); } },
+      h('b', null, `${i + 1}. ${e.geomType}${d1 ? ' · 1' : ''}${d2 ? ' · 2' : ''}`), h('span', null, txt));
+  })) : h('p', { class: 'hint' }, L('No body yet: build one first (a primitive or an Extrude), then this panel lists its edges.', 'Belum ada body: bangun dulu (primitive atau Extrude), lalu panel ini mendaftar tepinya.')));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-bound-go': '1', onclick: () => {
+    const now = partArm.p, u = now.u || [], v = now.v || [];
+    if (u.length < 2) { a.note = L(`Pick at least two curves in the first direction: ${u.length} selected.`, `Pilih dulu paling sedikit dua kurva di arah pertama: ${u.length} terpilih.`); return renderCad(); }
+    if (v.length < 1) { a.note = L(`Pick at least one curve in the second direction: ${v.length} selected.`, `Pilih dulu paling sedikit satu kurva di arah kedua: ${v.length} terpilih.`); return renderCad(); }
+    state.part.features.push({ id: Date.now().toString(36), type: 'surfbound', p: { u: [...u], v: [...v] } });
+    partSel = state.part.features.length - 1; partArm = null; rebuildPart();
+  } }, L('Build', 'Bangun')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
+  if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
+}
 { const cv = $('#cv');
   cv.addEventListener('pointerdown', (e) => {
     if (!partArm || partBusy || e.button > 0) return;
@@ -8644,6 +8764,13 @@ function renderTrimPanel(pr) {
       if (i == null) return;
       e.preventDefault(); e.stopPropagation();
       partArm.p.face = i; renderCad();
+      return;
+    }
+    if (partArm.type === 'surfbound') {
+      const i = boundPickIndex(e.clientX, e.clientY);
+      if (i == null) return;
+      e.preventDefault(); e.stopPropagation();
+      boundToggle(i); renderCad();
     }
   }, true);
 }
@@ -9051,6 +9178,7 @@ function renderPartCad() {
   if (partArm && partArm.p && partArm.p.prof === 'ents') { renderSketchPanel(pr); }
   else if (partArm && partArm.type === 'surffill') { renderFillPanel(pr); }
   else if (partArm && partArm.type === 'surftrim') { renderTrimPanel(pr); }
+  else if (partArm && partArm.type === 'surfbound') { renderBoundPanel(pr); }
   else if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
       h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : (TOOL_GROUPS.find((g) => g[0] === partArm.type) || [null, null, ''])[2]),
@@ -9355,7 +9483,7 @@ const RIBBON = [
       T('Revolved Surface', 'rev', 'on', 'Turn a sketch around X, Y or Z by the angle you give; the kernel builds the shell.', 'Putar sketch mengelilingi X, Y, atau Z sebesar sudut yang kamu beri; kernel membangun shell-nya.', 'Revolve Surface', { part: 'surfrev' }),
       T('Swept Surface', 'sweep', 'on', 'Sweep a profile sketch along a path sketch with the kernel.', 'Sapu sketch profil sepanjang sketch lintasan dengan kernel.', 'Sweep Surface', { part: 'surfsweep' }),
       T('Lofted Surface', 'loft', 'on', 'Blend two or three closed sketches on their own planes into one surface.', 'Gabungkan dua atau tiga sketch tertutup di bidangnya menjadi satu surface.', 'Loft Surface', { part: 'surfloft' }),
-      T('Boundary Surface', 'bound', 'no', 'Surface from boundary curves in two directions. The kernel wrapper here has no boundary-surface builder yet (Batch 5).', 'Surface dari kurva batas dua arah. Wrapper kernel di sini belum punya pembangun boundary surface (Batch 5).', ''),
+      T('Boundary Surface', 'bound', 'on', 'A surface bounded by curves in two directions, taken from the body: pick the direction, click the curves in the viewport (or tick them in the panel), press Build, and the kernel lofts the first direction while the second must land on that loft and loft to the same patch, both areas measured. Two curves in the first direction and one in the second is the minimum.', 'Surface yang dibatasi kurva pada dua arah, diambil dari body: pilih arahnya, klik kurvanya di viewport (atau centang di panel), tekan Bangun, dan kernel me-loft arah pertama sementara arah kedua harus jatuh di loft itu dan me-loft tambalan yang sama, keduanya diukur. Minimal dua kurva di arah pertama dan satu di arah kedua.', 'Boundary, Boundary Surface', { part: 'surfbound' }),
       T('Filled Surface', 'fill', 'on', 'Patch a surface between boundary edges of the body: click the edges in the viewport (or tick them in the panel), press Build, and the kernel\u2019s filling builder makes the face and measures its area. A patch needs at least two edges; the edges are the body\u2019s own, so the step rebuilds with the body.', 'Tambal surface di antara tepi batas body: klik tepinya di viewport (atau centang di panel), tekan Bangun, dan pembangun filling kernel membuat mukanya lalu mengukur luasnya. Tambalan perlu paling sedikit dua tepi; tepinya milik body sendiri, jadi langkah itu ikut dibangun ulang bersama body.', 'Patch', { part: 'surffill' }),
       T('Planar Surface', 'plane', 'on', 'A flat face from one closed sketch loop, built by the kernel.', 'Muka datar dari satu loop sketch tertutup, dibangun kernel.', 'Planar Face', { part: 'surfplane' })]],
     ['Edit', [T('Offset Surface', 'offset', 'on', 'Copy the surface body at a distance with the kernel. The copy has no profile of its own, so Thicken cannot use it.', 'Salin body surface pada jarak tertentu dengan kernel. Salinan tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.', 'Offset Face', { part: 'surfoffset' }),

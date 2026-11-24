@@ -58,7 +58,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 
 | Tool | State | What the code has | What is missing | Batch |
 | --- | --- | --- | --- | --- |
-| Boundary Surface | `no` | loft/sweep/planar | the same two-direction boundary fill as Boundary Boss/Base | 6 |
+| Boundary Surface | `on` (shipped) | `s21iBoundary`: the curves of the body are split into two directions by the panel's switch; the first direction is lofted by the kernel (`BRepOffsetAPI_ThruSections` through each curve as a wire), every curve of the second direction must land on that loft (the gap is `BRepExtrema_DistShapeShape`), and when the second direction holds two curves or more its own loft is measured too and must come to the same patch | — (a true network surface — a Gordon build through crossing curves, which OCCT has no public builder for — is not what this is: the second direction is constrained to the first direction's loft) | 6 |
 | Filled Surface | `on` (shipped) | `s21gFill`: the kernel's `BRepOffsetAPI_MakeFilling` over the boundary edges you pick on the body (viewport click picks the edge nearest the pointer, or tick the list), with the measured patch area in the note | — (continuity/support faces and patches between non-connected edges stay out: the kernel refuses what is not one boundary) | 6 |
 | Trim Surface | `on` (shipped) | `s21hTrim`: the surface body is split by the plane of a face you pick on the model (`BRepAlgoAPI_Splitter` with a face made on that plane; a viewport click picks the face whose centre is under the pointer, or pick it in the list), and the pieces on the chosen side of that face's normal are kept, with the kept area and the area before measured | — (a cutting plane that misses the surface leaves it whole, and a curved face cannot supply a cutting plane) | 6 |
 | Delete Face | `no` | nothing | remove faces and heal the gap (`ShapeFix`), and redefine the solid when the gap cannot be healed | 6 |
@@ -192,6 +192,18 @@ surface cut at x = 20 → 12 800 mm² kept of 32 000, the other side 19 200, bot
 refusal and the wrong-face refusal) and browser test `tests/s21h-trim.spec.mjs` (ribbon → box → sketch → Planar
 Surface → Trim Surface → viewport pick of the +X face → 12 800 mm² in the step and the note, no page error).
 
+**Also shipped in this batch: Boundary Surface.** Surface → Boundary Surface lists the body's own edges and has a
+switch for the direction a click adds to: a viewport click picks the nearest curve (end points projected through the
+same viewer) and the direction switch decides whether it joins direction 1 or direction 2. The first direction is
+lofted by the kernel (`BRepOffsetAPI_ThruSections` through each curve as a wire); every curve of the second direction
+must land on that loft, and the distance from its end points to the loft is `BRepExtrema_DistShapeShape`'s, so a
+guide that misses is refused with the millimetres it misses by. With two curves in the second direction, its own loft
+is built and measured as well: the two directions have to bound the same patch, and a mismatch is refused with both
+areas. Kernel test `tests/s21i-bound.test.mjs` (two long and two short top edges of a 40 × 30 × 20 box → 1 200 mm²
+with both directions recorded, the one-curve and no-guide refusals with their counts, the 600 vs 1 200 mismatch, the
+20 mm guide gap) and browser test `tests/s21i-bound.spec.mjs` (ribbon → box → panel list → viewport pick into
+direction 1 → switch → pick into direction 2 → Build → 1 200 mm², then the one-curve refusal, no page error).
+
 
 Boundary Surface, Filled Surface, Trim Surface, Delete Face, and Boundary Boss/Base. This is the first batch that
 writes OpenCascade bindings. Each tool must report the area/volume the kernel measures, and a trim or a delete that
@@ -251,7 +263,7 @@ cylinder reports 1/R everywhere within tolerance, a plane reports 0, and the vie
 | Capability | In the kernel wrapper today | Needed by |
 | --- | --- | --- |
 | variable-radius fillet | no (`fillet(radius, finder)` only) | Variable Fillet |
-| surface filling / boundary | `BRepOffsetAPI_MakeFilling` (used by Filled Surface); no two-direction boundary fill | Boundary Surface, Boundary Boss |
+| surface filling / boundary | `BRepOffsetAPI_MakeFilling` (used by Filled Surface) and `BRepOffsetAPI_ThruSections` on curves as wires (used by Boundary Surface, which checks the second direction with `BRepExtrema_DistShapeShape`); no true network/Gordon surface | Boundary Boss |
 | trim/split on shells | `BRepAlgoAPI_Splitter` on a face (used by Trim Surface); not on a shell with another shell | Split |
 | heal / remove face | no | Delete Face |
 | projection of a sketch onto a face | no | Wrap/Emboss, Text |
