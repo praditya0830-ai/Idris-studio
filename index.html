@@ -6852,6 +6852,8 @@ const FEAT = {
       const o = sketchOptions();
       return [S('profile', 'Profile sketch', 'Sketch profil', o, o[0][0]), S('path', 'Path sketch', 'Sketch lintasan', o, o.length > 1 ? o[1][0] : o[0][0])]; },
     label: () => L('Swept surface', 'Surface sapu') },
+  surffill: { en: 'Filled Surface', id: 'Filled Surface', fields: [N('order', 'Edge order (0–4)', 'Orde tepi (0–4)', '', 2, { min: 0, max: 4, step: 1 })],
+    label: (p) => `${L('Filled', 'Terisi')} ${(p.edges || []).length} ${L('edge(s)', 'tepi')}` },
   surfplane: { en: 'Planar Surface', id: 'Planar Surface', get fields() {
       const o = sketchOptions();
       return [S('sketch', 'Closed loop sketch', 'Sketch loop tertutup', o, o[0][0])]; },
@@ -7350,6 +7352,18 @@ async function buildPart(pArg) {
         ft.note = L(`Extruded surface ${f(len, 2)} mm: area ${f(area, 1)} mm² (kernel). Thicken turns it into a wall.`, `Surface tarik ${f(len, 2)} mm: luas ${f(area, 1)} mm² (kernel). Thicken mengubahnya jadi dinding.`);
         A.f.note = L(`Surface for step ${p.features.indexOf(ft) + 1}.`, `Surface untuk langkah ${p.features.indexOf(ft) + 1}.`);
         if (sketch && sketch.s === A.s) { sketch.used = true; sketch = null; }
+      } else if (ft.type === 'surffill') {
+        /* S21g: the patch is built from the edges of the body as it stands at this step, by the kernel's own filling
+           builder; the area in the note is measured on the face it returns. */
+        if (!body) throw new Error(L('A filled surface takes its boundary edges from a body: build one first.', 'Filled surface mengambil tepi batasnya dari body: bangun body dulu.'));
+        const es = body.edges || [], sel = (q.edges || []).map((i) => es[i]).filter(Boolean);
+        if (sel.length < 2) throw new Error(L(`Pick at least two boundary edges of the body: ${sel.length} selected.`, `Pilih paling sedikit dua tepi batas body: ${sel.length} terpilih.`));
+        const sh = s21gFill(R, sel, { order: q.order });
+        const area = R.measureArea(sh);
+        if (!(area > 1e-6)) throw new Error(L('The filling came back with no area.', 'Hasil filling tidak punya luas.'));
+        surfs.push({ sh, wall: null });
+        ft.surf = { kind: 'fill', area };
+        ft.note = L(`Filled surface from ${sel.length} boundary edges: area ${f(area, 1)} mm² (kernel). It has no profile of its own, so Thicken cannot use it.`, `Filled surface dari ${sel.length} tepi batas: luas ${f(area, 1)} mm² (kernel). Tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.`);
       } else if (ft.type === 'surfplane') {
         const A = pickSketch(q.sketch), P = srfOn(A);
         const area = R.measureArea(P.face);
@@ -8095,6 +8109,63 @@ function s21cConvert(dw, idf) {
   return { ents, refused: [...new Set(refused)], lines, circles, skipped };
 }
 /* ---- end S21c helpers ---- */
+/* ---- S21e: named parameters. A size field may hold a number or the name of a parameter, so one number drives
+ * several steps. Values are resolved once per build, before any step runs; a field that names a parameter the part
+ * does not define is refused by the step that uses it, with the name — never read as 0 or as NaN. A configuration is
+ * a named set of parameter overrides, so the same tree builds at two sizes. Pure data maths: tests/s21e-params.test.mjs
+ * lifts this block and runs it in Node against the real kernel. ---- */
+const s21eNum = (v) => typeof v === 'number' ? Number.isFinite(v) : (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)));
+/** the parameter values the active configuration builds with (a configuration overrides single names) */
+function s21eTable(p) {
+  const t = {}, cfgs = (p && p.configs) || [], cfg = cfgs.find((c) => c && c.name === ((p && p.config) || 'Default'));
+  for (const [k, v] of Object.entries((p && p.params) || {})) {
+    const over = cfg && cfg.params && Object.prototype.hasOwnProperty.call(cfg.params, k) ? cfg.params[k] : null;
+    t[k] = s21eNum(over) ? Number(over) : Number(v);
+  }
+  return t;
+}
+/** resolve every numeric field of every feature in place; a name that is not defined comes back in `bad` */
+function s21eResolve(p) {
+  const table = s21eTable(p), bad = [], used = new Set();
+  for (const ft of (p && p.features) || []) {
+    const spec = (typeof FEAT !== 'undefined' && FEAT[ft.type] && FEAT[ft.type].fields) || [];
+    for (const f of spec) {
+      if (f.t !== 'num') continue;
+      const shadow = ft.e && ft.e[f.k] !== undefined ? ft.e[f.k] : undefined;
+      const v = shadow !== undefined ? shadow : ft.p[f.k];
+      if (s21eNum(v)) { ft.p[f.k] = Number(v); continue; }
+      const name = String(v == null ? '' : v).trim();
+      if (!name) continue;
+      ft.e = ft.e || {}; ft.e[f.k] = name;
+      if (!Object.prototype.hasOwnProperty.call(table, name) || !Number.isFinite(table[name])) { bad.push({ ft, k: f.k, name }); continue; }
+      ft.p[f.k] = table[name]; used.add(name);
+    }
+  }
+  return { bad, used, table };
+}
+/* ---- end S21e helpers ---- */
+/* ---- S21g: Filled Surface. The kernel's own filling builder (BRepOffsetAPI_MakeFilling, reached through
+ * R.getOC()) patches a surface between boundary edges of the body. The patch is a real face measured by the kernel,
+ * and the edges are picked on the model: by clicking near them in the viewport or by ticking them in the panel.
+ * tests/s21g-fill.test.mjs lifts this block and runs it against the real kernel. ---- */
+const s21gPt = (v) => v && (typeof v.toTuple === 'function' ? v.toTuple() : [v.x, v.y, v.z]);
+/** the two end points of an edge, for the screen-space pick and for the panel's label */
+function s21gEdgePts(e) { const a = s21gPt(e && e.startPoint), b = s21gPt(e && e.endPoint); return a && b ? [a, b] : []; }
+function s21gFill(R, edges, opts = {}) {
+  const list = (edges || []).filter(Boolean);
+  if (list.length < 2) throw new Error('A filled surface needs at least two boundary edges.');
+  const oc = R.getOC();
+  if (!oc || !oc.BRepOffsetAPI_MakeFilling) throw new Error('This kernel has no filling builder.');
+  const order = Math.max(0, Math.min(4, Math.round(+opts.order) || 0));
+  const mk = new oc.BRepOffsetAPI_MakeFilling();
+  for (const e of list) mk.Add(e.wrapped, order, true);
+  mk.Build();
+  if (!mk.IsDone()) throw new Error('The kernel could not fill between those edges: they do not form one boundary.');
+  const sh = R.cast(mk.Shape());
+  if (!sh) throw new Error('The filling came back empty.');
+  return sh;
+}
+/* ---- end S21g helpers ---- */
 
 /* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
  * Both are real OpenCascade geometry, never a polygon stand-in: the ellipse is two ellipse arcs, the closed spline is
@@ -8423,6 +8494,112 @@ function openSketchSession(tool, editId) {
     /* the tool list starts at the top: no focus scroll, and the pane is reset after the render */
     const pane = document.querySelector('#cadProps'); if (pane) pane.scrollTop = 0;
     const i = document.querySelector('#cadProps .skform input'); if (i && narrow()) i.focus({ preventScroll: true }); });
+}
+/* S21e: Manage → Parameters / Configurations, one panel. The table holds the named sizes; a step field that holds a
+ * name instead of a number uses that size at build time. A configuration is a named set of overrides, and
+ * switching it rebuilds the part through the kernel, so both configurations are real builds, not labels. */
+function openParamsPanel() {
+  if (!state.part) startPart();
+  cadPanel = 'params'; partArm = null; partSel = null; cadTab = 'design';
+  renderCad(); setLpTab('edit');
+}
+function prRebuild() { clearTimeout(prRebuild.t); prRebuild.t = setTimeout(() => { if (state.part) rebuildPart(); }, 300); }
+function renderParamsPanel(pr) {
+  const p = state.part; if (!p) return;
+  p.params = p.params || {};
+  p.configs = (p.configs && p.configs.length) ? p.configs : [{ name: 'Default', params: {} }];
+  if (!p.configs.some((c) => c.name === p.config)) p.config = p.configs[0].name;
+  const cfg = p.configs.find((c) => c.name === p.config) || p.configs[0];
+  cfg.params = cfg.params || {};
+  const names = Object.keys(p.params);
+  const store = (e, k) => { const raw = e.target.value.trim(); p.params[k] = s21eNum(raw) ? Number(raw) : raw; };
+  const rename = (e, k) => {
+    const v = e.target.value.trim();
+    if (!v || v === k || Object.prototype.hasOwnProperty.call(p.params, v)) return false;
+    const val = p.params[k]; delete p.params[k]; p.params[v] = val;
+    for (const c of p.configs) if (c.params && Object.prototype.hasOwnProperty.call(c.params, k)) { c.params[v] = c.params[k]; delete c.params[k]; }
+    return true;
+  };
+  const rowIn = (kind, k, val, onchange) => h('input', { type: 'text', inputmode: 'decimal', 'data-pr': kind, 'data-pn': k, value: val == null ? '' : String(val), spellcheck: 'false',
+    oninput: (e) => { if (kind === 'val') store(e, k); else if (kind === 'over') { cfg.params[k] = e.target.value.trim() === '' ? undefined : (s21eNum(e.target.value) ? Number(e.target.value) : e.target.value); if (cfg.params[k] === undefined) delete cfg.params[k]; } },
+    onchange: (e) => { if (kind === 'name') { if (!rename(e, k)) return; } onchange && onchange(); rebuildPart(); } });
+  pr.append(h('h2', null, h('span', null, L('Parameters', 'Parameter')), h('span', { class: 'phd' }, h('small', null, 'S21e'))));
+  pr.append(h('p', { class: 'hint' }, L('A parameter is a named size. Type its name into any number field of a step (Box L, Extrude distance, Scale ×k, hole Ø) and that step builds with the value here; change the value and every step that names it is rebuilt. A name that is not defined here is refused by that step, with the name — it is never read as 0.', 'Parameter adalah ukuran bernama. Ketik namanya di field angka mana pun pada sebuah langkah (Box L, jarak Extrude, Scale ×k, Ø lubang) dan langkah itu dibangun dengan nilai di sini; ubah nilainya dan semua langkah yang menyebutnya dibangun ulang. Nama yang tidak didefinisikan di sini ditolak oleh langkah itu, dengan namanya — tidak pernah dibaca sebagai 0.')));
+  if (!names.length) pr.append(h('p', { class: 'hint' }, L('No parameter yet. Add one, then type its name into a step.', 'Belum ada parameter. Tambahkan satu, lalu ketik namanya di sebuah langkah.')));
+  else pr.append(h('table', { class: 'cutlist' }, h('tr', null, h('th', null, L('Name', 'Nama')), h('th', null, L('Value (mm)', 'Nilai (mm)')),
+    cfg.name !== 'Default' ? h('th', { title: L('Override for this configuration; empty = use the value', 'Nilai khusus konfigurasi ini; kosong = pakai nilai utama') }, cfg.name) : null, h('th', null, '')),
+  ...names.map((k) => h('tr', null, h('td', null, rowIn('name', k, k, () => renderCad())),
+    h('td', null, rowIn('val', k, p.params[k], null)),
+    cfg.name !== 'Default' ? h('td', null, rowIn('over', k, cfg.params[k], null)) : null,
+    h('td', null, h('button', { class: 'pfx', 'data-pr': 'del', 'data-pn': k, title: L('Delete this parameter', 'Hapus parameter ini'), onclick: () => { delete p.params[k]; for (const c of p.configs) if (c.params) delete c.params[k]; rebuildPart(); } }, '×'))))));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip', 'data-pr': 'add', onclick: () => {
+    let n = 1; while (Object.prototype.hasOwnProperty.call(p.params, 'P' + n)) n++;
+    p.params['P' + n] = 10; renderCad(); } }, L('Add parameter', 'Tambah parameter'))));
+  pr.append(h('h3', null, L('Configurations', 'Konfigurasi')));
+  pr.append(h('p', { class: 'hint' }, L('A configuration is a named set of parameter values for this same feature tree. Switch it and the part is rebuilt by the kernel at that size.', 'Konfigurasi adalah kumpulan nilai parameter bernama untuk pohon fitur yang sama. Ganti konfigurasinya dan part dibangun ulang oleh kernel pada ukuran itu.')));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Active configuration', 'Konfigurasi aktif')),
+    h('select', { 'data-pr': 'cfg', onchange: (e) => { p.config = e.target.value; rebuildPart(); } },
+      p.configs.map((c) => h('option', { value: c.name, selected: c.name === p.config }, c.name)))));
+  pr.append(h('div', { class: 'sktools' },
+    h('button', { class: 'chip', 'data-pr': 'cfg-add', onclick: () => {
+      let n = 1; while (p.configs.some((c) => c.name === 'Config ' + n)) n++;
+      p.configs.push({ name: 'Config ' + n, params: {} }); p.config = 'Config ' + n; renderCad(); } }, L('Add configuration', 'Tambah konfigurasi')),
+    p.config !== 'Default' ? h('button', { class: 'chip', 'data-pr': 'cfg-del', onclick: () => {
+      p.configs = p.configs.filter((c) => c.name !== p.config); if (!p.configs.length) p.configs = [{ name: 'Default', params: {} }];
+      p.config = p.configs[0].name; rebuildPart(); } }, L('Delete this configuration', 'Hapus konfigurasi ini')) : null));
+}
+/* S21g: the Filled Surface panel and its viewport pick. The list is the body's own B-rep edges with their end
+ * points, so what you tick is exactly what the kernel will fill; a click in the viewport picks the edge nearest the
+ * pointer in screen space. Nothing is added until you press Build. */
+function s21gSegDist(x, y, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+  if (!l2) return Math.hypot(x - a[0], y - a[1]);
+  let t = ((x - a[0]) * dx + (y - a[1]) * dy) / l2; t = Math.max(0, Math.min(1, t));
+  return Math.hypot(x - (a[0] + dx * t), y - (a[1] + dy * t));
+}
+function fillPickIndex(cx, cy) {
+  if (!partShape || !partShape.edges) return null;
+  const r = $('#viewport').getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
+  let best = null, bestD = 14;
+  partShape.edges.forEach((e, i) => {
+    const pts = s21gEdgePts(e).map((w) => viewer.project(w)).filter(Boolean);
+    for (let k = 0; k + 1 < pts.length; k++) { const d = s21gSegDist(x, y, pts[k], pts[k + 1]); if (d < bestD) { bestD = d; best = i; } }
+  });
+  return best;
+}
+function renderFillPanel(pr) {
+  const a = partArm, p = a.p, sel = p.edges || (p.edges = []), edges = (partShape && partShape.edges) || [];
+  const mm = (v) => f(v, 1);
+  /* read the selection at click time: the panel re-renders between clicks, and a stale copy would drop earlier ticks */
+  const toggle = (i) => { const cur = partArm.p.edges || []; partArm.p.edges = cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i]; renderCad(); };
+  pr.append(h('h2', null, h('span', null, L('Filled Surface', 'Filled Surface')), h('span', { class: 'phd' }, h('small', null, 'S21g'))));
+  pr.append(h('p', { class: 'hint' }, L('Click the boundary edges in the viewport, or tick them below, then press Build. The kernel fills the patch between them and the step records the area it measured. A viewport click picks the edge nearest the pointer; a round edge is easier to tick in this list.', 'Klik tepi batasnya di viewport, atau centang di daftar bawah, lalu tekan Bangun. Kernel mengisi tambalan di antara tepi itu dan langkahnya mencatat luas yang diukur. Klik di viewport memilih tepi terdekat dari penunjuk; tepi bulat lebih mudah dicentang di daftar ini.')));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Edge order (0–4)', 'Orde tepi (0–4)')),
+    h('input', { type: 'text', inputmode: 'decimal', 'data-k': 'order', value: p.order ?? 2, oninput: (e) => { p.order = e.target.value; } })));
+  pr.append(h('h3', null, L('Boundary edges', 'Tepi batas') + ` (${sel.length})`));
+  pr.append(edges.length ? h('ol', { class: 'sklist' }, edges.map((e, i) => {
+    const ends = s21gEdgePts(e);
+    const txt = ends.length === 2 ? `(${mm(ends[0][0])}, ${mm(ends[0][1])}, ${mm(ends[0][2])}) → (${mm(ends[1][0])}, ${mm(ends[1][1])}, ${mm(ends[1][2])})` : '—';
+    return h('li', { class: sel.includes(i) ? 'on' : '', 'data-fill': String(i), onclick: () => toggle(i) }, h('b', null, `${i + 1}. ${e.geomType}`), h('span', null, txt));
+  })) : h('p', { class: 'hint' }, L('No body yet: build one first (a primitive or an Extrude), then this panel lists its edges.', 'Belum ada body: bangun dulu (primitive atau Extrude), lalu panel ini mendaftar tepinya.')));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-fill-go': '1', onclick: () => {
+    const now = partArm.p.edges || [];
+    if (now.length < 2) { a.note = L(`Tick at least two boundary edges first: ${now.length} selected.`, `Centang dulu paling sedikit dua tepi batas: ${now.length} terpilih.`); return renderCad(); }
+    state.part.features.push({ id: Date.now().toString(36), type: 'surffill', p: { order: +partArm.p.order || 0, edges: [...now] } });
+    partSel = state.part.features.length - 1; partArm = null; rebuildPart();
+  } }, L('Build', 'Bangun')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
+  if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
+}
+{ const cv = $('#cv');
+  cv.addEventListener('pointerdown', (e) => {
+    if (!partArm || partArm.type !== 'surffill' || partBusy || e.button > 0) return;
+    const i = fillPickIndex(e.clientX, e.clientY);
+    if (i == null) return;
+    e.preventDefault(); e.stopPropagation();
+    const sel = partArm.p.edges || (partArm.p.edges = []);
+    partArm.p.edges = sel.includes(i) ? sel.filter((x) => x !== i) : [...sel, i];
+    renderCad();
+  }, true);
 }
 function skCommit(list, note) {
   const a = skSession(); if (!a) return; a.p.ents = list; a.pend = []; a.pen = [];
@@ -8826,6 +9003,7 @@ function renderPartCad() {
   /* right: properties */
   const pr = propsEl(); pr.innerHTML = '';
   if (partArm && partArm.p && partArm.p.prof === 'ents') { renderSketchPanel(pr); }
+  else if (partArm && partArm.type === 'surffill') { renderFillPanel(pr); }
   else if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
       h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : (TOOL_GROUPS.find((g) => g[0] === partArm.type) || [null, null, ''])[2]),
@@ -9130,7 +9308,7 @@ const RIBBON = [
       T('Swept Surface', 'sweep', 'on', 'Sweep a profile sketch along a path sketch with the kernel.', 'Sapu sketch profil sepanjang sketch lintasan dengan kernel.', 'Sweep Surface', { part: 'surfsweep' }),
       T('Lofted Surface', 'loft', 'on', 'Blend two or three closed sketches on their own planes into one surface.', 'Gabungkan dua atau tiga sketch tertutup di bidangnya menjadi satu surface.', 'Loft Surface', { part: 'surfloft' }),
       T('Boundary Surface', 'bound', 'no', 'Surface from boundary curves in two directions. The kernel wrapper here has no boundary-surface builder yet (Batch 5).', 'Surface dari kurva batas dua arah. Wrapper kernel di sini belum punya pembangun boundary surface (Batch 5).', ''),
-      T('Filled Surface', 'fill', 'no', 'Patch a hole with a surface. Not built yet (Batch 5); Planar Surface covers a flat patch today.', 'Tambal lubang dengan surface. Belum dibangun (Batch 5); Planar Surface menangani tambalan datar sekarang.', 'Patch'),
+      T('Filled Surface', 'fill', 'on', 'Patch a surface between boundary edges of the body: click the edges in the viewport (or tick them in the panel), press Build, and the kernel\u2019s filling builder makes the face and measures its area. A patch needs at least two edges; the edges are the body\u2019s own, so the step rebuilds with the body.', 'Tambal surface di antara tepi batas body: klik tepinya di viewport (atau centang di panel), tekan Bangun, dan pembangun filling kernel membuat mukanya lalu mengukur luasnya. Tambalan perlu paling sedikit dua tepi; tepinya milik body sendiri, jadi langkah itu ikut dibangun ulang bersama body.', 'Patch', { part: 'surffill' }),
       T('Planar Surface', 'plane', 'on', 'A flat face from one closed sketch loop, built by the kernel.', 'Muka datar dari satu loop sketch tertutup, dibangun kernel.', 'Planar Face', { part: 'surfplane' })]],
     ['Edit', [T('Offset Surface', 'offset', 'on', 'Copy the surface body at a distance with the kernel. The copy has no profile of its own, so Thicken cannot use it.', 'Salin body surface pada jarak tertentu dengan kernel. Salinan tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.', 'Offset Face', { part: 'surfoffset' }),
       T('Knit Surface', 'knit', 'on', 'Sew the surface pieces into one body, or into a solid when they close.', 'Jahit potongan surface jadi satu body, atau jadi solid bila menutup.', 'Stitch', { part: 'surfknit' }),
