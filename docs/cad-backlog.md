@@ -60,7 +60,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 | --- | --- | --- | --- | --- |
 | Boundary Surface | `no` | loft/sweep/planar | the same two-direction boundary fill as Boundary Boss/Base | 6 |
 | Filled Surface | `on` (shipped) | `s21gFill`: the kernel's `BRepOffsetAPI_MakeFilling` over the boundary edges you pick on the body (viewport click picks the edge nearest the pointer, or tick the list), with the measured patch area in the note | — (continuity/support faces and patches between non-connected edges stay out: the kernel refuses what is not one boundary) | 6 |
-| Trim Surface | `no` | knit, offset | trim one shell with another or with a sketch: the splitter on shells, then the kept side | 6 |
+| Trim Surface | `on` (shipped) | `s21hTrim`: the surface body is split by the plane of a face you pick on the model (`BRepAlgoAPI_Splitter` with a face made on that plane; a viewport click picks the face whose centre is under the pointer, or pick it in the list), and the pieces on the chosen side of that face's normal are kept, with the kept area and the area before measured | — (a cutting plane that misses the surface leaves it whole, and a curved face cannot supply a cutting plane) | 6 |
 | Delete Face | `no` | nothing | remove faces and heal the gap (`ShapeFix`), and redefine the solid when the gap cannot be healed | 6 |
 
 ### Sheet Metal
@@ -183,6 +183,15 @@ Kernel test `tests/s21g-fill.test.mjs` (four top edges of a 40 × 30 × 20 box �
 one-edge refusal, the rebuild at another edge order) and browser test `tests/s21g-fill.spec.mjs` (ribbon → panel →
 viewport pick → four ticks → Build → 1 200 mm² and the note, then the one-edge refusal, no page error).
 
+**Also shipped in this batch: Trim Surface.** Surface → Trim Surface lists the body's planar faces; a viewport click
+picks the face whose centre is under the pointer (the list stays for faces that overlap on screen), and the picked
+face supplies the cutting plane and the normal that decides which half survives. The split is
+`BRepAlgoAPI_Splitter` with a face made on that plane, kept pieces are chosen by the kernel's own piece centres, and
+the step notes the kept area out of the area before. Kernel test `tests/s21h-trim.test.mjs` (a 200 × 160 planar
+surface cut at x = 20 → 12 800 mm² kept of 32 000, the other side 19 200, both halves adding up, the no-surface
+refusal and the wrong-face refusal) and browser test `tests/s21h-trim.spec.mjs` (ribbon → box → sketch → Planar
+Surface → Trim Surface → viewport pick of the +X face → 12 800 mm² in the step and the note, no page error).
+
 
 Boundary Surface, Filled Surface, Trim Surface, Delete Face, and Boundary Boss/Base. This is the first batch that
 writes OpenCascade bindings. Each tool must report the area/volume the kernel measures, and a trim or a delete that
@@ -242,8 +251,8 @@ cylinder reports 1/R everywhere within tolerance, a plane reports 0, and the vie
 | Capability | In the kernel wrapper today | Needed by |
 | --- | --- | --- |
 | variable-radius fillet | no (`fillet(radius, finder)` only) | Variable Fillet |
-| surface filling / boundary | no | Filled Surface, Boundary Surface, Boundary Boss |
-| trim/split on shells | no | Trim Surface, Split |
+| surface filling / boundary | `BRepOffsetAPI_MakeFilling` (used by Filled Surface); no two-direction boundary fill | Boundary Surface, Boundary Boss |
+| trim/split on shells | `BRepAlgoAPI_Splitter` on a face (used by Trim Surface); not on a shell with another shell | Split |
 | heal / remove face | no | Delete Face |
 | projection of a sketch onto a face | no | Wrap/Emboss, Text |
 | curvature at a point on a face | no | Curvature / Zebra |
