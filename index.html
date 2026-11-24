@@ -6847,6 +6847,8 @@ const FEAT = {
   surftrim: { en: 'Trim Surface', id: 'Trim Surface', fields: [S('keep', 'Keep the side', 'Sisi yang disimpan', [['positive', ['Along the picked face normal', 'Searah normal muka yang dipilih']], ['negative', ['Against the picked face normal', 'Berlawanan normal muka yang dipilih']]], 'positive'),
       N('face', 'Trimming face', 'Muka pemotong', '', 0, { step: 1 })],
     label: (p) => `${L('Trim by face', 'Trim oleh muka')} ${(+p.face || 0) + 1} · ${p.keep === 'negative' ? L('against the normal', 'lawan normal') : L('along the normal', 'searah normal')}` },
+  delface: { en: 'Delete Face', id: 'Delete Face', fields: [N('face', 'Face to delete', 'Muka yang dihapus', '', 0, { step: 1 })],
+    label: (p) => `${L('Delete face', 'Hapus muka')} ${(+p.face || 0) + 1}` },
   surffill: { en: 'Filled Surface', id: 'Filled Surface', fields: [N('order', 'Edge order (0–4)', 'Orde tepi (0–4)', '', 2, { min: 0, max: 4, step: 1 })],
     label: (p) => `${L('Filled', 'Terisi')} ${(p.edges || []).length} ${L('edge(s)', 'tepi')}` },
   surfbound: { en: 'Boundary Surface', id: 'Boundary Surface', fields: [],
@@ -7331,6 +7333,15 @@ async function buildPart(pArg) {
         ft.surf = { kind: 'bound', area: res.uArea, u: res.u, v: res.v };
         ft.note = L(`Boundary surface from ${res.u} curve(s) in one direction and ${res.v} in the other: area ${f(res.uArea, 1)} mm²${res.vArea != null ? `, and the second direction lofts to ${f(res.vArea, 1)} mm² too` : ''} (kernel). It has no profile of its own, so Thicken cannot use it.`,
           `Boundary surface dari ${res.u} kurva di satu arah dan ${res.v} di arah lain: luas ${f(res.uArea, 1)} mm²${res.vArea != null ? `, dan loft arah kedua juga ${f(res.vArea, 1)} mm²` : ''} (kernel). Tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.`);
+      } else if (ft.type === 'delface') {
+        /* S21j: the picked face leaves the body and the opening it leaves is patched, sewn and made a solid again by
+           the kernel; the step only exists when that result passes the kernel's validity check. */
+        if (!body) throw new Error(L('Delete Face needs a solid body: build one first (a primitive or an Extrude).', 'Delete Face butuh body solid: bangun dulu (primitive atau Extrude).'));
+        const res = s21jDelete(R, body, q.face);
+        body = res.shape; lastTool = res.shape; lastOp = 'add';
+        ft.del = { face: res.face, faces: res.faces, loops: res.loops, areaRemoved: res.areaRemoved, areaPatch: res.areaPatch, volBefore: res.volBefore, volAfter: res.volAfter };
+        ft.note = L(`Face ${res.face + 1} deleted (${f(res.areaRemoved, 1)} mm\u00b2): the opening was closed with a kernel patch of ${f(res.areaPatch, 1)} mm\u00b2, sewn back into a ${res.faces}-face solid${Number.isFinite(res.volBefore) ? ` of ${f(res.volAfter / 1000, 3)} cm\u00b3 against ${f(res.volBefore / 1000, 3)} cm\u00b3 before` : ` of ${f(res.volAfter / 1000, 3)} cm\u00b3`}, and the kernel\u2019s validity check passes.`,
+          `Muka ${res.face + 1} dihapus (${f(res.areaRemoved, 1)} mm\u00b2): celahnya ditutup tambalan kernel ${f(res.areaPatch, 1)} mm\u00b2, dijahit kembali jadi solid ${res.faces} muka${Number.isFinite(res.volBefore) ? ` bervolume ${f(res.volAfter / 1000, 3)} cm\u00b3 dari ${f(res.volBefore / 1000, 3)} cm\u00b3 sebelumnya` : ` bervolume ${f(res.volAfter / 1000, 3)} cm\u00b3`}, dan lolos pemeriksaan validitas kernel.`);
       } else if (ft.type === 'surfplane') {
         const A = pickSketch(q.sketch), P = srfOn(A);
         const area = R.measureArea(P.face);
@@ -8236,6 +8247,59 @@ function s21iBoundary(R, uCurves, vCurves, opts = {}) {
   return { shape: su, uArea, vArea, u: u.length, v: v.length };
 }
 /* ---- end S21i helpers ---- */
+/* ---- S21j: Delete Face. The picked face is taken out of the solid's shell, the opening it leaves is closed by a
+ * patch the kernel builds from the opening's own boundary (BRepOffsetAPI_MakeFilling), the remaining faces and the
+ * patch are sewn into one shell (BRepBuilderAPI_Sewing) and that shell is made a solid again
+ * (BRepBuilderAPI_MakeSolid). The step only exists if the result passes the kernel's own validity check
+ * (BRepCheck_Analyzer) and has a volume, and the numbers written into the step are the kernel's measurements of the
+ * body before and after. A face with an opening inside it, or a boundary the kernel cannot fill, is refused and
+ * nothing is deleted. tests/s21j-delface.test.mjs lifts this block and runs it on the kernel. ---- */
+const s21jMm = (n) => Number(n).toFixed(1);
+function s21jValid(R, shape) {
+  const oc = R.getOC();
+  const a = new oc.BRepCheck_Analyzer(shape.wrapped, true, false);
+  const ok = !!(a.IsValid_2 ? a.IsValid_2() : a.IsValid_1 ? a.IsValid_1() : a.IsValid());
+  if (a.delete) a.delete();
+  return ok;
+}
+function s21jDelete(R, body, faceIndex) {
+  if (!body) throw new Error('Delete Face needs a body: build a Shape first.');
+  const oc = R.getOC();
+  if (!oc || !oc.BRepOffsetAPI_MakeFilling || !oc.BRepBuilderAPI_Sewing || !oc.BRepBuilderAPI_MakeSolid || !oc.BRepTools) throw new Error('This kernel has no patching, sewing and solid builders.');
+  const faces = (body.faces || []).filter(Boolean);
+  const k = Math.round(+faceIndex);
+  if (!(Number.isFinite(k) && k >= 0 && k < faces.length)) throw new Error(`Face ${Number.isFinite(k) ? k + 1 : faceIndex} is not on this body: it has ${faces.length} faces.`);
+  const removed = faces[k];
+  const loops = removed.wires.length;
+  if (loops > 1) throw new Error(`Face ${k + 1} has ${loops} boundary loops, and patching only the outer one would cover the opening inside it. That face is refused.`);
+  const areaRemoved = R.measureArea(removed);
+  let volBefore = NaN;
+  try { volBefore = R.measureVolume(body); } catch (e) { volBefore = NaN; }
+  const edges = R.cast(oc.BRepTools.OuterWire(removed.wrapped)).edges.map((e) => e.wrapped);
+  if (!edges.length) throw new Error(`Face ${k + 1} has no boundary to patch.`);
+  const fill = new oc.BRepOffsetAPI_MakeFilling();
+  let patched = false;
+  try { for (const e of edges) fill.Add(e, 0, true); fill.Build(); patched = !!fill.IsDone(); } catch (e) { patched = false; }
+  if (!patched) throw new Error(`The kernel could not patch the opening left by face ${k + 1}: that boundary is not one it can fill, so nothing was deleted.`);
+  const patch = R.cast(fill.Shape());
+  if (!patch) throw new Error('The patch came back empty, so nothing was deleted.');
+  const areaPatch = R.measureArea(patch);
+  const sew = new oc.BRepBuilderAPI_Sewing(1e-4);
+  faces.forEach((fc, i) => { if (i !== k) sew.Add(fc.wrapped); });
+  for (const pf of patch.faces) sew.Add(pf.wrapped);
+  sew.Perform();
+  const sewn = R.cast(sew.SewedShape());
+  const mk = new oc.BRepBuilderAPI_MakeSolid(oc.TopoDS.Shell(sewn.wrapped));
+  mk.Build();
+  const solid = R.cast(mk.Solid());
+  if (!solid) throw new Error('The sewn shell did not become a solid, so nothing was deleted.');
+  let volAfter = NaN;
+  try { volAfter = R.measureVolume(solid); } catch (e) { volAfter = NaN; }
+  if (!(volAfter > 0)) throw new Error(`The healed body has no volume (${Number.isFinite(volAfter) ? s21jMm(volAfter) + ' mm\u00b3' : 'not measurable'}): the patch did not close it, so nothing was deleted.`);
+  if (!s21jValid(R, solid)) throw new Error('The healed body does not pass the kernel\u2019s validity check, so nothing was deleted.');
+  return { shape: solid, face: k, loops, faces: solid.faces.length, areaRemoved, areaPatch, volBefore, volAfter };
+}
+/* ---- end S21j helpers ---- */
 
 /* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
  * Both are real OpenCascade geometry, never a polygon stand-in: the ellipse is two ellipse arcs, the closed spline is
@@ -8699,6 +8763,39 @@ function renderTrimPanel(pr) {
   } }, L('Trim', 'Potong')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
   if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
 }
+/* S21j: the Delete Face panel. It lists every face of the body with the type and centre the kernel reports; the
+ * picked face is deleted and its opening patched. A viewport click picks the face whose centre projects nearest the
+ * pointer, and the list stays there for the faces that overlap on screen. */
+function delPickIndex(cx, cy) {
+  if (!partShape || !partShape.faces) return null;
+  const r = $('#viewport').getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
+  let best = null, bestD = 60;
+  partShape.faces.forEach((f, i) => {
+    const p = viewer.project(f.boundingBox.center); if (!p) return;
+    const d = Math.hypot(p[0] - x, p[1] - y);
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return best;
+}
+function renderDelPanel(pr) {
+  const a = partArm, p = a.p;
+  if (p.face == null) p.face = 0;
+  const faces = (partShape && partShape.faces) || [];
+  pr.append(h('h2', null, h('span', null, L('Delete Face', 'Delete Face')), h('span', { class: 'phd' }, h('small', null, 'S21j'))));
+  pr.append(h('p', { class: 'hint' }, L('Pick the face to remove. The kernel patches the opening it leaves, sews the body back into one shell and makes it a solid again, and the step records the removed area, the patch area and the volume before and after, all measured. A face with an opening inside it, or a boundary the kernel cannot fill, is refused and nothing is deleted. Click a face in the viewport or pick it below.', 'Pilih muka yang dihapus. Kernel menambal celah yang ditinggalkannya, menjahit body jadi satu shell dan menjadikannya solid lagi, lalu langkahnya mencatat luas yang dihapus, luas tambalan, dan volume sebelum dan sesudah, semuanya hasil ukur. Muka yang punya bukaan di dalamnya, atau batas yang tidak bisa ditambal kernel, ditolak dan tidak ada yang dihapus. Klik muka di viewport atau pilih di daftar bawah.')));
+  pr.append(h('h3', null, L('Faces of the body', 'Muka body') + ` (${faces.length})`));
+  pr.append(faces.length ? h('ol', { class: 'sklist' }, faces.map((fc, i) => {
+    const c = fc.boundingBox.center;
+    return h('li', { class: (+p.face === i ? 'on' : ''), 'data-del': String(i), onclick: () => { partArm.p.face = i; renderCad(); } },
+      h('b', null, `${i + 1}. ${fc.geomType}`), h('span', null, `(${f(c[0], 1)}, ${f(c[1], 1)}, ${f(c[2], 1)})`));
+  })) : h('p', { class: 'hint' }, L('No body yet: build one first (a primitive or an Extrude), then this panel lists its faces.', 'Belum ada body: bangun dulu (primitive atau Extrude), lalu panel ini mendaftar mukanya.')));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-del-go': '1', onclick: () => {
+    if (!faces.length) { a.note = L('Pick a face of the body first.', 'Pilih dulu muka body.'); return renderCad(); }
+    state.part.features.push({ id: Date.now().toString(36), type: 'delface', p: { face: +partArm.p.face || 0 } });
+    partSel = state.part.features.length - 1; partArm = null; rebuildPart();
+  } }, L('Delete', 'Hapus')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
+  if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
+}
 /* S21i: the Boundary Surface panel. One list of the body's edges and a switch for the direction a click adds to, so
  * the two sets are built by pointing at the model; a curve belongs to one direction at a time. */
 function boundPickIndex(cx, cy) {
@@ -8761,6 +8858,13 @@ function renderBoundPanel(pr) {
     }
     if (partArm.type === 'surftrim') {
       const i = trimPickIndex(e.clientX, e.clientY);
+      if (i == null) return;
+      e.preventDefault(); e.stopPropagation();
+      partArm.p.face = i; renderCad();
+      return;
+    }
+    if (partArm.type === 'delface') {
+      const i = delPickIndex(e.clientX, e.clientY);
       if (i == null) return;
       e.preventDefault(); e.stopPropagation();
       partArm.p.face = i; renderCad();
@@ -9178,6 +9282,7 @@ function renderPartCad() {
   if (partArm && partArm.p && partArm.p.prof === 'ents') { renderSketchPanel(pr); }
   else if (partArm && partArm.type === 'surffill') { renderFillPanel(pr); }
   else if (partArm && partArm.type === 'surftrim') { renderTrimPanel(pr); }
+  else if (partArm && partArm.type === 'delface') { renderDelPanel(pr); }
   else if (partArm && partArm.type === 'surfbound') { renderBoundPanel(pr); }
   else if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
@@ -9489,7 +9594,7 @@ const RIBBON = [
     ['Edit', [T('Offset Surface', 'offset', 'on', 'Copy the surface body at a distance with the kernel. The copy has no profile of its own, so Thicken cannot use it.', 'Salin body surface pada jarak tertentu dengan kernel. Salinan tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.', 'Offset Face', { part: 'surfoffset' }),
       T('Knit Surface', 'knit', 'on', 'Sew the surface pieces into one body, or into a solid when they close.', 'Jahit potongan surface jadi satu body, atau jadi solid bila menutup.', 'Stitch', { part: 'surfknit' }),
       T('Trim Surface', 'trim', 'on', 'Cut the surface body with the plane of a face you pick on the model, and keep the side you choose: the kernel splits the faces (BRepAlgoAPI_Splitter) and the step records the area kept out of the area before, both measured. Click a face in the viewport or pick it in the list.', 'Potong body surface dengan bidang muka yang kamu pilih di model, lalu simpan sisi yang kamu pilih: kernel memecah mukanya (BRepAlgoAPI_Splitter) dan langkahnya mencatat luas yang disimpan dari luas sebelumnya, keduanya hasil ukur. Klik muka di viewport atau pilih di daftar.', 'Trim Surface, Cut Surface', { part: 'surftrim' }),
-      T('Delete Face', 'delface', 'no', 'Remove faces and heal the gap. Healing is not in this kernel wrapper yet (Batch 5).', 'Hapus muka dan tutup celahnya. Healing belum ada di wrapper kernel ini (Batch 5).', 'Remove Face'),
+      T('Delete Face', 'delface', 'on', 'Remove one face of the body and close the opening it leaves: the kernel builds a patch from the opening\u2019s own boundary (BRepOffsetAPI_MakeFilling), sews the body back into one shell and makes it a solid again, and the step records the removed area, the patch area and the volume before and after, all measured. The step exists only if that solid passes the kernel\u2019s validity check. A face with an opening inside it, or a boundary the kernel cannot fill, is refused and nothing is deleted. Click a face in the viewport or pick it in the list.', 'Hapus satu muka body dan tutup celah yang ditinggalkannya: kernel membuat tambalan dari batas celah itu sendiri (BRepOffsetAPI_MakeFilling), menjahit body jadi satu shell dan menjadikannya solid lagi, lalu langkahnya mencatat luas yang dihapus, luas tambalan, dan volume sebelum dan sesudah, semuanya hasil ukur. Langkahnya hanya ada bila solid itu lolos pemeriksaan validitas kernel. Muka yang punya bukaan di dalamnya, atau batas yang tidak bisa ditambal kernel, ditolak dan tidak ada yang dihapus. Klik muka di viewport atau pilih di daftar.', 'Remove Face', { part: 'delface' }),
       T('Thicken', 'thick', 'on', 'Make a solid wall of the thickness you give: the solid between the surface profile and that same profile offset by the thickness in its own plane, with the volume measured by the kernel.', 'Buat dinding solid setebal yang kamu beri: solid antara profil surface dan profil yang sama yang di-offset setebal itu di bidangnya, dengan volume diukur kernel.', 'Thicken', { part: 'surfthick' })]]]],
   ['sheet', 'Sheet Metal', 'Sheet Metal', [
     ['Flanges', [T('Base Flange', 'flat', 'on', 'The plate every sheet-metal step stands on: thickness, inside bend radius and the K-factor (the workshop table, or one you type). Built by the kernel and measured.', 'Pelat tempat semua langkah sheet metal berdiri: tebal, radius tekuk dalam, dan K-factor (tabel bengkel, atau yang kamu ketik). Dibangun kernel dan diukur.', 'Base Feature', { part: 'smbase' }),

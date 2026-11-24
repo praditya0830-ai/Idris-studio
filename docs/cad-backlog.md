@@ -61,7 +61,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 | Boundary Surface | `on` (shipped) | `s21iBoundary`: the curves of the body are split into two directions by the panel's switch; the first direction is lofted by the kernel (`BRepOffsetAPI_ThruSections` through each curve as a wire), every curve of the second direction must land on that loft (the gap is `BRepExtrema_DistShapeShape`), and when the second direction holds two curves or more its own loft is measured too and must come to the same patch | — (a true network surface — a Gordon build through crossing curves, which OCCT has no public builder for — is not what this is: the second direction is constrained to the first direction's loft) | 6 |
 | Filled Surface | `on` (shipped) | `s21gFill`: the kernel's `BRepOffsetAPI_MakeFilling` over the boundary edges you pick on the body (viewport click picks the edge nearest the pointer, or tick the list), with the measured patch area in the note | — (continuity/support faces and patches between non-connected edges stay out: the kernel refuses what is not one boundary) | 6 |
 | Trim Surface | `on` (shipped) | `s21hTrim`: the surface body is split by the plane of a face you pick on the model (`BRepAlgoAPI_Splitter` with a face made on that plane; a viewport click picks the face whose centre is under the pointer, or pick it in the list), and the pieces on the chosen side of that face's normal are kept, with the kept area and the area before measured | — (a cutting plane that misses the surface leaves it whole, and a curved face cannot supply a cutting plane) | 6 |
-| Delete Face | `no` | nothing | remove faces and heal the gap (`ShapeFix`), and redefine the solid when the gap cannot be healed | 6 |
+| Delete Face | `on` (shipped) | `s21jDelete`: the picked face leaves the body, the kernel patches the opening from the opening's own boundary (`BRepOffsetAPI_MakeFilling`), sews the remaining faces and the patch back into one shell (`BRepBuilderAPI_Sewing`) and makes it a solid again (`BRepBuilderAPI_MakeSolid`); the step is accepted only when `BRepCheck_Analyzer` passes and the volume is positive, and it records the removed area, the patch area and the volume before and after | delete **and patch**, not a redefinition of the solid: neighbour faces are not extended (no `ShapeFix_Shape`, no `BRepTools_ReShape` in this build), so an opening whose patch coincides with the removed face — every planar face — comes back at the same volume; a face with more than one boundary loop is refused (patching only the outer loop would cover the opening inside it), and so is a boundary `MakeFilling` cannot build (a cylinder's seam-bounded barrel) | 6 |
 
 ### Sheet Metal
 
@@ -204,6 +204,25 @@ with both directions recorded, the one-curve and no-guide refusals with their co
 20 mm guide gap) and browser test `tests/s21i-bound.spec.mjs` (ribbon → box → panel list → viewport pick into
 direction 1 → switch → pick into direction 2 → Build → 1 200 mm², then the one-curve refusal, no page error).
 
+**Also shipped in this batch: Delete Face.** Surface → Delete Face lists every face of the body; a viewport click
+picks the face whose centre is under the pointer and the list stays for faces that overlap on screen. The picked
+face leaves the body, and the kernel closes the opening it leaves with a patch built from that opening's own boundary
+(`BRepOffsetAPI_MakeFilling`); the remaining faces and the patch are sewn into one shell (`BRepBuilderAPI_Sewing`) and
+made a solid again (`BRepBuilderAPI_MakeSolid`). The step is only written when the result passes `BRepCheck_Analyzer`
+and has a positive volume, and it records the removed area, the patch area and the volume before and after, all
+measured. A face with more than one boundary loop is refused by name, because patching only the outer loop would
+cover the opening inside it; a boundary the kernel cannot fill is refused with the kernel's own failure and nothing is
+deleted. Kernel test `tests/s21j-delface.test.mjs` (the top face of a 40 × 30 × 20 box → 1 200 mm² removed and
+1 200 mm² patched, 24 000 mm³ before and after, six faces, valid; replay with and without the step; the wrong-face,
+no-body, two-loop and unfillable-barrel refusals) and browser test `tests/s21j-delface.spec.mjs` (ribbon → box →
+panel list of six faces → viewport pick of the top face → Delete → the step and the note, no page error).
+
+**What this batch does not do:** Delete Face is delete *and patch*, not a redefinition of the solid. There is no
+`ShapeFix_Shape` and no `BRepTools_ReShape` in the bundle, so neighbour faces are not extended or re-intersected;
+the gap is closed with a patch on its own boundary. For a planar face that patch lies in the same plane as the face
+that was removed, so the healed body comes back at the same volume — the step says so with both numbers instead of
+pretending the solid changed.
+
 
 Boundary Surface, Filled Surface, Trim Surface, Delete Face, and Boundary Boss/Base. This is the first batch that
 writes OpenCascade bindings. Each tool must report the area/volume the kernel measures, and a trim or a delete that
@@ -212,10 +231,12 @@ cannot be healed must say so instead of returning a shell with a hole.
 **Measured, not assumed (probe of `R.getOC()` in the bundled kernel):** the raw OpenCascade module already exposes
 `BRepOffsetAPI_MakeFilling`, `BRepAlgoAPI_Splitter`, `BRepAlgoAPI_Section`, `BRepFilletAPI_MakeFillet`,
 `BRepFilletAPI_MakeChamfer`, `BRepOffsetAPI_MakeThickSolid`, `BRepAdaptor_Surface`, `TopExp_Explorer`,
-`BRepBuilderAPI_MakeFace/MakeWire/MakeSolid/MakeSewing/Transform`, `BRepCheck_Analyzer` and
-`BRepExtrema_DistShapeShape`, so the JS wrapper is what is missing, not the binding. Not in this build:
-`BRepLProp_SLProps`, `GeomLProp_SLProps`, `BRepProj_Projection`, `ShapeFix_Shape`, `BRep_Builder`, `TopExp`,
-`GCPnts_QuasiUniformDeflection`.
+`BRepBuilderAPI_MakeFace/MakeWire/MakeSolid/MakeSewing/Transform`, `BRepCheck_Analyzer`,
+`BRepExtrema_DistShapeShape`, the three fixers `ShapeFix_Face/Wire/Solid`, `ShapeUpgrade_UnifySameDomain`,
+`BRepTools.OuterWire` and `BRepBuilderAPI_Sewing`, so the JS wrapper is what is missing, not the binding. Not in this
+build: `BRepLProp_SLProps`, `GeomLProp_SLProps`, `BRepProj_Projection`, `ShapeFix_Shape` (the master healer),
+`BRepTools_ReShape` (the face-substitution/removal map), `ShapeAnalysis_FreeBounds` (which would hand back the gap's
+free boundary loops), `BRep_Builder`, `TopExp` (only `TopExp_Explorer` is exported) and `GCPnts_QuasiUniformDeflection`.
 
 That changes two things in this backlog: Boundary/Filled Surface (batch 6) and Variable Fillet (batch 7) can be
 written against `R.getOC()` without a new WASM build, and Curvature/Zebra (batch 11) has to measure curvature from
@@ -265,7 +286,7 @@ cylinder reports 1/R everywhere within tolerance, a plane reports 0, and the vie
 | variable-radius fillet | no (`fillet(radius, finder)` only) | Variable Fillet |
 | surface filling / boundary | `BRepOffsetAPI_MakeFilling` (used by Filled Surface) and `BRepOffsetAPI_ThruSections` on curves as wires (used by Boundary Surface, which checks the second direction with `BRepExtrema_DistShapeShape`); no true network/Gordon surface | Boundary Boss |
 | trim/split on shells | `BRepAlgoAPI_Splitter` on a face (used by Trim Surface); not on a shell with another shell | Split |
-| heal / remove face | no | Delete Face |
+| heal / remove face | no `ShapeFix_Shape` (the master healer) and no `BRepTools_ReShape`; `ShapeFix_Face`, `ShapeFix_Wire`, `ShapeFix_Solid`, `ShapeUpgrade_UnifySameDomain`, `TopExp_Explorer`, `BRepCheck_Analyzer` and `BRepTools.OuterWire` are exported, and Delete Face patches the opening with `BRepOffsetAPI_MakeFilling` + `BRepBuilderAPI_Sewing` instead of extending neighbours | Boundary Boss/Base |
 | projection of a sketch onto a face | no | Wrap/Emboss, Text |
 | curvature at a point on a face | no | Curvature / Zebra |
 | cope on a hollow section | no | Weldments Trim/Extend |
