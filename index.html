@@ -7964,6 +7964,46 @@ function p1Pattern(ents, ids, cfg, nextId) {
   return out;
 }
 /* ---- end P1a helpers */
+/* ---- S21c: Convert Entities. The kernel projects the model onto the sketch plane (hidden-line removal, the
+ * same projection the drawing tab uses), and every projected curve that is a line or a circle becomes a real
+ * sketch entity: a line as a line, a circle as two three-point arcs, so the sketch stays lines and arcs and the
+ * kernel builds it exactly. A projected ellipse, Bézier or B-spline is refused by name — it is never flattened
+ * into a polygon that only looks right. Pure maths on the kernel's output: tests/s21c-convert.test.mjs lifts
+ * this block and runs it in Node. ---- */
+const S21C_EPS = 1e-6;
+const s21cPt = (cu, t) => cu.value(cu.firstParameter + (cu.lastParameter - cu.firstParameter) * t);
+const s21cDist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+/** the curves of a projection drawing, whichever shape the kernel wrapped them in */
+function s21cCurves(dw) {
+  const out = [], node = dw && (dw.innerShape || dw);
+  const walk = (n) => { if (!n) return;
+    if (Array.isArray(n.curves)) { out.push(...n.curves); return; }
+    if (Array.isArray(n.blueprints)) n.blueprints.forEach(walk); };
+  walk(node); return out;
+}
+/** one projected curve → sketch entities, or the reason it cannot be one */
+function s21cCurveEnts(cu, idf) {
+  const t = String(cu.geomType || '');
+  if (t === 'LINE') { const a = cu.firstPoint, b = cu.lastPoint;
+    if (s21cDist(a, b) < S21C_EPS) return { ents: [], skip: 'length' };
+    return { ents: [{ id: idf(), t: 'line', a, b, c: 0 }], kind: 'line' }; }
+  if (t === 'CIRCLE') {
+    const p0 = s21cPt(cu, 0), p1 = s21cPt(cu, 0.25), p2 = s21cPt(cu, 0.5), p3 = s21cPt(cu, 0.75);
+    if (!(s21cDist(p0, p2) / 2 > S21C_EPS)) return { ents: [], skip: 'radius' };
+    return { ents: [{ id: idf(), t: 'arc', s: p0, m: p1, e: p2, c: 0 }, { id: idf(), t: 'arc', s: p2, m: p3, e: p0, c: 0 }], kind: 'circle' }; }
+  return { ents: [], refuse: t || 'OTHER_CURVE' };
+}
+function s21cConvert(dw, idf) {
+  const ents = [], refused = []; let lines = 0, circles = 0, skipped = 0;
+  for (const cu of s21cCurves(dw)) {
+    const r = s21cCurveEnts(cu, idf);
+    ents.push(...r.ents);
+    if (r.kind === 'line') lines++; else if (r.kind === 'circle') circles++;
+    if (r.refuse) refused.push(r.refuse); if (r.skip) skipped++;
+  }
+  return { ents, refused: [...new Set(refused)], lines, circles, skipped };
+}
+/* ---- end S21c helpers ---- */
 
 /* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
  * Both are real OpenCascade geometry, never a polygon stand-in: the ellipse is two ellipse arcs, the closed spline is
@@ -8477,6 +8517,27 @@ function skMirrorApply() {
   skSel = copies.map((c) => c.id);
   return skCommit([...ents, ...copies], L(`${copies.length} entities mirrored about ${line.id}. A copy carries no relations of its own.`, `${copies.length} entitas dicerminkan terhadap ${line.id}. Salinan tidak membawa relasi sendiri.`));
 }
+/* S21c: the click path for Convert Entities. The button calls the kernel's projection, converts what is a line or a
+ * circle, and adds those entities to this sketch step; the whole thing is refused with a reason when there is no
+ * body, when the projection is empty, or when every projected curve is a kind the sketch cannot hold. */
+async function skConvertEntities() {
+  const a = skSession(); if (!a) return; const p = a.p;
+  if (!partShape) { a.note = L('Convert Entities projects the model into this sketch: build a body first (a primitive or an Extrude).', 'Konversi entitas memproyeksikan model ke sketch ini: bangun body dulu (primitive atau Extrude).'); return renderCad(); }
+  let res;
+  try { const R = await kernel(); res = s21cConvert(R.drawProjection(partShape, p.plane).visible, skNextId); }
+  catch (e) { a.note = L('The kernel could not project the model onto this plane: ', 'Kernel tidak bisa memproyeksikan model ke bidang ini: ') + String((e && e.message) || e).slice(0, 160); return renderCad(); }
+  if (!res.ents.length) {
+    a.note = res.refused.length
+      ? L(`Nothing to convert: every projected curve is a ${res.refused.join(', ')}, and this sketch holds lines and arcs only.`, `Tidak ada yang bisa dikonversi: semua kurva hasil proyeksi berupa ${res.refused.join(', ')}, dan sketch ini hanya memuat garis dan busur.`)
+      : L('Nothing to convert: the model has no edge that projects onto this plane.', 'Tidak ada yang bisa dikonversi: model tidak punya tepi yang terproyeksi ke bidang ini.');
+    return renderCad();
+  }
+  const note = L(`${res.ents.length} entities converted from the model: ${res.lines} line(s), ${res.circles} circle(s) as two arcs each.`, `${res.ents.length} entitas dikonversi dari model: ${res.lines} garis, ${res.circles} lingkaran (masing-masing dua busur).`)
+    + (res.refused.length ? ' ' + L(`Refused, not approximated: ${res.refused.join(', ')}.`, `Ditolak, tidak didekati: ${res.refused.join(', ')}.`) : '')
+    + (res.skipped ? ' ' + L(`${res.skipped} projected curve(s) had no length and were left out.`, `${res.skipped} kurva hasil proyeksi tanpa panjang dilewati.`) : '');
+  skSel = res.ents.map((e) => e.id);
+  return skCommit([...(p.ents || []), ...res.ents], note);
+}
 function skPatternApply() {
   const a = skSession(); if (!a) return; const ents = a.p.ents || [], cfg = a.pat || {};
   if (!skSel.length) { a.note = L('Select the entities to pattern first: click them in the entity list below.', 'Pilih dulu entitas yang mau dipola: klik di daftar entitas di bawah.'); return renderCad(); }
@@ -8509,7 +8570,7 @@ function renderSketchPanel(pr) {
     ['arcCenter', L('Arc centre', 'Busur pusat')], ['arcTangent', L('Tangent arc', 'Busur tangen')], ['point', L('Point', 'Titik')],
     ['fillet', L('Sketch Fillet', 'Fillet sketch')], ['offset', L('Offset', 'Offset')], ['trim', L('Trim', 'Trim')], ['extend', L('Extend', 'Extend')],
     ['dim', L('Smart Dimension', 'Smart Dimension')], ['rel', L('Add Relation', 'Tambah relasi')], ['fix', L('Sketch Correction', 'Koreksi sketch')],
-    ['smirror', L('Mirror Entities', 'Cermin entitas')], ['spat', L('Sketch Pattern', 'Pola sketch')]];
+    ['smirror', L('Mirror Entities', 'Cermin entitas')], ['spat', L('Sketch Pattern', 'Pola sketch')], ['sconvert', L('Convert Entities', 'Konversi entitas')]];
   pr.append(h('h2', null, h('span', null, a.n || L('Sketch', 'Sketch')), h('span', { class: 'phd' }, h('small', null, 'P1a'))));
   pr.append(h('div', { class: 'sktools', role: 'toolbar', 'aria-label': L('Sketch tools', 'Alat sketch') },
     tools.map(([k, label]) => h('button', { class: 'chip' + (a.tool === k ? ' primary' : ''), 'aria-pressed': a.tool === k ? 'true' : 'false', onclick: () => { a.tool = k; a.pend = []; a.pen = []; skSel = []; a.note = null; renderCad(); requestAnimationFrame(skOverlay); } }, label))));
@@ -8525,6 +8586,13 @@ function renderSketchPanel(pr) {
     .map((k) => h('button', { class: 'chip', onclick: () => skRelation(k) }, k))));
   /* S21b: the two modify tools. The selection comes from the viewport or the list, the line and the spacing are
      typed here, and the copies are added to this same sketch step. */
+  /* S21c: Convert Entities runs the kernel's projection and adds what it returns, so the sketch holds the model's
+     own lines and arcs. Nothing is approximated, and what cannot become a line or an arc is named. */
+  if (a.tool === 'sconvert') {
+    pr.append(h('h3', null, L('Convert Entities', 'Konversi entitas')),
+      h('p', { class: 'hint' }, L('The kernel projects the model onto this sketch plane (hidden lines removed). Projected lines and circles become real sketch entities: a circle as two arcs, so it stays round. A projected ellipse or spline is refused by name instead of being turned into a polygon.', 'Kernel memproyeksikan model ke bidang sketch ini (garis tersembunyi dibuang). Garis dan lingkaran hasil proyeksi menjadi entitas sketch sungguhan: lingkaran jadi dua busur, jadi tetap bulat. Elips atau spline hasil proyeksi ditolak dengan namanya, bukan diubah jadi poligon.')),
+      h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-sk': 'conv-go', onclick: skConvertEntities }, L('Convert from the model', 'Konversi dari model'))));
+  }
   if (a.tool === 'smirror') {
     const lines = ents.filter((e) => e.t === 'line' && e.c);
     if (lines.length && !lines.some((e) => e.id === a.mir)) a.mir = lines[0].id;
@@ -8917,7 +8985,7 @@ const RIBBON = [
       T('Text', 'text', 'no', 'Text in a sketch, to emboss or cut.', 'Teks di sketch, untuk timbul atau potong.', 'Sketch Text')]],
     ['Modify', [T('Sketch Fillet', 'sfil', 'on', 'Round the corner between two lines: click both lines, with the radius in the sketch panel.', 'Bulatkan sudut antara dua garis: klik kedua garis, radiusnya di panel sketch.', 'Sketch Chamfer', { sk: 'fillet' }),
       T('Offset Entities', 'offset', 'on', 'Copy a closed profile at a distance: click the profile, with the distance in the sketch panel.', 'Salin profil tertutup pada jarak tertentu: klik profilnya, jaraknya di panel sketch.', 'Offset Curve', { sk: 'offset' }),
-      T('Convert Entities', 'proj', 'no', 'Project model edges into the sketch.', 'Proyeksikan tepi model ke sketch.', 'Project, Include, Use Edge'),
+      T('Convert Entities', 'proj', 'on', 'Project the model onto this sketch plane with the kernel\u2019s hidden-line projection and add the result as real sketch entities: a projected line is a line, a projected circle is two arcs, so the sketch stays lines and arcs and builds exactly. A projected ellipse or spline is refused by name instead of being flattened into a polygon.', 'Proyeksikan model ke bidang sketch ini dengan proyeksi garis-tersembunyi dari kernel, lalu tambahkan hasilnya sebagai entitas sketch sungguhan: garis tetap garis, lingkaran jadi dua busur, jadi sketch tetap garis dan busur dan terbangun tepat. Elips atau spline hasil proyeksi ditolak dengan namanya, bukan diubah jadi poligon.', 'Project, Include, Use Edge', { sk: 'sconvert' }),
       T('Trim', 'trim', 'on', 'Cut the clicked piece of a line or arc where it crosses another.', 'Potong bagian garis atau busur yang diklik di titik persilangan.', 'Power Trim', { sk: 'trim' }),
       T('Extend', 'extend', 'on', 'Lengthen the clicked end of a line or arc to the next entity.', 'Perpanjang ujung garis atau busur yang diklik sampai entitas berikutnya.', '', { sk: 'extend' }),
       T('Mirror Entities', 'smir', 'on', 'Mirror the selected sketch entities about a centre line: the kernel-wise copies are still lines and arcs, they stay in the same sketch step, and they are rebuilt with it. The mirror line is a centre line, never part of the profile.', 'Cerminkan entitas sketch terpilih terhadap centerline: salinannya tetap garis dan busur, tetap di langkah sketch yang sama, dan dibangun ulang bersamanya. Garis cerminnya centerline, bukan bagian profil.', 'Sketch Mirror', { sk: 'smirror' }),
