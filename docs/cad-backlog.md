@@ -59,7 +59,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 | Tool | State | What the code has | What is missing | Batch |
 | --- | --- | --- | --- | --- |
 | Boundary Surface | `no` | loft/sweep/planar | the same two-direction boundary fill as Boundary Boss/Base | 6 |
-| Filled Surface | `no` | Planar Surface covers flat patches | a filling builder (`BRepOffsetAPI_MakeFilling`) with continuity and support faces, plus picking the boundary edges: the class is in the kernel, the JS wrapper and the edge picker are not | 6 |
+| Filled Surface | `on` (shipped) | `s21gFill`: the kernel's `BRepOffsetAPI_MakeFilling` over the boundary edges you pick on the body (viewport click picks the edge nearest the pointer, or tick the list), with the measured patch area in the note | — (continuity/support faces and patches between non-connected edges stay out: the kernel refuses what is not one boundary) | 6 |
 | Trim Surface | `no` | knit, offset | trim one shell with another or with a sketch: the splitter on shells, then the kept side | 6 |
 | Delete Face | `no` | nothing | remove faces and heal the gap (`ShapeFix`), and redefine the solid when the gap cannot be healed | 6 |
 
@@ -174,6 +174,15 @@ the refusal — with no page error.
 Not in this batch: arithmetic between parameters (`L * 2`) and per-configuration suppression of a step.
 
 ### Batch 6 — the surfaces that need new kernel wrappers
+
+**Shipped in this batch: Filled Surface.** Surface → Filled Surface lists the body's own B-rep edges; a click in the
+viewport picks the nearest one (the end points are projected through the same viewer the app draws with) and the
+panel's list ticks them too. The patch is built by `BRepOffsetAPI_MakeFilling` through `R.getOC()`, its area is
+measured on the returned face, and edges that are not one boundary are refused by the kernel with its own message.
+Kernel test `tests/s21g-fill.test.mjs` (four top edges of a 40 × 30 × 20 box → 1 200 mm², the body unchanged, the
+one-edge refusal, the rebuild at another edge order) and browser test `tests/s21g-fill.spec.mjs` (ribbon → panel →
+viewport pick → four ticks → Build → 1 200 mm² and the note, then the one-edge refusal, no page error).
+
 
 Boundary Surface, Filled Surface, Trim Surface, Delete Face, and Boundary Boss/Base. This is the first batch that
 writes OpenCascade bindings. Each tool must report the area/volume the kernel measures, and a trim or a delete that
