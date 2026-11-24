@@ -6844,6 +6844,9 @@ const FEAT = {
       const o = sketchOptions();
       return [S('profile', 'Profile sketch', 'Sketch profil', o, o[0][0]), S('path', 'Path sketch', 'Sketch lintasan', o, o.length > 1 ? o[1][0] : o[0][0])]; },
     label: () => L('Swept surface', 'Surface sapu') },
+  surftrim: { en: 'Trim Surface', id: 'Trim Surface', fields: [S('keep', 'Keep the side', 'Sisi yang disimpan', [['positive', ['Along the picked face normal', 'Searah normal muka yang dipilih']], ['negative', ['Against the picked face normal', 'Berlawanan normal muka yang dipilih']]], 'positive'),
+      N('face', 'Trimming face', 'Muka pemotong', '', 0, { step: 1 })],
+    label: (p) => `${L('Trim by face', 'Trim oleh muka')} ${(+p.face || 0) + 1} · ${p.keep === 'negative' ? L('against the normal', 'lawan normal') : L('along the normal', 'searah normal')}` },
   surffill: { en: 'Filled Surface', id: 'Filled Surface', fields: [N('order', 'Edge order (0–4)', 'Orde tepi (0–4)', '', 2, { min: 0, max: 4, step: 1 })],
     label: (p) => `${L('Filled', 'Terisi')} ${(p.edges || []).length} ${L('edge(s)', 'tepi')}` },
   surfplane: { en: 'Planar Surface', id: 'Planar Surface', get fields() {
@@ -7286,6 +7289,22 @@ async function buildPart(pArg) {
         ft.note = L(`Extruded surface ${f(len, 2)} mm: area ${f(area, 1)} mm² (kernel). Thicken turns it into a wall.`, `Surface tarik ${f(len, 2)} mm: luas ${f(area, 1)} mm² (kernel). Thicken mengubahnya jadi dinding.`);
         A.f.note = L(`Surface for step ${p.features.indexOf(ft) + 1}.`, `Surface untuk langkah ${p.features.indexOf(ft) + 1}.`);
         if (sketch && sketch.s === A.s) { sketch.used = true; sketch = null; }
+      } else if (ft.type === 'surftrim') {
+        /* S21h: the surfaces built so far are split by the plane of the picked face, and only the chosen side is kept. */
+        if (!surfs.length) throw new Error(L('Trim Surface needs a surface before it: make a surface step first.', 'Trim Surface butuh surface sebelumnya: buat langkah surface dulu.'));
+        if (!body) throw new Error(L('Trim Surface takes its cutting plane from a face of the body: build a body first.', 'Trim Surface mengambil bidang potong dari muka body: bangun body dulu.'));
+        const faces = body.faces || [], fc = faces[+q.face || 0];
+        if (!fc) throw new Error(L(`Face ${(+q.face || 0) + 1} is not on the body: pick another one.`, `Muka ${(+q.face || 0) + 1} tidak ada di body: pilih yang lain.`));
+        const plane = s21hPlaneOf(fc);
+        if (!plane) throw new Error(L('That face has no plane to cut with.', 'Muka itu tidak punya bidang untuk memotong.'));
+        const before = surfs.reduce((a, s2) => a + R.measureArea(s2.sh), 0);
+        const kept = s21hTrim(R, surfs.map((s2) => s2.sh), plane, q.keep === 'negative' ? 'negative' : 'positive');
+        const after = kept.reduce((a, f2) => a + R.measureArea(f2), 0);
+        if (!(after > 1e-6)) throw new Error(L('The kept side has no area.', 'Sisi yang disimpan tidak punya luas.'));
+        surfs.length = 0;
+        for (const f2 of kept) surfs.push({ sh: f2, wall: null });
+        ft.surf = { kind: 'trim', area: after };
+        ft.note = L(`Trimmed by face ${(+q.face || 0) + 1}: ${kept.length} piece(s) kept, area ${f(after, 1)} mm² of ${f(before, 1)} mm² before (kernel).`, `Dipotong oleh muka ${(+q.face || 0) + 1}: ${kept.length} potongan disimpan, luas ${f(after, 1)} mm² dari ${f(before, 1)} mm² sebelumnya (kernel).`);
       } else if (ft.type === 'surffill') {
         /* S21g: the patch is built from the edges of the body as it stands at this step, by the kernel's own filling
            builder; the area in the note is measured on the face it returns. */
@@ -8100,6 +8119,52 @@ function s21gFill(R, edges, opts = {}) {
   return sh;
 }
 /* ---- end S21g helpers ---- */
+/* ---- S21h: Trim Surface. A surface body is split by the plane of a face you pick on the model
+ * (BRepAlgoAPI_Splitter with a face made on that plane, both reached through R.getOC()), and the pieces on the side
+ * you choose are kept; their area is measured by the kernel. Which side is which is the picked face's own normal, so
+ * the same pick always keeps the same half. tests/s21h-trim.test.mjs lifts this block and runs it on the kernel. ---- */
+function s21hPt(v) {
+  if (!v) return null;
+  if (Array.isArray(v)) return [+v[0], +v[1], +v[2]];
+  if (typeof v.toTuple === 'function') return v.toTuple().map(Number);
+  if (v.x != null || v.y != null || v.z != null) return [+v.x, +v.y, +v.z];
+  return null;
+}
+function s21hPlaneOf(face) {
+  const n = s21hPt(face.normalAt && face.normalAt()), o = s21hPt(face.boundingBox && face.boundingBox.center);
+  if (!n || !o || !n.every(Number.isFinite) || !o.every(Number.isFinite)) return null;
+  if (Math.hypot(n[0], n[1], n[2]) < 1e-9) return null;
+  return { o, n };
+}
+function s21hTrim(R, shapes, plane, keep, radius = 1000) {
+  const list = (shapes || []).filter(Boolean);
+  if (!list.length) throw new Error('Trim needs a surface to cut.');
+  const oc = R.getOC();
+  if (!oc || !oc.BRepAlgoAPI_Splitter) throw new Error('This kernel has no splitter.');
+  const pln = new oc.gp_Pln(new oc.gp_Pnt(plane.o[0], plane.o[1], plane.o[2]), new oc.gp_Dir(plane.n[0], plane.n[1], plane.n[2]));
+  const mf = new oc.BRepBuilderAPI_MakeFace(pln, -radius, radius, -radius, radius);
+  if (!mf.IsDone()) throw new Error('Could not build the trimming face on that plane.');
+  const cutter = R.cast(mf.Face());
+  const out = [];
+  for (const sh of list) {
+    const args = new oc.NCollection_List_TopoDS_Shape(); args.Append(sh.wrapped);
+    const tools = new oc.NCollection_List_TopoDS_Shape(); tools.Append(cutter.wrapped);
+    const sp = new oc.BRepAlgoAPI_Splitter(); sp.SetArguments(args); sp.SetTools(tools); sp.Build();
+    if (!sp.IsDone() || (sp.HasErrors && sp.HasErrors())) throw new Error('The kernel could not split that surface with the picked face plane.');
+    const res = R.cast(sp.Shape()), pieces = (res && res.faces) || [];
+    if (!pieces.length) throw new Error('The split left no face.');
+    for (const f of pieces) {
+      const c = s21hPt(f.boundingBox && f.boundingBox.center);
+      if (!c) throw new Error('A split piece has no centre to place it on a side.');
+      const d = (c[0] - plane.o[0]) * plane.n[0] + (c[1] - plane.o[1]) * plane.n[1] + (c[2] - plane.o[2]) * plane.n[2];
+      if (Math.abs(d) < 1e-9) { out.push(f); continue; }
+      if (keep === 'negative' ? d < 0 : d > 0) out.push(f);
+    }
+  }
+  if (!out.length) throw new Error('Every piece ended on the side that was cut away: nothing is left to keep.');
+  return out;
+}
+/* ---- end S21h helpers ---- */
 
 /* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
  * Both are real OpenCascade geometry, never a polygon stand-in: the ellipse is two ellipse arcs, the closed spline is
@@ -8524,15 +8589,62 @@ function renderFillPanel(pr) {
   } }, L('Build', 'Bangun')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
   if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
 }
+/* S21h: the Trim Surface panel. It lists the body's planar faces with the area and centre the kernel reports; the
+ * picked face supplies the cutting plane and its normal decides which half is kept. A viewport click picks the face
+ * whose centre projects nearest the pointer, and the list stays there for the faces that overlap on screen. */
+function trimPickIndex(cx, cy) {
+  if (!partShape || !partShape.faces) return null;
+  const r = $('#viewport').getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
+  let best = null, bestD = 60;
+  partShape.faces.forEach((f, i) => {
+    if (f.geomType !== 'PLANE') return;
+    const p = viewer.project(f.boundingBox.center); if (!p) return;
+    const d = Math.hypot(p[0] - x, p[1] - y);
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return best;
+}
+function renderTrimPanel(pr) {
+  const a = partArm, p = a.p;
+  if (p.face == null) p.face = 0;
+  const faces = (partShape && partShape.faces) || [];
+  const planar = faces.map((f, i) => ({ f, i })).filter((x) => x.f.geomType === 'PLANE');
+  pr.append(h('h2', null, h('span', null, L('Trim Surface', 'Trim Surface')), h('span', { class: 'phd' }, h('small', null, 'S21h'))));
+  pr.append(h('p', { class: 'hint' }, L('The surface body is cut by the plane of the face you pick, and only the side you choose is kept. Click a face in the viewport, or pick it below; the area before and after is measured by the kernel and written into the step.', 'Body surface dipotong oleh bidang muka yang kamu pilih, dan hanya sisi yang kamu pilih yang disimpan. Klik muka di viewport, atau pilih di daftar; luas sebelum dan sesudah diukur kernel dan dicatat di langkahnya.')));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Keep the side', 'Sisi yang disimpan')),
+    h('select', { 'data-k': 'keep', onchange: (e) => { p.keep = e.target.value; } },
+      [['positive', L('Along the picked face normal', 'Searah normal muka yang dipilih')], ['negative', L('Against the picked face normal', 'Berlawanan normal muka yang dipilih')]]
+        .map(([v, t]) => h('option', { value: v, selected: (p.keep || 'positive') === v }, t)))));
+  pr.append(h('h3', null, L('Planar faces of the body', 'Muka datar body') + ` (${planar.length})`));
+  pr.append(planar.length ? h('ol', { class: 'sklist' }, planar.map(({ f: fc, i }) => {
+    const c = fc.boundingBox.center;
+    return h('li', { class: (+p.face === i ? 'on' : ''), 'data-trim': String(i), onclick: () => { partArm.p.face = i; renderCad(); } },
+      h('b', null, `${i + 1}. PLANE`), h('span', null, `(${f(c[0], 1)}, ${f(c[1], 1)}, ${f(c[2], 1)})`));
+  })) : h('p', { class: 'hint' }, L('No body with planar faces yet: build one first (a primitive or an Extrude).', 'Belum ada body dengan muka datar: bangun dulu (primitive atau Extrude).')));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-trim-go': '1', onclick: () => {
+    if (!planar.length) { a.note = L('Pick a face of the body first: the cut plane comes from it.', 'Pilih dulu muka body: bidang potongnya berasal dari situ.'); return renderCad(); }
+    state.part.features.push({ id: Date.now().toString(36), type: 'surftrim', p: { keep: partArm.p.keep === 'negative' ? 'negative' : 'positive', face: +partArm.p.face || 0 } });
+    partSel = state.part.features.length - 1; partArm = null; rebuildPart();
+  } }, L('Trim', 'Potong')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
+  if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
+}
 { const cv = $('#cv');
   cv.addEventListener('pointerdown', (e) => {
-    if (!partArm || partArm.type !== 'surffill' || partBusy || e.button > 0) return;
-    const i = fillPickIndex(e.clientX, e.clientY);
-    if (i == null) return;
-    e.preventDefault(); e.stopPropagation();
-    const sel = partArm.p.edges || (partArm.p.edges = []);
-    partArm.p.edges = sel.includes(i) ? sel.filter((x) => x !== i) : [...sel, i];
-    renderCad();
+    if (!partArm || partBusy || e.button > 0) return;
+    if (partArm.type === 'surffill') {
+      const i = fillPickIndex(e.clientX, e.clientY);
+      if (i == null) return;
+      e.preventDefault(); e.stopPropagation();
+      const sel = partArm.p.edges || (partArm.p.edges = []);
+      partArm.p.edges = sel.includes(i) ? sel.filter((x) => x !== i) : [...sel, i];
+      return renderCad();
+    }
+    if (partArm.type === 'surftrim') {
+      const i = trimPickIndex(e.clientX, e.clientY);
+      if (i == null) return;
+      e.preventDefault(); e.stopPropagation();
+      partArm.p.face = i; renderCad();
+    }
   }, true);
 }
 function skCommit(list, note) {
@@ -8938,6 +9050,7 @@ function renderPartCad() {
   const pr = propsEl(); pr.innerHTML = '';
   if (partArm && partArm.p && partArm.p.prof === 'ents') { renderSketchPanel(pr); }
   else if (partArm && partArm.type === 'surffill') { renderFillPanel(pr); }
+  else if (partArm && partArm.type === 'surftrim') { renderTrimPanel(pr); }
   else if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
       h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : (TOOL_GROUPS.find((g) => g[0] === partArm.type) || [null, null, ''])[2]),
@@ -9247,7 +9360,7 @@ const RIBBON = [
       T('Planar Surface', 'plane', 'on', 'A flat face from one closed sketch loop, built by the kernel.', 'Muka datar dari satu loop sketch tertutup, dibangun kernel.', 'Planar Face', { part: 'surfplane' })]],
     ['Edit', [T('Offset Surface', 'offset', 'on', 'Copy the surface body at a distance with the kernel. The copy has no profile of its own, so Thicken cannot use it.', 'Salin body surface pada jarak tertentu dengan kernel. Salinan tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.', 'Offset Face', { part: 'surfoffset' }),
       T('Knit Surface', 'knit', 'on', 'Sew the surface pieces into one body, or into a solid when they close.', 'Jahit potongan surface jadi satu body, atau jadi solid bila menutup.', 'Stitch', { part: 'surfknit' }),
-      T('Trim Surface', 'trim', 'no', 'Trim a surface with another. The kernel wrapper here has no surface-trim builder yet (Batch 5).', 'Potong surface dengan surface lain. Wrapper kernel di sini belum punya pembangun trim surface (Batch 5).', ''),
+      T('Trim Surface', 'trim', 'on', 'Cut the surface body with the plane of a face you pick on the model, and keep the side you choose: the kernel splits the faces (BRepAlgoAPI_Splitter) and the step records the area kept out of the area before, both measured. Click a face in the viewport or pick it in the list.', 'Potong body surface dengan bidang muka yang kamu pilih di model, lalu simpan sisi yang kamu pilih: kernel memecah mukanya (BRepAlgoAPI_Splitter) dan langkahnya mencatat luas yang disimpan dari luas sebelumnya, keduanya hasil ukur. Klik muka di viewport atau pilih di daftar.', 'Trim Surface, Cut Surface', { part: 'surftrim' }),
       T('Delete Face', 'delface', 'no', 'Remove faces and heal the gap. Healing is not in this kernel wrapper yet (Batch 5).', 'Hapus muka dan tutup celahnya. Healing belum ada di wrapper kernel ini (Batch 5).', 'Remove Face'),
       T('Thicken', 'thick', 'on', 'Make a solid wall of the thickness you give: the solid between the surface profile and that same profile offset by the thickness in its own plane, with the volume measured by the kernel.', 'Buat dinding solid setebal yang kamu beri: solid antara profil surface dan profil yang sama yang di-offset setebal itu di bidangnya, dengan volume diukur kernel.', 'Thicken', { part: 'surfthick' })]]]],
   ['sheet', 'Sheet Metal', 'Sheet Metal', [
