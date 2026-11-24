@@ -6516,6 +6516,7 @@ const loadSavedPart = () => { try { const p = JSON.parse(localStorage.getItem(PA
 /* feature definitions: fields for the form, a label for the tree, and the build step */
 const N = (k, en, id, unit, def, extra = {}) => ({ k, en, id, unit, def, t: 'num', ...extra });
 const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel', ...extra });
+const TX = (k, en, id, def, extra = {}) => ({ k, en, id, def, t: 'txt', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
 const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', gusset: 'gusset', weld: 'weld', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
@@ -6709,12 +6710,16 @@ const FEAT = {
       N('H', 'Height Z', 'Tinggi Z', 'mm', 20, { show: (p) => p.kind !== 'sphere' }),
       N('x', 'Centre X', 'Pusat X', 'mm', 0), N('y', 'Centre Y', 'Pusat Y', 'mm', 0), N('z', 'Base Z', 'Dasar Z', 'mm', 0), S('op', 'With the body', 'Terhadap body', OPS, 'add', { first: false })],
     label: (p) => ({ box: `${L('Box', 'Balok')} ${p.L}×${p.W}×${p.H}`, cyl: `${L('Cylinder', 'Silinder')} Ø${p.D}×${p.H}`, tube: `${L('Tube', 'Tabung')} Ø${p.D}/Ø${p.Di}×${p.H}`, sphere: `${L('Sphere', 'Bola')} Ø${p.D}` }[p.kind]) },
-  sketch: { en: 'Sketch', id: 'Sketch', fields: [S('prof', 'Profile', 'Profil', [['rect', ['Rectangle', 'Persegi panjang']], ['circle', ['Circle', 'Lingkaran']], ['slot', ['Slot', 'Slot']], ['poly', ['Polygon', 'Poligon']], ['ents', ['Lines & arcs (interactive)', 'Garis & busur (interaktif)']]], 'rect'),
+  sketch: { en: 'Sketch', id: 'Sketch', fields: [S('prof', 'Profile', 'Profil', [['rect', ['Rectangle', 'Persegi panjang']], ['circle', ['Circle', 'Lingkaran']], ['slot', ['Slot', 'Slot']], ['poly', ['Polygon', 'Poligon']], ['ellipse', ['Ellipse', 'Elips']], ['spline', ['Closed spline through points', 'Spline tertutup melalui titik']], ['ents', ['Lines & arcs (interactive)', 'Garis & busur (interaktif)']]], 'rect'),
       N('W', 'Width', 'Lebar', 'mm', 30, { show: (p) => p.prof === 'rect' || p.prof === 'slot' }), N('Hh', 'Height', 'Tinggi', 'mm', 20, { show: (p) => p.prof === 'rect' || p.prof === 'slot' }),
-      N('D', 'Diameter', 'Diameter', 'mm', 20, { show: (p) => p.prof === 'circle' || p.prof === 'poly' }), N('n', 'Sides', 'Jumlah sisi', '', 6, { show: (p) => p.prof === 'poly', step: 1, min: 3 }),
+      N('D', 'Diameter', 'Diameter', 'mm', 20, { show: (p) => p.prof === 'circle' || p.prof === 'poly' || p.prof === 'ellipse' }), N('n', 'Sides', 'Jumlah sisi', '', 6, { show: (p) => p.prof === 'poly', step: 1, min: 3 }),
+      /* S21: the ellipse is the major (D) and minor (d) diameter the kernel draws; the spline is the closed curve
+         through the points typed here, one point per `x,y`, separated by `;` or a new line. */
+      N('d', 'Minor diameter', 'Diameter kecil', 'mm', 10, { show: (p) => p.prof === 'ellipse', min: 0.1 }),
+      TX('pts', 'Points (x,y; x,y; …)', 'Titik (x,y; x,y; …)', '0,20; 20,0; 0,-20; -20,0', { show: (p) => p.prof === 'spline' }),
       S('plane', 'Plane', 'Bidang', PLANES, 'XY'), S('at', 'Place on', 'Letakkan di', [['top', ['Top of the body', 'Atas body']], ['value', ['Offset value', 'Nilai offset']]], 'top', { show: (p) => p.plane === 'XY' }),
       N('off', 'Offset along the normal', 'Offset searah normal', 'mm', 0, { show: (p) => p.plane !== 'XY' || p.at === 'value' }), N('u', 'Centre (1st axis)', 'Pusat (sumbu 1)', 'mm', 0), N('v', 'Centre (2nd axis)', 'Pusat (sumbu 2)', 'mm', 0)],
-    label: (p) => p.prof === 'ents' ? `${(p.ents || []).length} ${L('entities', 'entitas')} · ${p.plane}` : `${{ rect: `${L('Rectangle', 'Persegi')} ${p.W}×${p.Hh}`, circle: `${L('Circle', 'Lingkaran')} Ø${p.D}`, slot: `Slot ${p.W}×${p.Hh}`, poly: `${p.n}-${L('gon', 'gon')} Ø${p.D}` }[p.prof]} · ${p.plane}` },
+    label: (p) => p.prof === 'ents' ? `${(p.ents || []).length} ${L('entities', 'entitas')} · ${p.plane}` : p.prof === 'spline' ? `${L('Spline', 'Spline')} ${s21SplinePts(p.pts).length} ${L('points', 'titik')} · ${p.plane}` : `${{ rect: `${L('Rectangle', 'Persegi')} ${p.W}×${p.Hh}`, circle: `${L('Circle', 'Lingkaran')} Ø${p.D}`, slot: `Slot ${p.W}×${p.Hh}`, poly: `${p.n}-${L('gon', 'gon')} Ø${p.D}`, ellipse: `${L('Ellipse', 'Elips')} Ø${p.D}×${p.d}` }[p.prof]} · ${p.plane}` },
   push: { en: 'Push/Pull', id: 'Push/Pull', fields: [N('dist', 'Distance (negative = other side)', 'Jarak (negatif = arah sebaliknya)', 'mm', 10, { min: -2000 }), S('op', 'Result', 'Hasil', OPS, 'add'), S('both', 'Direction', 'Arah', [['one', ['One side', 'Satu sisi']], ['both', ['Both sides (symmetric)', 'Dua sisi (simetris)']]], 'one')],
     label: (p) => `${p.op === 'cut' ? L('Cut', 'Potong') : L('Extrude', 'Tarik')} ${p.dist} mm${p.both === 'both' ? ' ⇅' : ''}` },
   hole: { en: 'Hole', id: 'Hole', fields: [S('type', 'Type', 'Jenis', [['simple', ['Simple', 'Biasa']], ['clear', ['Clearance for a bolt (ISO 273)', 'Lubang baut (ISO 273)']], ['cbore', ['Counterbore', 'Counterbore']], ['tap', ['Tapped ISO M', 'Ulir ISO M']]], 'simple'),
@@ -6911,6 +6916,9 @@ async function buildPart(pArg) {
   const apply = (tool, op) => { if (!body) { if (op === 'cut') throw new Error(L('Nothing to cut yet: start with Shape.', 'Belum ada yang bisa dipotong: mulai dengan Shape.')); body = tool.clone(); }
     else body = op === 'cut' ? body.cut(tool.clone()) : body.fuse(tool.clone()); lastTool = tool; lastOp = op; };
   const profile = (s) => {
+    /* S21: an ellipse or a closed spline. Both are kernel curves (ellipse arcs, exact cubic Béziers through the
+       points), and both go through the same plane/extrude/revolve path as every other sketch. */
+    if (s.prof === 'ellipse' || s.prof === 'spline') return s21Sketch(R, s).translate(+s.u || 0, +s.v || 0);
     /* P1a: a sketch drawn from lines and arcs. The kernel gets real lines and real three-point arcs, not a
        polygon, so a bore drawn as an arc stays round in STEP; only the largest closed loop is extruded. */
     if (s.prof === 'ents') { const d = p1Drawing(R, s.ents || []);
@@ -6986,8 +6994,8 @@ async function buildPart(pArg) {
     if (!tgt || tgt.type !== 'sketch') { dimErr[d.id] = L('Pick the sketch this dimension drives: it must be a Sketch step above.', 'Pilih sketch yang diatur dimensi ini: harus langkah Sketch yang sudah ada.'); continue; }
     if (!(v > 0)) { dimErr[d.id] = L('A dimension must be greater than 0.', 'Dimensi harus lebih besar dari 0.'); continue; }
     if (d.p.param === 'n' && (!(v >= 3) || Math.round(v) !== v)) { dimErr[d.id] = L('Sides must be a whole number, 3 or more.', 'Jumlah sisi harus bilangan bulat, 3 atau lebih.'); continue; }
-    const needs = { W: ['rect', 'slot'], Hh: ['rect', 'slot'], D: ['circle', 'poly'], n: ['poly'] }[d.p.param];
-    if (needs && !needs.includes(tgt.p.prof)) { dimErr[d.id] = L(`That sketch is a ${tgt.p.prof === 'poly' ? 'polygon' : tgt.p.prof === 'slot' ? 'slot' : tgt.p.prof === 'circle' ? 'circle' : 'rectangle'}, which has no ${d.p.param === 'n' ? 'side count' : d.p.param === 'D' ? 'diameter' : d.p.param === 'W' ? 'width' : 'height'} to drive.`, `Sketch itu ${tgt.p.prof === 'poly' ? 'poligon' : tgt.p.prof === 'slot' ? 'slot' : tgt.p.prof === 'circle' ? 'lingkaran' : 'persegi'}, tidak punya dimensi itu untuk diatur.`); continue; }
+    const needs = { W: ['rect', 'slot'], Hh: ['rect', 'slot'], D: ['circle', 'poly', 'ellipse'], n: ['poly'] }[d.p.param];
+    if (needs && !needs.includes(tgt.p.prof)) { dimErr[d.id] = L(`That sketch is a ${tgt.p.prof === 'poly' ? 'polygon' : tgt.p.prof === 'slot' ? 'slot' : tgt.p.prof === 'circle' ? 'circle' : tgt.p.prof === 'ellipse' ? 'ellipse' : tgt.p.prof === 'spline' ? 'spline' : 'rectangle'}, which has no ${d.p.param === 'n' ? 'side count' : d.p.param === 'D' ? 'diameter' : d.p.param === 'W' ? 'width' : 'height'} to drive.`, `Sketch itu ${tgt.p.prof === 'poly' ? 'poligon' : tgt.p.prof === 'slot' ? 'slot' : tgt.p.prof === 'circle' ? 'lingkaran' : tgt.p.prof === 'ellipse' ? 'elips' : tgt.p.prof === 'spline' ? 'spline' : 'persegi'}, tidak punya dimensi itu untuk diatur.`); continue; }
     (dims[tgt.id] = dims[tgt.id] || {})[d.p.param] = v;
   }
   for (const ft of p.features) {
@@ -7004,6 +7012,9 @@ async function buildPart(pArg) {
         apply(t, body ? (q.op || 'add') : 'add');
       } else if (ft.type === 'sketch') {
         const driven = { ...q, ...(dims[ft.id] || {}) };
+        /* S21: an ellipse or spline profile is checked here, so the tree marks the sketch step that is wrong, not
+           only the extrude that would have used it. */
+        if (driven.prof === 'ellipse' || driven.prof === 'spline') s21Check(driven);
         sketch = { s: driven, at: sketchAt(driven) }; sketches.push(sketch);
         /* v67: for the SolidWorks macro. Guarded so buildPart also runs where SW_AT does not exist (the tests
            lift this function out of the page), instead of failing the sketch step with "SW_AT is not defined". */
@@ -7538,6 +7549,8 @@ function pform(type, p, onOk, okLabel, onCancel) {
       const lab = h('label', null, h('span', null, L(x.en, x.id)));
       if (x.t === 'num') lab.append(h('span', { class: 'pnum' }, h('input', { type: 'number', inputmode: 'decimal', value: p[x.k], step: x.step || 'any', min: x.min ?? 0, 'data-k': x.k,
         oninput: (e) => { p[x.k] = e.target.value === '' ? '' : Number(e.target.value); ghost(); } }), x.unit ? h('em', null, x.unit) : null));
+      else if (x.t === 'txt') lab.append(h('span', { class: 'pnum' }, h('input', { type: 'text', value: p[x.k] ?? x.def ?? '', 'data-k': x.k, spellcheck: 'false',
+        oninput: (e) => { p[x.k] = e.target.value; ghost(); } })));
       else lab.append(h('select', { 'data-k': x.k, onchange: (e) => { p[x.k] = e.target.value; draw(); ghost(); } }, x.opts.map(([v, t]) => h('option', { value: v, selected: v === p[x.k] }, L(...t)))));
       box.append(lab); });
     box.append(h('div', { class: 'pact' }, h('span', { class: 'skp', id: 'skPrev', hidden: true }),
@@ -7919,6 +7932,65 @@ function p1Drawing(R, ents) {
 }
 /* ---- end P1a helpers */
 
+/* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
+ * Both are real OpenCascade geometry, never a polygon stand-in: the ellipse is two ellipse arcs, the closed spline is
+ * a chain of exact cubic Bézier segments through every point (Catmull–Rom tangents: the curve passes through each
+ * point and the joins are smooth), closed on itself. They go through the same profile() path every other sketch
+ * uses, so Extrude, Revolve, Sweep, Loft and the surface steps build from them and the tree keeps the step.
+ * A profile that cannot be built is refused with the reason; nothing is silently approximated into another shape. */
+/** `0,20; 20,0; 0,-20` → [[0,20],[20,0],[0,-20]]; anything that is not a pair of numbers is not a point */
+function s21SplinePts(txt) {
+  return String(txt == null ? '' : txt).split(/[;\n]+/).map((s) => s.trim()).filter(Boolean)
+    .map((s) => s.split(/[\s,]+/).filter(Boolean).map(Number))
+    .filter((p) => p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+    .map((p) => [p[0], p[1]]);
+}
+/** do two closed-loop segments cross? a spline through a self-crossing loop has no single inside to extrude */
+function s21SplineSelfCross(pts) {
+  const n = pts.length, seg = (a, b, c, d) => {
+    const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    const o1 = o(a, b, c), o2 = o(a, b, d), o3 = o(c, d, a), o4 = o(c, d, b);
+    return ((o1 > 0 && o2 < 0) || (o1 < 0 && o2 > 0)) && ((o3 > 0 && o4 < 0) || (o3 < 0 && o4 > 0));
+  };
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    if (i === j || (i + 1) % n === j || (j + 1) % n === i) continue;
+    if (seg(pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n])) return true;
+  }
+  return false;
+}
+/** the checks both the sketch step and the build use: a bad profile is refused at the step that holds it */
+function s21Check(s) {
+  if (s.prof === 'ellipse') {
+    const a = +s.D / 2, b = +s.d / 2;
+    if (!(a > 0) || !(b > 0)) throw new Error(L('An ellipse needs its major and minor diameter above 0 mm.', 'Elips butuh diameter besar dan kecil di atas 0 mm.'));
+    if (b > a + 1e-9) throw new Error(L('The minor diameter is larger than the major one: swap the two values.', 'Diameter kecil lebih besar dari diameter besar: tukar kedua nilainya.'));
+    return null;
+  }
+  const pts = s21SplinePts(s.pts);
+  if (pts.length < 3) throw new Error(L(`A closed spline needs at least 3 points; this has ${pts.length}. Write them as x,y; x,y; …`, `Spline tertutup butuh minimal 3 titik; ini ada ${pts.length}. Tulis sebagai x,y; x,y; …`));
+  for (let i = 0; i < pts.length; i++) {
+    const q = pts[(i + 1) % pts.length];
+    if (Math.hypot(pts[i][0] - q[0], pts[i][1] - q[1]) < 1e-6) throw new Error(L(`Points ${i + 1} and ${(i + 1) % pts.length + 1} are the same point: remove the duplicate.`, `Titik ${i + 1} dan ${(i + 1) % pts.length + 1} sama: hapus duplikatnya.`));
+  }
+  if (s21SplineSelfCross(pts)) throw new Error(L('The points make the spline cross itself, so it has no inside to extrude. Reorder or move the points.', 'Titik-titik itu membuat spline memotong dirinya sendiri, jadi tidak ada bagian dalam untuk ditarik. Urutkan ulang atau geser titiknya.'));
+  return pts;
+}
+function s21Ellipse(R, s) { s21Check(s); return R.drawEllipse(+s.D / 2, +s.d / 2); }
+function s21Spline(R, s) {
+  const pts = s21Check(s), n = pts.length;
+  let pen = R.draw().movePointerTo([pts[0][0], pts[0][1]]);
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    pen = pen.cubicBezierCurveTo([p2[0], p2[1]], [c1[0], c1[1]], [c2[0], c2[1]]);
+  }
+  return pen.close();
+}
+const s21Sketch = (R, s) => (s.prof === 'ellipse' ? s21Ellipse(R, s) : s21Spline(R, s));
+const s21Curve = (s) => s.prof === 'ellipse' || s.prof === 'spline';
+/* ---- end S21 helpers */
+
 /* ---- P1b: sketch correction. Every fix is a proposal; nothing moves until the engineer accepts it. ---- */
 const P1B_DEG = 3, P1B_MM = 0.5;
 const p1bNorm = (d) => { let a = ((d % 360) + 360) % 360; return a > 180 ? a - 360 : a; };
@@ -8091,7 +8163,7 @@ function hideSkLabel() { const el = $('#skLabel'); if (el) el.remove(); }
 function sketchPreviewNote(arm, ok) {
   const n = document.getElementById('skPrev'); if (!n) return;
   if (!arm || !ok) { n.hidden = true; n.textContent = ''; return; }
-  const p = arm.p, size = (p.prof === 'circle' || p.prof === 'poly') ? 'Ø ' + f(+p.D || 0, 1) : f(+p.W || 0, 1) + ' × ' + f(+p.Hh || 0, 1);
+  const p = arm.p, size = p.prof === 'ellipse' ? `Ø ${f(+p.D || 0, 1)} × ${f(+p.d || 0, 1)}` : p.prof === 'spline' ? `${s21SplinePts(p.pts).length} ${L('points', 'titik')}` : (p.prof === 'circle' || p.prof === 'poly') ? 'Ø ' + f(+p.D || 0, 1) : f(+p.W || 0, 1) + ' × ' + f(+p.Hh || 0, 1);
   n.hidden = false; n.textContent = L('Preview', 'Pratinjau') + ': ' + size + ' · ' + L('not saved yet', 'belum disimpan');
 }
 async function buildSketchGhost() {
@@ -8375,7 +8447,7 @@ function renderSketchPanel(pr) {
   const tools = [['line', L('Line', 'Garis')], ['cline', L('Centerline', 'Centerline')], ['arc3', L('Arc 3-point', 'Busur 3 titik')],
     ['arcCenter', L('Arc centre', 'Busur pusat')], ['arcTangent', L('Tangent arc', 'Busur tangen')], ['point', L('Point', 'Titik')],
     ['fillet', L('Sketch Fillet', 'Fillet sketch')], ['offset', L('Offset', 'Offset')], ['trim', L('Trim', 'Trim')], ['extend', L('Extend', 'Extend')],
-    ['dim', L('Smart Dimension', 'Smart Dimension')], ['rel', L('Add Relation', 'Tambah relasi')]];
+    ['dim', L('Smart Dimension', 'Smart Dimension')], ['rel', L('Add Relation', 'Tambah relasi')], ['fix', L('Sketch Correction', 'Koreksi sketch')]];
   pr.append(h('h2', null, h('span', null, a.n || L('Sketch', 'Sketch')), h('span', { class: 'phd' }, h('small', null, 'P1a'))));
   pr.append(h('div', { class: 'sktools', role: 'toolbar', 'aria-label': L('Sketch tools', 'Alat sketch') },
     tools.map(([k, label]) => h('button', { class: 'chip' + (a.tool === k ? ' primary' : ''), 'aria-pressed': a.tool === k ? 'true' : 'false', onclick: () => { a.tool = k; a.pend = []; a.pen = []; skSel = []; a.note = null; renderCad(); requestAnimationFrame(skOverlay); } }, label))));
@@ -8389,7 +8461,9 @@ function renderSketchPanel(pr) {
     row(L('Dimension value', 'Nilai dimensi'), h('input', { type: 'number', min: 0.1, step: 'any', value: a.val, oninput: (e) => { a.val = e.target.value; } }))));
   if (a.tool === 'rel') pr.append(h('div', { class: 'sktools' }, ['horizontal', 'vertical', 'coincident', 'equal', 'parallel', 'perpendicular', 'tangent', 'fix']
     .map((k) => h('button', { class: 'chip', onclick: () => skRelation(k) }, k))));
-  pr.append(        h('p', { class: 'hint' }, L(`Click in the viewport to draw. Line and Centerline chain until you double-click or press Esc. ${skSel.length ? skSel.length + ' selected.' : ''}`, `Klik di viewport untuk menggambar. Line dan Centerline menyambung sampai kamu dobel-klik atau tekan Esc. ${skSel.length ? skSel.length + ' terpilih.' : ''}`)));
+  pr.append(        h('p', { class: 'hint' }, a.tool === 'fix'
+    ? L('Sketch Correction reads the entities you have drawn. Every fix appears below as a proposal; accept, reject or undo it, and a size you typed is never changed.', 'Koreksi sketch membaca entitas yang sudah kamu gambar. Tiap perbaikan muncul di bawah sebagai usulan; terima, tolak, atau batalkan, dan ukuran yang kamu ketik tidak pernah diubah.')
+    : L(`Click in the viewport to draw. Line and Centerline chain until you double-click or press Esc. ${skSel.length ? skSel.length + ' selected.' : ''}`, `Klik di viewport untuk menggambar. Line dan Centerline menyambung sampai kamu dobel-klik atau tekan Esc. ${skSel.length ? skSel.length + ' terpilih.' : ''}`)));
   if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
   pr.append(ents.length ? h('div', { class: 'skstat ' + dof.status }, h('b', null, dof.status === 'fully' ? L('Fully defined', 'Fully defined') : dof.status === 'over' ? L('Over-defined', 'Over-defined') : L('Under-defined', 'Under-defined')),
     h('span', null, dof.status === 'under' ? L(`${dof.dof} free parameter(s)`, `${dof.dof} parameter bebas`) : dof.status === 'over' ? L(`${-dof.dof} redundant relation(s)`, `${-dof.dof} relasi berlebih`) : L('every parameter is fixed', 'semua parameter terkunci')),
@@ -8743,8 +8817,8 @@ const RIBBON = [
       T('Arc', 'arc', 'on', '3-point arc: click start, end, then a point the arc passes through. Centre-point and tangent arcs are in the sketch panel.', 'Busur 3 titik: klik awal, akhir, lalu satu titik yang dilewati busur. Busur titik-pusat dan tangen ada di panel sketch.', 'Centerpoint Arc, 3 Point Arc, Tangent Arc', { sk: 'arc3' }),
       T('Slot', 'slot', 'on', 'Straight slot by length and width.', 'Slot lurus dengan panjang dan lebar.', 'Straight Slot, Center Point Slot', P('sketch', { prof: 'slot' })),
       T('Polygon', 'poly', 'on', 'Regular polygon by sides and circumscribed diameter.', 'Poligon beraturan dengan jumlah sisi dan diameter luar.', 'Inscribed / Circumscribed Polygon', P('sketch', { prof: 'poly' })),
-      T('Spline', 'spline', 'no', 'Smooth curve through points.', 'Kurva halus melalui titik-titik.', 'Fit Point Spline, Control Point Spline'),
-      T('Ellipse', 'ellipse', 'no', 'Ellipse and partial ellipse.', 'Elips dan elips sebagian.', 'Conic'),
+      T('Spline', 'spline', 'on', 'A closed, smooth spline through the points you type: the kernel builds it as exact cubic Bézier segments through every point, so it extrudes, revolves and sweeps like any other profile. A self-crossing list of points is refused with its reason.', 'Spline tertutup dan halus melalui titik yang kamu ketik: kernel membangunnya sebagai segmen Bézier kubik tepat melalui tiap titik, jadi bisa ditarik, diputar, dan disapu seperti profil lain. Daftar titik yang memotong dirinya sendiri ditolak dengan alasannya.', 'Fit Point Spline, Style Spline', P('sketch', { prof: 'spline' })),
+      T('Ellipse', 'ellipse', 'on', 'A whole ellipse from its major and minor diameter, drawn by the kernel as ellipse arcs (not a polygon), then extruded or revolved. A minor diameter larger than the major one is refused.', 'Elips utuh dari diameter besar dan kecilnya, digambar kernel sebagai busur elips (bukan poligon), lalu ditarik atau diputar. Diameter kecil yang lebih besar dari diameter besar ditolak.', 'Ellipse, Conic', P('sketch', { prof: 'ellipse' })),
       T('Point', 'point', 'on', 'Sketch point, for references and for a hole position later.', 'Titik sketch, untuk referensi dan posisi lubang nanti.', 'Sketch Point', { sk: 'point' }),
       T('Centerline', 'cline', 'on', 'Construction line: drawn, never part of the profile. Use it as a mirror line or a revolve axis.', 'Garis konstruksi: digambar, tidak pernah menjadi bagian profil. Pakai sebagai garis cermin atau sumbu revolve.', 'Construction Line', { sk: 'cline' }),
       T('Text', 'text', 'no', 'Text in a sketch, to emboss or cut.', 'Teks di sketch, untuk timbul atau potong.', 'Sketch Text')]],
@@ -8757,7 +8831,7 @@ const RIBBON = [
       T('Sketch Pattern', 'spat', 'mk1', 'Linear or circular pattern inside the sketch.', 'Pola linear atau melingkar di dalam sketch.', 'Linear / Circular Sketch Pattern')]],
     ['Constrain', [T('Smart Dimension', 'dim', 'on', 'Drive one size of a sketch. The dimension becomes a step in the tree: change it and the whole part rebuilds.', 'Mengatur satu ukuran sketch. Dimensi menjadi langkah di pohon: ubah nilainya dan seluruh part dibangun ulang.', 'Sketch Dimension', P('dim')),
       T('Add Relation', 'rel', 'on', 'Coincident, horizontal, vertical, parallel, perpendicular, tangent, equal, fix — click the lines/arcs, then the relation.', 'Coincident, horizontal, vertikal, sejajar, tegak lurus, tangen, sama, fix — klik garis/busurnya, lalu relasinya.', 'Constraints, Geometric Constraints', { sk: 'rel' })]],
-    ['IDRIS', [T('Sketch Correction', 'fix', 'mk1', 'IDRIS finds lines that do not meet, overlap, hang loose or are almost horizontal/vertical, shows each fix and applies it after you confirm. Built together with the free-line sketcher.', 'IDRIS menemukan garis yang tidak menyambung, bertumpuk, menggantung, atau hampir horizontal/vertikal, menunjukkan perbaikannya, dan menerapkannya setelah kamu setujui. Dibangun bersama sketcher garis bebas.', 'Repair Sketch, Check Sketch for Feature', null, ALT_SK, true)]]]],
+    ['IDRIS', [T('Sketch Correction', 'fix', 'on', 'Opens the line-and-arc sketcher on its correction list: IDRIS finds lines that do not meet, overlap, hang loose or are almost horizontal/vertical, and every fix is a proposal you accept, reject or undo. Nothing moves until you say so, and the sketch is rebuilt by the kernel when you save it.', 'Membuka sketcher garis dan busur pada daftar koreksinya: IDRIS menemukan garis yang tidak menyambung, bertumpuk, menggantung, atau hampir horizontal/vertikal, dan tiap perbaikan adalah usulan yang kamu terima, tolak, atau batalkan. Tidak ada yang bergerak sampai kamu setuju, dan sketch dibangun kernel saat kamu simpan.', 'Repair Sketch, Check Sketch for Feature', { sk: 'fix' }, ['Open the sketcher', 'Buka sketcher', { sk: 'ents' }], true)]]]],
   ['feat', 'Features', 'Fitur', [
     ['Boss / Base', [T('Extruded Boss/Base', 'ext', 'on', 'Extrude the last sketch and add it to the body, one side or both.', 'Tarik sketch terakhir dan tambahkan ke body, satu sisi atau dua sisi.', 'Extrude, Pad', P('push', { op: 'add' })),
       T('Revolved Boss/Base', 'rev', 'on', 'Turn the last sketch around X, Y or Z, up to 360\u00b0.', 'Putar sketch terakhir mengelilingi X, Y, atau Z, sampai 360\u00b0.', 'Revolve, Shaft', P('revolve')),
@@ -8794,7 +8868,7 @@ const RIBBON = [
       T('Move/Copy Body', 'move', 'on', 'Move the body by X, Y, Z.', 'Geser body sejauh X, Y, Z.', 'Translate, Move', P('bodies', { kind: 'move' })),
       T('Split', 'split', 'no', 'Split a body with a plane.', 'Belah body dengan bidang.', 'Split Body'),
       T('Scale', 'scale', 'no', 'Scale the body.', 'Skala body.', ''),
-      T('Thicken', 'thick', 'no', 'Turn a surface into a solid. Active as Surface → Thicken: one tool, one name, so this copy stays grey and sends you there.', 'Ubah surface menjadi solid. Aktif sebagai Surface → Thicken: satu alat satu nama, jadi salinan ini tetap abu-abu dan mengarah ke sana.', '')]],
+      T('Thicken', 'thick', 'no', 'Turn a surface into a solid. It is one tool with one name: the working copy is Surface → Thicken, and the button below opens exactly that tool. This grey copy is not a second implementation.', 'Ubah surface menjadi solid. Ini satu alat dengan satu nama: yang berjalan adalah Surface → Thicken, dan tombol di bawah membuka alat itu. Salinan abu-abu ini bukan implementasi kedua.', '', null, ['Open Surface → Thicken', 'Buka Surface → Thicken', { part: 'surfthick' }])]],
     ['Reference', [T('Plane', 'plane', 'mk1', 'Reference plane by offset, angle or three points. Today: sketch on XY, XZ, YZ with an offset.', 'Bidang referensi dengan offset, sudut, atau tiga titik. Saat ini: sketch di XY, XZ, YZ dengan offset.', 'Construction Plane, Datum Plane', null, ALT_SK),
       T('Axis', 'axis', 'mk1', 'Reference axis for revolves and patterns.', 'Sumbu referensi untuk revolve dan pola.', 'Datum Axis'),
       T('Coordinate System', 'csys', 'no', 'Extra coordinate system.', 'Sistem koordinat tambahan.', 'Datum CSYS')]]]],
