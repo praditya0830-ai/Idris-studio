@@ -6855,6 +6855,8 @@ const FEAT = {
     label: (p) => `${L('Boundary', 'Batas')} ${(p.u || []).length} × ${(p.v || []).length}` },
   boundboss: { en: 'Boundary Boss/Base', id: 'Boundary Boss/Base', fields: [N('t', 'Thickness', 'Tebal', 'mm', 3, { min: 0.1 })],
     label: (p) => `${L('Boundary boss', 'Batas boss')} ${(p.u || []).length} × ${(p.v || []).length} · ${p.t} mm` },
+  vfillet: { en: 'Variable Fillet', id: 'Variable Fillet', fields: [N('r1', 'Radius at one end', 'Radius di ujung satu', 'mm', 2, { min: 0.1 }), N('r2', 'Radius at the other end', 'Radius di ujung lain', 'mm', 6, { min: 0.1 }), N('edge', 'Edge', 'Tepi', '', 0, { step: 1 })],
+    label: (p) => `${L('Variable fillet', 'Fillet variabel')} R${p.r1}→${p.r2} mm · ${L('edge', 'tepi')} ${(+p.edge || 0) + 1}` },
   surfplane: { en: 'Planar Surface', id: 'Planar Surface', get fields() {
       const o = sketchOptions();
       return [S('sketch', 'Closed loop sketch', 'Sketch loop tertutup', o, o[0][0])]; },
@@ -7065,6 +7067,14 @@ async function buildPart(pArg) {
         if (!body) throw new Error(L('Edges need a body.', 'Tepi butuh body.'));
         const [mn, mx] = bb(), r = pos(q.r), fl = q.which === 'vertical' ? (e) => e.inDirection('Z') : q.which === 'top' ? (e) => e.inPlane('XY', mx[2]) : q.which === 'bottom' ? (e) => e.inPlane('XY', mn[2]) : undefined;
         body = q.mode === 'chamfer' ? body.chamfer(r, fl) : body.fillet(r, fl);
+      } else if (ft.type === 'vfillet') {
+        /* S21l: one edge, a radius at each end, built by the kernel's fillet builder and measured. */
+        if (!body) throw new Error(L('Variable Fillet rounds an edge of a body: build one first (a primitive or an Extrude).', 'Variable Fillet membulatkan tepi sebuah body: bangun dulu (primitive atau Extrude).'));
+        const res = s21lVariableFillet(R, body, q.edge, q.r1, q.r2);
+        body = res.shape; lastTool = res.shape; lastOp = 'add';
+        ft.vfil = { edge: res.edge, r1: res.r1, r2: res.r2, constant: res.constant, faces: res.faces, volBefore: res.volBefore, volAfter: res.volAfter, removed: res.removed };
+        ft.note = L(`Variable fillet on edge ${res.edge + 1}: ${f(res.r1, 1)} mm at one end and ${f(res.r2, 1)} mm at the other${res.constant ? ', equal at both ends so the kernel built the constant fillet' : ''}, ${res.faces} faces. The kernel removed ${f(res.removed / 1000, 3)} cm³: ${f(res.volAfter / 1000, 3)} cm³ from ${f(res.volBefore / 1000, 3)} cm³.`,
+          `Variable fillet di tepi ${res.edge + 1}: ${f(res.r1, 1)} mm di ujung satu dan ${f(res.r2, 1)} mm di ujung lain${res.constant ? ', sama di kedua ujung jadi kernel membangun fillet konstan' : ''}, ${res.faces} muka. Kernel membuang ${f(res.removed / 1000, 3)} cm³: ${f(res.volAfter / 1000, 3)} cm³ dari ${f(res.volBefore / 1000, 3)} cm³.`);
       } else if (ft.type === 'repeat') {
         if (!lastTool) throw new Error(L('Repeat copies the feature before it (Shape, Push/Pull or Hole).', 'Repeat menyalin fitur sebelumnya (Shape, Push/Pull, atau Hole).'));
         const base = lastTool, op = lastOp;
@@ -8423,6 +8433,43 @@ function s21kBoundarySolid(R, uCurves, vCurves, thickness, body) {
   return { shape: good.shape, u: res.u, v: res.v, uArea: res.uArea, vArea: res.vArea, t, volBefore, volAfter: good.volAfter, added: good.added, faces: good.shape.faces.length, walls: good.walls };
 }
 /* ---- end S21k helpers ---- */
+/* ---- S21l: Variable Fillet. One edge, a radius at each end, built by the kernel's own fillet builder
+ * (BRepFilletAPI_MakeFillet with a radius law) — never a loft of hand-made sections. The step records the volume the
+ * kernel removed and the body before and after; two equal radii give exactly the volume of the constant fillet, which
+ * is what the test measures. A radius the edge cannot carry is refused by the kernel's own failure, with both radii
+ * named, and nothing is changed. tests/s21l-varfillet.test.mjs lifts this block and runs it on the kernel. ---- */
+const s21lMm = (v) => (Number.isFinite(+v) ? (+v).toFixed(1) + ' mm' : String(v));
+/** the kernel's own validity check, kept in this block so it can be lifted on its own */
+function s21lValid(R, shape) {
+  const oc = R.getOC();
+  const a = new oc.BRepCheck_Analyzer(shape.wrapped, true, false);
+  const good = !!(a.IsValid_2 ? a.IsValid_2() : a.IsValid_1 ? a.IsValid_1() : a.IsValid());
+  if (a.delete) a.delete();
+  return good;
+}
+function s21lVariableFillet(R, body, edgeIndex, r1, r2) {
+  if (!body) throw new Error('Variable Fillet rounds an edge of a body: build one first.');
+  const oc = R.getOC();
+  if (!oc || !oc.BRepFilletAPI_MakeFillet) throw new Error('This kernel has no fillet builder.');
+  const edges = (body.edges || []).filter(Boolean);
+  const k = Math.round(+edgeIndex);
+  if (!(Number.isFinite(k) && k >= 0 && k < edges.length)) throw new Error(`Edge ${Number.isFinite(k) ? k + 1 : edgeIndex} is not on this body: it has ${edges.length} edges.`);
+  const a = +r1, b = +r2;
+  if (!(a > 0) || !(b > 0)) throw new Error(`Both radii must be above 0 mm; these are ${s21lMm(r1)} and ${s21lMm(r2)}.`);
+  const volBefore = R.measureVolume(body);
+  const mk = new oc.BRepFilletAPI_MakeFillet(body.wrapped, oc.ChFi3d_FilletShape.ChFi3d_Rational);
+  let done = false;
+  try { mk.Add(a, b, edges[k].wrapped); mk.Build(); done = mk.IsDone ? !!mk.IsDone() : !!mk.HasResult(); } catch (e) { done = false; }
+  const faulty = mk.NbFaultyContours ? mk.NbFaultyContours() : 0;
+  if (!done || faulty > 0) throw new Error(`The kernel cannot round edge ${k + 1} from ${s21lMm(a)} to ${s21lMm(b)}: those radii do not fit that edge. Use smaller ones.`);
+  const shape = R.cast(mk.Shape());
+  if (!shape) throw new Error(`The fillet on edge ${k + 1} came back empty, so nothing was changed.`);
+  const volAfter = R.measureVolume(shape), removed = volBefore - volAfter;
+  if (!(removed > 1e-9)) throw new Error(`Rounding edge ${k + 1} from ${s21lMm(a)} to ${s21lMm(b)} removed no material, so nothing was changed.`);
+  if (!s21lValid(R, shape)) throw new Error(`The kernel built a fillet on edge ${k + 1} from ${s21lMm(a)} to ${s21lMm(b)} but it does not pass its validity check, so nothing was changed. Use smaller radii.`);
+  return { shape, edge: k, r1: a, r2: b, constant: !!(mk.IsConstant ? mk.IsConstant(1) : Math.abs(a - b) < 1e-9), faces: shape.faces.length, volBefore, volAfter, removed };
+}
+/* ---- end S21l helpers ---- */
 
 /* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
  * Both are real OpenCascade geometry, never a polygon stand-in: the ellipse is two ellipse arcs, the closed spline is
@@ -8974,6 +9021,35 @@ function renderBoundPanel(pr) {
   } }, boss ? L('Build boss', 'Bangun boss') : L('Build', 'Bangun')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
   if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
 }
+/* S21l: the Variable Fillet panel. It lists the body's edges with the ends the kernel reports; the picked edge is
+ * filleted from the first radius at one end to the second at the other. A viewport click picks the edge nearest the
+ * pointer (the same picker Boundary Surface uses), and the list stays for edges that overlap on screen. */
+function renderVarPanel(pr) {
+  const a = partArm, p = a.p;
+  if (p.edge == null) p.edge = 0;
+  if (p.r1 == null) p.r1 = 2;
+  if (p.r2 == null) p.r2 = 6;
+  const edges = (partShape && partShape.edges) || [], mm = (v) => f(v, 1);
+  pr.append(h('h2', null, h('span', null, L('Variable Fillet', 'Variable Fillet')), h('span', { class: 'phd' }, h('small', null, 'S21l'))));
+  pr.append(h('p', { class: 'hint' }, L('Pick one edge and give a radius at each end. The kernel builds the fillet with that radius law and the step records the material it removed and the volume before and after, all measured. Two equal radii build the constant fillet. A radius the edge cannot carry is refused with both radii named, and nothing is changed. Click an edge in the viewport or pick it below.', 'Pilih satu tepi lalu beri radius di masing-masing ujung. Kernel membangun fillet dengan hukum radius itu dan langkahnya mencatat material yang dibuang serta volume sebelum dan sesudah, semuanya hasil ukur. Dua radius yang sama membangun fillet konstan. Radius yang tidak muat di tepi itu ditolak dengan kedua radiusnya disebut, dan tidak ada yang berubah. Klik tepi di viewport atau pilih di daftar bawah.')));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Radius at the first end', 'Radius di ujung pertama')),
+    h('span', { class: 'pnum' }, h('input', { type: 'number', min: 0.1, step: 'any', 'data-k': 'r1', value: p.r1, oninput: (e) => { partArm.p.r1 = e.target.value; } }), h('em', null, 'mm'))),
+  h('label', { class: 'skrow' }, h('span', null, L('Radius at the second end', 'Radius di ujung kedua')),
+    h('span', { class: 'pnum' }, h('input', { type: 'number', min: 0.1, step: 'any', 'data-k': 'r2', value: p.r2, oninput: (e) => { partArm.p.r2 = e.target.value; } }), h('em', null, 'mm'))));
+  pr.append(h('h3', null, L('Edges of the body', 'Tepi body') + ` (${edges.length})`));
+  pr.append(edges.length ? h('ol', { class: 'sklist' }, edges.map((e, i) => {
+    const ends = s21gEdgePts(e);
+    const txt = ends.length === 2 ? `(${mm(ends[0][0])}, ${mm(ends[0][1])}, ${mm(ends[0][2])}) → (${mm(ends[1][0])}, ${mm(ends[1][1])}, ${mm(ends[1][2])})` : '—';
+    return h('li', { class: (+p.edge === i ? 'on' : ''), 'data-var': String(i), onclick: () => { partArm.p.edge = i; renderCad(); } },
+      h('b', null, `${i + 1}. ${e.geomType}`), h('span', null, txt));
+  })) : h('p', { class: 'hint' }, L('No body yet: build one first (a primitive or an Extrude), then this panel lists its edges.', 'Belum ada body: bangun dulu (primitive atau Extrude), lalu panel ini mendaftar tepinya.')));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-var-go': '1', onclick: () => {
+    if (!edges.length) { a.note = L('Pick an edge of the body first.', 'Pilih dulu tepi body.'); return renderCad(); }
+    state.part.features.push({ id: Date.now().toString(36), type: 'vfillet', p: { edge: +partArm.p.edge || 0, r1: +(partArm.p.r1 || 2), r2: +(partArm.p.r2 || 6) } });
+    partSel = state.part.features.length - 1; partArm = null; rebuildPart();
+  } }, L('Build fillet', 'Bangun fillet')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
+  if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
+}
 { const cv = $('#cv');
   cv.addEventListener('pointerdown', (e) => {
     if (!partArm || partBusy || e.button > 0) return;
@@ -8997,6 +9073,13 @@ function renderBoundPanel(pr) {
       if (i == null) return;
       e.preventDefault(); e.stopPropagation();
       partArm.p.face = i; renderCad();
+      return;
+    }
+    if (partArm.type === 'vfillet') {
+      const i = boundPickIndex(e.clientX, e.clientY);
+      if (i == null) return;
+      e.preventDefault(); e.stopPropagation();
+      partArm.p.edge = i; renderCad();
       return;
     }
     if (partArm.type === 'surfbound' || partArm.type === 'boundboss') {
@@ -9413,6 +9496,7 @@ function renderPartCad() {
   else if (partArm && partArm.type === 'surftrim') { renderTrimPanel(pr); }
   else if (partArm && partArm.type === 'delface') { renderDelPanel(pr); }
   else if (partArm && (partArm.type === 'surfbound' || partArm.type === 'boundboss')) { renderBoundPanel(pr); }
+  else if (partArm && partArm.type === 'vfillet') { renderVarPanel(pr); }
   else if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
       h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : (TOOL_GROUPS.find((g) => g[0] === partArm.type) || [null, null, ''])[2]),
@@ -9689,7 +9773,7 @@ const RIBBON = [
       T('Sphere', 'sphere', 'on', 'Sphere by diameter.', 'Bola dengan diameter.', 'Primitive Sphere', P('shape', { kind: 'sphere' }))]],
     ['Dress-up', [T('Fillet', 'fillet', 'on', 'Round vertical, top, bottom or all edges.', 'Bulatkan tepi tegak, atas, bawah, atau semua.', 'Edge Fillet, Round', P('edge', { mode: 'fillet' })),
       T('Chamfer', 'chamfer', 'on', 'Bevel vertical, top, bottom or all edges.', 'Miringkan tepi tegak, atas, bawah, atau semua.', 'Bevel', P('edge', { mode: 'chamfer' })),
-      T('Variable Fillet', 'fillet', 'no', 'Fillet whose radius changes along the edge.', 'Fillet dengan radius berubah sepanjang tepi.', 'Face Fillet, Full Round'),
+      T('Variable Fillet', 'fillet', 'on', 'Round one edge with a radius that changes from one end to the other: pick the edge in the list or in the viewport and give the two radii. The kernel builds the fillet with a radius law (BRepFilletAPI_MakeFillet), two equal radii give exactly the constant fillet, and the step records the material removed and the volume before and after, all measured. A radius that edge cannot carry is refused with both radii named.', 'Bulatkan satu tepi dengan radius yang berubah dari satu ujung ke ujung lain: pilih tepinya di daftar atau di viewport dan beri dua radius. Kernel membangun fillet dengan hukum radius (BRepFilletAPI_MakeFillet), dua radius yang sama persis menghasilkan fillet konstan, dan langkahnya mencatat material yang dibuang serta volume sebelum dan sesudah, semuanya hasil ukur. Radius yang tidak muat di tepi itu ditolak dengan kedua radiusnya disebut.', 'Face Fillet, Full Round', { part: 'vfillet' }),
       T('Shell', 'shell', 'on', 'Hollow the body with an open top or bottom.', 'Kosongkan body dengan sisi atas atau bawah terbuka.', 'Shell', P('wall')),
       T('Draft', 'draft', 'on', 'Taper the \u00b1X or \u00b1Y faces about a neutral plane, so the part leaves the mould.', 'Miringkan muka \u00b1X atau \u00b1Y terhadap bidang netral, supaya part bisa lepas dari cetakan.', 'Draft Angle', P('draft')),
       T('Rib', 'rib', 'on', 'Thin stiffening wall from one open sketch line: thickness across the line, height up from its plane.', 'Dinding tipis penguat dari satu garis sketch terbuka: tebal melintang garis, tinggi naik dari bidangnya.', 'Stiffener, Web', P('rib')),

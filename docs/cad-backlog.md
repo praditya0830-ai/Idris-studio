@@ -42,9 +42,9 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 | Tool | State | What the code has | What is missing | Batch |
 | --- | --- | --- | --- | --- |
 | Boundary Boss/Base | `on` (shipped) | `s21kBoundarySolid`: the same two-direction boundary as Boundary Surface (`s21iBoundary`: the first direction is lofted by the kernel, every curve of the second must land on that loft, and the second direction's own loft is measured when there are two or more) is made into a solid — the patch is offset by the thickness (`BRepOffsetAPI_MakeOffsetShape`), a wall is lofted from each boundary curve of the patch to the matching curve of the offset (`BRepOffsetAPI_ThruSections`), and patch, offset and walls are sewn into one shell (`BRepBuilderAPI_Sewing`) and made a solid (`BRepBuilderAPI_MakeSolid`); both thickness directions are built and the one that adds material to the body — decided by the kernel's volumes — is fused in, and the step records both patch areas and the volume added | the curves come from the **body**, not from loose sketch entities (a sketch is picked up once it is a body, exactly as for Boundary Surface); a patch whose walls cannot be closed into a valid positive-volume solid is refused with the thickness it could not close, and a patch that lies inside the body adds nothing and is refused instead of silently doing nothing | 6 |
-| Variable Fillet | `no` | constant-radius `fillet()` with edge finders | `BRepFilletAPI_MakeFillet` with a radius per point along the edge, plus a way to pick that edge | 7 |
+| Variable Fillet | `on` (shipped) | `s21lVariableFillet`: one edge picked in the viewport or the panel list and a radius at each end, built by the kernel's own fillet builder (`BRepFilletAPI_MakeFillet` with `Add(r1, r2, edge)`, a rational radius law), with the material it removed and the volume before and after measured; two equal radii give exactly the constant fillet's volume (`(1 − π/4)·r²·L` to 1e-6) | a radius at more than two points along the edge (a typed law, or several handles) is not in this batch: the two ends are the law | 7 |
 | Dome | `no` | sphere, cut, fuse | a cap trimmed by the face outline and fused; the honest version is a spherical cap intersected with the face region | 4 |
-| Wrap / Emboss | `no` | nothing | project a sketch onto a face (planar or cylindrical) and thicken along the normals: `BRepProj_Projection` + offset, neither wrapped | 7 |
+| Wrap / Emboss | `no` | nothing | project a sketch onto a face (planar or cylindrical) and thicken along the normals. `BRepProj_Projection` is **not** in the bundled kernel (probed), and `GeomAPI_ProjectPointOnSurf` alone projects points, not curves, so the wrap has to be built from the face's own surface (`sketchOnFace` does this already: `BRep_Tool.Surface` + `GeomLib.To3d` + `BRepLib.BuildCurves3d`) and then offset and walled like Boundary Boss/Base. A planar face is a second path (extrude and cut). Not in batch 7 | 7 (partial) |
 | Reference Plane | `no` | sketches sit on the strings `XY`/`XZ`/`YZ` + offset | a plane registry: `buildPart` and the viewer take a plane object, sketches reference it by id, and the grid follows | 3 |
 | Reference Axis | `no` | patterns turn about a field value | the same registry for axes, and the pattern/revolve fields that can point at one | 3 |
 | Curve Pattern | `no` | `repeat` translates/rotates a feature | replay a feature along a sampled path with orientation and instance culling | 8 |
@@ -266,11 +266,31 @@ written against `R.getOC()` without a new WASM build, and Curvature/Zebra (batch
 `BRepAdaptor_Surface` (its `D2`/`DN` derivatives) instead of the missing `LProp` classes, or wait for a kernel
 rebuild. Every tool still has to pass the same five rules at the top of this document.
 
-### Batch 7 — Variable Fillet, Wrap/Emboss, Text
+### Batch 7 — Variable Fillet (shipped), Wrap/Emboss and Text (still blocked)
 
-Variable Fillet: `BRepFilletAPI_MakeFillet` with a radius law along the picked edge, refused when the radius does
-not fit. Wrap/Emboss and Text: the sketch projected onto a face, then thickened or cut; Text needs the font asset
-first, and the tool must name the font.
+**Shipped: Variable Fillet.** Features → Variable Fillet lists the body's edges (a viewport click picks the nearest
+one, the same picker Boundary Surface uses) and has a radius for each end of the picked edge. The fillet is the
+kernel's own: `BRepFilletAPI_MakeFillet` with `Add(r1, r2, edge)` and a rational radius law — never a loft of
+hand-made sections. The step records the material the kernel removed and the volume before and after, and only
+exists when the returned body passes `BRepCheck_Analyzer`.
+
+Measured on the vertical edge of a 40 × 30 × 20 box: two radii of 5 mm remove 107.3009 mm³, which is
+`(1 − π/4)·5²·20` to 1e-6, so a variable fillet with equal ends is exactly the constant fillet; 2 mm → 6 mm removes
+75.8103 mm³, between the constant 2 mm (17.1682) and 6 mm (154.5133) removals and within 2.5 % of the rolling-ball
+integral `(1 − π/4)·20·(2² + 2·6 + 6²)/3 = 74.3923` — the rational surface is not the exact corner arc at the
+intermediate radii, so the step carries the kernel's 75.8103 and the test asserts the band and the tolerance, not a
+made-up closed form. 100 mm at one end (larger than the 30 mm face it would roll on) is refused by the kernel's own
+validity check with both radii named. Kernel test `tests/s21l-varfillet.test.mjs` (7 checks: the exact equal-radius
+volume, the 2 → 6 band and the B-spline face it must leave behind, the 0 mm and 100 mm refusals, the off-body edge
+index, the no-body refusal, the rebuild twice) and browser test `tests/s21l-varfillet.spec.mjs` (ribbon → box → 12
+edges listed → viewport pick of the top edge → the vertical edge in the list → 5 and 5 mm → Build fillet →
+23 892.70 mm³ of 24 000 mm³, then the 100 mm refusal on the step, no page error).
+
+**Not in this batch, with the reason measured:** Wrap/Emboss needs `BRepProj_Projection`, which the bundled kernel
+does not export (probed), so a wrap has to be built from the face's own surface and then thickened like Boundary
+Boss/Base; Text needs a licensed font asset before any projection can use it. Both stay grey with those reasons in
+their tooltips. The 100 mm refusal above is also how the two-ended law behaves when it does not fit: the kernel
+reports done, the result fails `BRepCheck_Analyzer`, and the step is refused rather than written broken.
 
 ### Batch 8 — Curve Pattern and Fill Pattern
 
@@ -306,12 +326,12 @@ cylinder reports 1/R everywhere within tolerance, a plane reports 0, and the vie
 
 | Capability | In the kernel wrapper today | Needed by |
 | --- | --- | --- |
-| variable-radius fillet | no (`fillet(radius, finder)` only) | Variable Fillet |
+| variable-radius fillet | `BRepFilletAPI_MakeFillet` with `Add(radius, edge)` and `Add(r1, r2, edge)` and a rational shape (used by Variable Fillet); the wrapper's `fillet(radius, finder)` still takes one radius | — |
 | surface filling / boundary | `BRepOffsetAPI_MakeFilling` (used by Filled Surface) and `BRepOffsetAPI_ThruSections` on curves as wires (used by Boundary Surface, which checks the second direction with `BRepExtrema_DistShapeShape`); Boundary Boss/Base adds `BRepOffsetAPI_MakeOffsetShape` for the thickness and walls, `BRepBuilderAPI_Sewing` and `BRepBuilderAPI_MakeSolid`; no true network/Gordon surface | — |
 | trim/split on shells | `BRepAlgoAPI_Splitter` on a face (used by Trim Surface); not on a shell with another shell | Split |
 | heal / remove face | no `ShapeFix_Shape` (the master healer) and no `BRepTools_ReShape`; `ShapeFix_Face`, `ShapeFix_Wire`, `ShapeFix_Solid`, `ShapeUpgrade_UnifySameDomain`, `TopExp_Explorer`, `BRepCheck_Analyzer` and `BRepTools.OuterWire` are exported, and Delete Face patches the opening with `BRepOffsetAPI_MakeFilling` + `BRepBuilderAPI_Sewing` instead of extending neighbours; `BRepOffsetAPI_MakeThickSolid` is exported but it will not thicken an open patch (it returns a single face of zero volume), which is why Boundary Boss/Base offsets the patch and lofts its own walls | — |
 | projection of a sketch onto a face | no | Wrap/Emboss, Text |
-| curvature at a point on a face | no | Curvature / Zebra |
+| curvature at a point on a face | no `BRepLProp_SLProps` and no `GeomLProp_SLProps`, but `BRep_Tool.Surface` is exported and `Geom_Surface` carries `D0/D1/D2/D3/DN`, so curvature is measurable from the second derivatives without a kernel rebuild | Curvature / Zebra |
 | cope on a hollow section | no | Weldments Trim/Extend |
 | fold model with material on one side | no (sector model) | Hem, Jog |
 | named plane / axis as a sketch host | no (strings + offset) | Reference Plane/Axis, Curve/Fill Pattern |
