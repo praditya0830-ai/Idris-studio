@@ -42,9 +42,8 @@ check('the Assembly tab is in the ribbon', () => ok(tabs.includes('Assembly'), '
 const openTab = async (n) => { await page.evaluate((x) => [...document.querySelectorAll('#xrib .xr-tabs button')].find((b) => b.textContent.trim() === x).click(), n); await page.waitForTimeout(300); };
 await openTab('Assembly');
 const slot = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#xrib .xr-t')].map((b) => [b.textContent.trim(), b.getAttribute('aria-disabled') === 'true'])));
-const live = ['Insert Component', 'Move / Rotate Component', 'Standard Parts', 'Component Pattern', 'Mirror Components', 'Mate', 'Auto Assembly', 'Interference Detection', 'Exploded View', 'Bill of Materials', 'Collision Detection'];
-check('eleven Assembly tools are runnable', () => { const off = live.filter((n) => slot[n] !== false); ok(!off.length, 'still grey: ' + off.join(', ') + ' / ' + JSON.stringify(slot)); });
-check('Motion Study stays grey, with its reason', () => ok(slot['Motion Study'] === true, 'Motion Study is not grey: ' + JSON.stringify(slot)));
+const live = ['Insert Component', 'Move / Rotate Component', 'Standard Parts', 'Component Pattern', 'Mirror Components', 'Mate', 'Auto Assembly', 'Interference Detection', 'Exploded View', 'Bill of Materials', 'Collision Detection', 'Motion Study'];
+check('twelve Assembly tools are runnable', () => { const off = live.filter((n) => slot[n] !== false); ok(!off.length, 'still grey: ' + off.join(', ') + ' / ' + JSON.stringify(slot)); });
 
 /* two plates, built by the page kernel, put into one assembly */
 const build = async (name, feats) => {
@@ -88,7 +87,8 @@ check('the assembly holds the two plates', () => { ok(cs.length === 2, JSON.stri
 
 /* put the top plate beside the base plate so a travel along x has a real first contact */
 await page.evaluate(() => { const I = window.__idris, a = I.asm.state(); a.comps[1].t = [100, 0, 0]; I.asm.rebuild(false); });
-await page.waitForFunction(() => { const a = window.__idris.asm.state(); return a.info && a.info.every((x) => x.ok); }, null, { timeout: 60000 });
+/* a.info only changes when a rebuild finishes, so wait for the new position itself rather than for the old info */
+await page.waitForFunction(() => { const a = window.__idris.asm.state(), i = a.info; return i && i[1] && i[1].ok && i[1].bounds[0][0] > 50; }, null, { timeout: 60000 });
 
 const chatText = () => page.evaluate(() => (document.querySelector('#chat') || {}).innerText || '');
 const clickTool = async (name) => {
@@ -146,7 +146,7 @@ check('the assembly now holds five components', () => ok(cs.length === 5, JSON.s
 
 /* 4. mate: the top plate is lifted above the base plate and the tool brings its hole onto the base hole */
 await page.evaluate(() => { const I = window.__idris, a = I.asm.state(); const c = a.comps[1]; c.t = [20, 5, 40]; c.rz = 0; I.asm.rebuild(false); });
-await page.waitForFunction(() => { const a = window.__idris.asm.state(); return a.info && a.info.every((x) => x.ok); }, null, { timeout: 60000 });
+await page.waitForFunction(() => { const a = window.__idris.asm.state(), i = a.info; return i && i[1] && i[1].ok && i[1].bounds[0][2] > 30; }, null, { timeout: 60000 });
 await page.evaluate(() => window.__idris.asm.select(window.__idris.asm.state().comps[1].cid));
 await clickTool('Mate');
 await page.waitForTimeout(2500);

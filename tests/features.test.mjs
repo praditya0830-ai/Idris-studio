@@ -268,9 +268,11 @@ check('the next-step line names Extrude and Revolve', () => {
 });
 
 check('Mark 1 tools say what works today, active tools carry no such line', () => {
-  ok(/Mark 1/.test(S10.plannedToolTip('mk1')) && /Circle/.test(S10.plannedToolTip('mk1')), 'mk1 tip');
-  ok(S10.plannedToolTip('no').length > 0, 'not-yet tip');
-  ok(S10.plannedToolTip('on') === '' && S10.plannedToolTip('gb') === '', 'no tip for working tools');
+  ok(/Mark 1/.test(S10.plannedToolTip('mk1', 'sketch')) && /Circle/.test(S10.plannedToolTip('mk1', 'sketch')), 'mk1 tip');
+  ok(S10.plannedToolTip('no', 'sketch').length > 0, 'not-yet tip');
+  ok(S10.plannedToolTip('on', 'sketch') === '' && S10.plannedToolTip('gb', 'sketch') === '', 'no tip for working tools');
+  /* the tip belongs to the sketch tab: the same status on another tab says nothing */
+  ok(S10.plannedToolTip('mk1', 'features') === '', 'mk1 tip leaked onto another tab');
 });
 
 /* --------------------------------------------------------------------- S9 --- */

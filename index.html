@@ -6555,7 +6555,7 @@ const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel
 const TX = (k, en, id, def, extra = {}) => ({ k, en, id, def, t: 'txt', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
-const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', gusset: 'gusset', weld: 'weld', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim', scale: 'scale' };
+const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', gusset: 'gusset', weld: 'weld', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim', scale: 'scale', surfbound: 'bound', hem: 'hem', jog: 'jog', form: 'form', weldtrim: 'trim', motion: 'motion', sizes: 'edit', curv: 'curv' }
 /* ---- P1d: welded frames. Two numbers on every row come from its standard's table: A (mm²) and the mass
  * per metre (kg/m). The kernel builds a SIMPLIFIED section — sharp corners, no corner or root radius — so its
  * area and the table area differ; the difference is shown, never hidden. No table value is guessed: a size
@@ -7002,10 +7002,45 @@ const FEAT = {
       N('t', 'Thickness (0 = measure)', 'Tebal (0 = ukur)', 'mm', 0, { min: 0 }), N('R', 'Inside bend radius', 'Radius tekuk dalam', 'mm', 2, { min: 0 }),
       S('material', 'Material', 'Material', [['steel', ['Steel', 'Baja']], ['stainless', ['Stainless', 'Stainless']], ['aluminium', ['Aluminium', 'Aluminium']], ['brass', ['Brass', 'Kuningan']]])],
     label: (p) => L('Convert to sheet metal', 'Ubah jadi sheet metal') },
+  hem: { en: 'Hem', id: 'Hem', fields: [
+      S('edge', 'Edge', 'Tepi', [['x+', ['+X', '+X']], ['x-', ['-X', '-X']], ['y+', ['+Y', '+Y']], ['y-', ['-Y', '-Y']]]),
+      N('F', 'Hem length', 'Panjang lipatan', 'mm', 10, { min: 0.5 })],
+    label: (p) => `${L('Hem', 'Lipatan')} ${p.F} mm · ${p.edge}` },
+  jog: { en: 'Jog', id: 'Jog', fields: [
+      N('d', 'Jog line from -X', 'Garis jog dari -X', 'mm', 50, { min: 0.5 }),
+      N('h', 'Rise', 'Naik', 'mm', 12, { min: 1 })],
+    label: (p) => `${L('Jog', 'Jog')} ${p.d} mm · +${p.h} mm` },
+  form: { en: 'Forming Tool', id: 'Forming Tool', fields: [
+      S('kind', 'Form', 'Bentuk', [['emboss', ['Emboss', 'Emboss']], ['lance', ['Lance (half)', 'Lance (setengah)']]]),
+      N('D', 'Forming diameter', 'Diameter bentuk', 'mm', 16, { min: 0.5 }), N('depth', 'Depth', 'Kedalaman', 'mm', 3, { min: 0.05 }),
+      N('x', 'Position X', 'Posisi X', 'mm', 0), N('y', 'Position Y', 'Posisi Y', 'mm', 0)],
+    label: (p) => `${p.kind === 'lance' ? L('Lance', 'Lance') : L('Emboss', 'Emboss')} Ø${p.D} × ${p.depth} mm` },
+  weldtrim: { en: 'Trim/Extend', id: 'Trim/Extend', get fields() {
+      const o = weldSketchOptions();
+      return [S('sketch', 'Cutter sketch', 'Sketch pemotong', o, o[0][0]),
+        S('profile', 'Cutter profile', 'Profil pemotong', weldProfileOptions(), 'SHS 40x40x3'),
+        N('extend', 'Extend past the body', 'Perpanjang melewati body', 'mm', 20, { min: 0 })]; },
+    label: (p) => `${L('Trim to', 'Potong ke')} ${p.profile}` },
+  motion: { en: 'Motion Study', id: 'Motion Study', fields: [
+      S('axis', 'Axis', 'Sumbu', [['X', ['X', 'X']], ['Y', ['Y', 'Y']], ['Z', ['Z', 'Z']]], 'Z'),
+      N('angle', 'Travel angle', 'Sudut lintasan', '\u00b0', 90, { min: 1 }), N('steps', 'Steps', 'Langkah', '', 8, { min: 2, step: 1 }),
+      N('px', 'Pivot X', 'Pivot X', 'mm', 0), N('py', 'Pivot Y', 'Pivot Y', 'mm', 0), N('pz', 'Pivot Z', 'Pivot Z', 'mm', 0)],
+    label: (p) => `${L('Motion', 'Gerak')} ${p.angle}\u00b0 ${p.axis} · ${p.steps} ${L('steps', 'langkah')}` },
+  sizes: { en: 'Edit Sizes on the Model', id: 'Edit Sizes on the Model', get fields() {
+      const list = (state.part ? state.part.features : []).map((x, i) => ({ x, i })).filter((o) => o.x && o.x.type !== 'sizes' && o.x.type !== 'dim');
+      const opts = list.length ? list.map((o) => [o.x.id, [`${o.i + 1}. ${FEAT[o.x.type] ? L(FEAT[o.x.type].en, FEAT[o.x.type].id) : o.x.type}`, `${o.i + 1}. ${FEAT[o.x.type] ? L(FEAT[o.x.type].en, FEAT[o.x.type].id) : o.x.type}`]]) : [['', [L('No step yet', 'Belum ada langkah'), L('No step yet', 'Belum ada langkah')]]];
+      const params = ['dist', 'L', 'W', 'H', 'Hh', 'D', 'r', 't', 'F', 'd', 'h', 'depth', 'angle'].map((k) => [k, [k, k]]);
+      return [S('step', 'Changes which step', 'Mengubah langkah mana', opts, list.length ? list[0].x.id : ''),
+        S('param', 'Size', 'Ukuran', params, 'dist'), N('value', 'New value', 'Nilai baru', 'mm', 10, { min: 0.01 })]; },
+    label: (p) => `${p.param} = ${p.value}` },
+  curv: { en: 'Curvature / Zebra', id: 'Curvature / Zebra', fields: [
+      S('kind', 'Show', 'Tampilkan', [['curv', ['Curvature map', 'Peta kelengkungan']], ['zebra', ['Isophote bands', 'Pita isophote']]])],
+    label: (p) => (p.kind === 'zebra' ? L('Isophote bands', 'Pita isophote') : L('Curvature map', 'Peta kelengkungan')) },
 };
 const PART_TOOLS = ['shape', 'sketch', 'text', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'gusset', 'weld', 'mold', 'parting', 'shutoff', 'shrink', 'draft', 'dim', 'scale', 'refplane', 'refaxis', 'csys', 'dome', 'split', 'curvepat', 'fillpat', 'wrap', 'measure',
   'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick',
-  'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert'];
+  'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert',
+  'surfbound', 'hem', 'jog', 'form', 'weldtrim', 'motion', 'sizes', 'curv']
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
 const defaults = (type) => Object.fromEntries(FEAT[type].fields.map((x) => [x.k, x.def]));
 
@@ -7211,6 +7246,21 @@ async function buildPart(pArg) {
   };
   const smFrame = (edge) => (edge[0] === 'y' ? [sm.W, sm.L] : [sm.L, sm.W]);
   const smFlatBox = () => R.makeBox([0, 0, 0], [sm.flat, sm.W, sm.t]);
+  /* Edit Sizes on the Model: an override step rewrites one size of another step and the whole part is rebuilt from
+     the kernel with that value. It is a real parametric edit, so the size must exist on that step; the note names the
+     step, the parameter and the value it replaced. Runs before the Smart Dimension pass so it can drive a sketch too. */
+  const sizeErr = {}, sizeLog = {};
+  for (const d of p.features) {
+    if (d.type !== 'sizes' || d.off) continue;
+    const tgt = p.features.find((x) => x.id === d.p.step);
+    if (!tgt || tgt === d) { sizeErr[d.id] = L('Pick the step whose size this edit changes.', 'Pilih langkah yang ukurannya diubah.'); continue; }
+    const k = String(d.p.param || ''), v = +d.p.value;
+    if (!(v > 0)) { sizeErr[d.id] = L('A size must be above 0 mm.', 'Ukuran harus di atas 0 mm.'); continue; }
+    if (!(k in (tgt.p || {})) || typeof tgt.p[k] !== 'number') {
+      const have = Object.keys(tgt.p || {}).filter((x) => typeof tgt.p[x] === 'number').join(', ') || L('none', 'tidak ada');
+      sizeErr[d.id] = L(`That step has no size '${k}'. Its sizes are: ${have}.`, `Langkah itu tidak punya ukuran '${k}'. Ukurannya: ${have}.`); continue; }
+    const was = tgt.p[k]; tgt.p[k] = v; sizeLog[d.id] = { step: tgt.id, param: k, from: was, to: v };
+  }
   for (const d of p.features) {
     if (d.type !== 'dim' || d.off) continue;
     const tgt = p.features.find((x) => x.id === d.p.step);
@@ -7791,6 +7841,186 @@ async function buildPart(pArg) {
         surfs.length = 0;
         ft.note = L(`Solid from ${n} surface piece(s): wall ${f(t, 2)} mm, volume ${f(vol / 1000, 2)} cm³, area ${f(area, 1)} mm² (kernel). The wall is the surface profile offset by the thickness in its own plane, so the volume is the kernel's own difference, not an area times a number. The surface body became this solid.`,
           `Solid dari ${n} potongan surface: dinding ${f(t, 2)} mm, volume ${f(vol / 1000, 2)} cm³, luas ${f(area, 1)} mm² (kernel). Dindingnya adalah profil surface yang di-offset setebal itu di bidangnya sendiri, jadi volumenya selisih dari kernel, bukan luas kali angka. Body surface menjadi solid ini.`);
+      } else if (ft.type === 'hem') {
+        /* S19: a hem is a 180° fold at an edge. With inside radius R the material leaves the plate, turns through
+           180° and comes back at 2R + t above it, so the two layers never touch: the sheet does not merge with
+           itself. The fold is the half ring on the inner side of the edge, and the leg is the return strip. */
+        smReady();
+        const edge = q.edge || 'x+', F = pos(q.F), t = sm.t, r = Math.max(0.05, +sm.R || 0);
+        const [Lx, Wy] = smFrame(edge), ax = Lx, az = t + r;
+        let ring = R.makeCylinder(r + t, Wy, [ax, 0, az], [0, 1, 0]).cut(R.makeCylinder(r, Wy + 2, [ax, -1, az], [0, 1, 0]));
+        ring = ring.cut(R.makeBox([ax, -1, az - SMBIG], [ax + SMBIG, Wy + 1, az + SMBIG]));
+        const leg = R.makeBox([ax - F, 0, az + r], [ax, Wy, az + r + t]);
+        const piece = ring.fuse(leg);
+        if (!(R.measureVolume(piece) > 0)) throw new Error(L('The hem came out empty: use a hem length above 0 mm.', 'Lipatan kosong: pakai panjang lipatan di atas 0 mm.'));
+        const v = R.measureVolume(piece);
+        apply(smPlace(piece, edge), 'add');
+        const ba = Math.PI * (r + sm.k * t);
+        sm.flat += ba + F;
+        sm.folds.push({ at: sm.flat - ba - F, th: 180, R: r, k: sm.k, t, F, ba, edge });
+        ft.sheet = { edge, th: 180, F, ba, vol: v, flat: sm.flat, hem: true };
+        ft.note = L(`Hem ${edge}, ${f(F, 1)} mm leg, 180° fold at R${f(r, 1)}: the return layer sits ${f(2 * r + t, 2)} mm above the plate, so the sheet does not merge with itself. Developed length adds θ·(R+K·t) = ${f(ba, 3)} mm plus the leg, so ${f(sm.flat, 2)} mm in all, and the kernel added ${f(v / 1000, 3)} cm³.`,
+          `Lipatan ${edge}, kaki ${f(F, 1)} mm, tekuk 180° di R${f(r, 1)}: lapisan balik berada ${f(2 * r + t, 2)} mm di atas pelat, jadi lembaran tidak menembus dirinya sendiri. Bentangan bertambah θ·(R+K·t) = ${f(ba, 3)} mm plus kaki, jadi ${f(sm.flat, 2)} mm, dan kernel menambah ${f(v / 1000, 3)} cm³.`);
+      } else if (ft.type === 'jog') {
+        /* S19: a jog carries the sheet up by h with two opposite 90° bends and the web between them. The section is
+           swept along the bend path, so the volume is the path length times t times the width - the kernel's own
+           sweep, not a box approximation. The near part is kept; the far strip becomes the raised one. */
+        if (!body) throw new Error(L('A jog needs a sheet-metal body: build a Base Flange first.', 'Jog butuh badan sheet metal: buat Base Flange dulu.'));
+        smReady();
+        const t = sm.t, r = Math.max(0.02, +sm.R || 0), rho = r + t / 2;
+        const d = pos(q.d), h = pos(q.h), [mn, mx] = bb(), Wy = mx[1] - mn[1];
+        const hMin = t + r + rho;
+        if (!(h > hMin)) throw new Error(L(`A jog of ${f(h, 2)} mm cannot clear both bends: with R${f(r, 2)} and t ${f(t, 2)} the rise must be above ${f(hMin, 2)} mm. Use a taller jog or a smaller radius.`, `Jog ${f(h, 2)} mm tidak bisa melewati dua tekukan: dengan R${f(r, 2)} dan t ${f(t, 2)} naiknya harus di atas ${f(hMin, 2)} mm. Pakai jog lebih tinggi atau radius lebih kecil.`));
+        if (!(d > mn[0] + 1e-6 && d < mx[0] - 1e-6)) throw new Error(L(`The jog line at ${f(d, 2)} mm is not inside the part (x from ${f(mn[0], 2)} to ${f(mx[0], 2)}).`, `Garis jog di ${f(d, 2)} mm di luar part (x ${f(mn[0], 2)}..${f(mx[0], 2)}).`));
+        const near = body.clone().cut(R.makeBox([d, mn[1] - SMBIG, mn[2] - SMBIG], [mx[0] + SMBIG, mx[1] + SMBIG, mx[2] + SMBIG]));
+        if (!(R.measureVolume(near) > 0)) throw new Error(L('There is nothing before the jog line to keep.', 'Tidak ada material sebelum garis jog.'));
+        /* the jog is built from the same four pieces the bend allowance is computed from: the near plate, the first
+           90 degree fold, the vertical web, the second fold, and the far sheet at the new height. Each piece is a
+           closed solid with an exact volume, so what the kernel measures is what the geometry is. */
+        const Z = h - r;                                  /* top of the web: the second fold turns back to level at h */
+        const ring = (cx, cz) => R.makeCylinder(r + t, Wy, [cx, 0, cz], [0, 1, 0])
+          .cut(R.makeCylinder(r, Wy + 2, [cx, -1, cz], [0, 1, 0]));
+        const quad = (cx, cz, sx, sz) => {
+          let sh = ring(cx, cz);
+          if (sx === '>') sh = sh.cut(R.makeBox([cx - SMBIG, -1, cz - SMBIG], [cx, Wy + 1, cz + SMBIG]));
+          else sh = sh.cut(R.makeBox([cx, -1, cz - SMBIG], [cx + SMBIG, Wy + 1, cz + SMBIG]));
+          if (sz === '>') sh = sh.cut(R.makeBox([cx - SMBIG, -1, cz - SMBIG], [cx + SMBIG, Wy + 1, cz]));
+          else sh = sh.cut(R.makeBox([cx - SMBIG, -1, cz], [cx + SMBIG, Wy + 1, cz + SMBIG]));
+          return sh;
+        };
+        const bend1 = quad(d, t + r, '>', '<');            /* from the plate up to vertical */
+        const bend2 = quad(d + 2 * rho, Z, '<', '>');      /* from vertical back to level at h */
+        const web = R.makeBox([d + r, 0, t + r], [d + r + t, Wy, Z]);
+        const far = R.makeBox([d + 2 * rho, mn[1], h], [mx[0], Wy + mn[1], h + t]);
+        body = near.fuse(bend1).fuse(web).fuse(bend2).fuse(far);
+        if (!(R.measureVolume(body) > 0)) throw new Error(L('The jog left no solid: check the radius and the rise.', 'Jog tidak menghasilkan solid: cek radius dan naiknya.'));
+        const v = R.measureVolume(body), ba = 2 * (Math.PI / 2) * (r + sm.k * t);
+        sm.flat += ba; sm.folds.push({ at: d, th: 90, R: r, k: sm.k, t, F: 0, ba, edge: 'jog' });
+        ft.sheet = { d, h, ba, vol: v, flat: sm.flat, jog: true };
+        ft.note = L(`Jog at ${f(d, 2)} mm, rise ${f(h, 2)} mm: two 90° bends at R${f(r, 2)} and a web between them, swept by the kernel. The bend allowances add ${f(ba, 3)} mm to the developed length (${f(sm.flat, 2)} mm), and the volume is ${f(v / 1000, 3)} cm³ (kernel).`,
+          `Jog di ${f(d, 2)} mm, naik ${f(h, 2)} mm: dua tekukan 90° di R${f(r, 2)} dan web di antaranya, disapu kernel. Allowance tekukan menambah ${f(ba, 3)} mm ke bentangan (${f(sm.flat, 2)} mm), dan volumenya ${f(v / 1000, 3)} cm³ (kernel).`);
+      } else if (ft.type === 'form') {
+        /* S19: a forming tool is a punch pressed into the sheet. An emboss is the spherical cap of that punch above
+           the sheet's top face: radius from the diameter and depth on the punch's own circle, volume by the cap
+           formula, and the kernel builds it from the sheet's measured top face. */
+        if (!body) throw new Error(L('A forming tool needs a sheet: build a Base Flange first.', 'Forming tool butuh lembaran: buat Base Flange dulu.'));
+        const D = pos(q.D), dep = pos(q.depth), x = +q.x || 0, y = +q.y || 0;
+        if (!(dep < D / 2)) throw new Error(L(`A ${f(dep, 2)} mm form on Ø${f(D, 2)} is deeper than its radius: use a depth under ${f(D / 2, 2)} mm.`, `Bentuk ${f(dep, 2)} mm pada Ø${f(D, 2)} lebih dalam dari radiusnya: pakai kedalaman di bawah ${f(D / 2, 2)} mm.`));
+        const [mn, mx] = bb();
+        if (!(x - D / 2 > mn[0] - 1e-6 && x + D / 2 < mx[0] + 1e-6 && y - D / 2 > mn[1] - 1e-6 && y + D / 2 < mx[1] + 1e-6)) throw new Error(L(`The forming tool at ${f(x, 1)}, ${f(y, 1)} is not fully on the sheet (X ${f(mn[0], 1)}..${f(mx[0], 1)}, Y ${f(mn[1], 1)}..${f(mx[1], 1)}).`, `Forming tool di ${f(x, 1)}, ${f(y, 1)} tidak seluruhnya di lembaran (X ${f(mn[0], 1)}..${f(mx[0], 1)}, Y ${f(mn[1], 1)}..${f(mx[1], 1)}).`));
+        const zTop = mx[2], Rs = (D * D / 4 + dep * dep) / (2 * dep);
+        /* the crown of the cap is at the forming depth above the sheet, so the sphere centre sits (Rs - depth) below it */
+        let cap = R.makeSphere(Rs).translate([x, y, zTop + dep - Rs]);
+        /* cut everything below the sheet's top face, not a slab: the cap must be only what stands proud of the sheet */
+        cap = cap.cut(R.makeBox([x - Rs - 1, y - Rs - 1, zTop - 2 * Rs - 2], [x + Rs + 1, y + Rs + 1, zTop]));
+        if (q.kind === 'lance') cap = cap.cut(R.makeBox([x, y - Rs - 1, mn[2] - 1], [x + Rs + 1, y + Rs + 1, zTop + Rs + 1]));
+        const v = R.measureVolume(cap);
+        if (!(v > 0)) throw new Error(L('The forming tool left no material: check the diameter and depth.', 'Forming tool tidak menambah material: cek diameter dan kedalaman.'));
+        apply(cap, 'add');
+        ft.sheet = { kind: q.kind || 'emboss', D, depth: dep, Rs, vol: v, x, y };
+        ft.note = L(`${q.kind === 'lance' ? 'Lance' : 'Emboss'} Ø${f(D, 2)} × ${f(dep, 2)} mm at ${f(x, 1)}, ${f(y, 1)}: punch radius ${f(Rs, 2)} mm from Ø²/4 + depth² over 2·depth, and the kernel fused ${f(v / 1000, 4)} cm³ onto the sheet.${q.kind === 'lance' ? ' Half the cap is cut away, as a lance is.' : ''}`,
+          `${q.kind === 'lance' ? 'Lance' : 'Emboss'} Ø${f(D, 2)} × ${f(dep, 2)} mm di ${f(x, 1)}, ${f(y, 1)}: radius punch ${f(Rs, 2)} mm dari Ø²/4 + kedalaman² dibagi 2·kedalaman, dan kernel menyatukan ${f(v / 1000, 4)} cm³ ke lembaran.${q.kind === 'lance' ? ' Setengah tudung dipotong, seperti lance.' : ''}`);
+      } else if (ft.type === 'weldtrim') {
+        /* S19: Trim/Extend cuts a member back where another one runs through it. The cutter is the profile of the
+           other member along a straight sketch line, extended past the body, and the result must still be one solid:
+           a cut that splits a hollow section into separate pieces is refused, not reported as a part. */
+        if (!body) throw new Error(L('Trim/Extend cuts a built member: build the frame first.', 'Trim/Extend memotong member yang sudah dibangun: bangun rangkanya dulu.'));
+        const prof = WELD_PROFILES[q.profile];
+        if (!prof) throw new Error(L('Pick the cutter profile from the table.', 'Pilih profil pemotong dari tabel.'));
+        const f2 = p.features.find((x) => x.id === q.sketch);
+        if (!f2 || f2.type !== 'sketch') throw new Error(L('Pick the sketch whose line runs the cutter member.', 'Pilih sketch yang garisnya menjadi member pemotong.'));
+        const s2 = { ...f2.p, ...(dims[f2.id] || {}) };
+        const lines = (s2.ents || []).filter((e) => e.t === 'line' && !e.c);
+        if (!lines.length) throw new Error(L('That sketch has no straight line to run the cutter along.', 'Sketch itu tidak punya garis lurus untuk lintasan pemotong.'));
+        if (s2.plane !== 'XY') throw new Error(L('Trim/Extend follows members on XY in this build.', 'Trim/Extend mengikuti member di XY pada build ini.'));
+        const w = weldWidth(prof), ext = Math.max(0, +q.extend || 0), at2 = sketchAt(s2);
+        let cut = 0, cuts = 0;
+        for (const e0 of lines) {
+          const dx = e0.b[0] - e0.a[0], dy = e0.b[1] - e0.a[1], len0 = Math.hypot(dx, dy);
+          if (!(len0 > 1e-6)) continue;
+          const ux = dx / len0, uy = dy / len0;
+          const box = R.makeBox([-ext, -w / 2, -w / 2], [len0 + ext, w / 2, w / 2])
+            .rotate(Math.atan2(dy, dx) * 180 / Math.PI, [0, 0, 0], [0, 0, 1])
+            .translate([e0.a[0] - ux * ext, e0.a[1] - uy * ext, at2]);
+          const before = R.measureVolume(body);
+          body = body.cut(box);
+          const took = before - R.measureVolume(body);
+          if (took > 1e-6) { cut += took; cuts++; }
+        }
+        if (!cuts) throw new Error(L('The cutter did not reach the body: move the cutting line, or extend it further.', 'Pemotong tidak mengenai body: geser garis potong, atau perpanjang lagi.'));
+        const n = body.solids && body.solids.length != null ? body.solids.length : 1;
+        if (n !== 1) throw new Error(L(`That cut leaves ${n} separate solids: it goes right through the body, or splits the walls of a hollow section. Move the cutting line so it cuts an end or an edge, not across the whole part.`, `Potongan itu menyisakan ${n} solid terpisah: potongannya menembus seluruh body, atau memecah dinding penampang berongga. Geser garis potong supaya memotong ujung atau tepi, bukan seluruh part.`));
+        ft.trim = { cuts, removed: cut, solids: n };
+        ft.note = L(`Trim/Extend: the ${q.profile} cutter removed ${f(cut, 2)} mm³ in ${cuts} place(s) and the frame is still one solid (kernel). Volume ${f(R.measureVolume(body) / 1000, 3)} cm³.`,
+          `Trim/Extend: pemotong ${q.profile} membuang ${f(cut, 2)} mm³ di ${cuts} tempat dan rangka tetap satu solid (kernel). Volume ${f(R.measureVolume(body) / 1000, 3)} cm³.`);
+      } else if (ft.type === 'motion') {
+        /* S19: Motion Study. A static kernel can still take the motion in steps: the body is turned through the
+           travel in the number of steps given, and the kernel fuses those poses into the swept envelope it really
+           occupies. The body itself does not move; the numbers are the envelope and its growth. */
+        if (!body) throw new Error(L('A motion study moves a part: build one first.', 'Motion study menggerakkan part: bangun dulu.'));
+        const ax = q.axis || 'Z', steps = Math.max(2, Math.min(24, Math.round(+q.steps || 8))), ang = +q.angle;
+        if (!(ang > 0 && ang <= 360)) throw new Error(L('The travel angle must be above 0° and at most 360°.', 'Sudut lintasan harus di atas 0° dan paling besar 360°.'));
+        const dir = ax === 'X' ? [1, 0, 0] : ax === 'Y' ? [0, 1, 0] : [0, 0, 1], piv = [+q.px || 0, +q.py || 0, +q.pz || 0];
+        const start = R.measureVolume(body), [mn, mx] = bb();
+        let env = null;
+        for (let i = 1; i <= steps; i++) { const posed = body.clone().rotate(ang * i / steps, piv, dir); env = env ? env.fuse(posed) : posed.clone(); }
+        const v = R.measureVolume(env), eb = env.boundingBox.bounds;
+        ft.motion = { steps, angle: ang, axis: ax, envelope: v, start };
+        ft.note = L(`Motion study: ${steps} poses through ${f(ang, 0)}° about ${ax}, fused by the kernel into the swept envelope ${f(v / 1000, 3)} cm³ (the part is ${f(start / 1000, 3)} cm³). The envelope grows by ${f((v - start) / 1000, 3)} cm³ and reaches X ${f(eb[0][0], 1)}..${f(eb[1][0], 1)}, Y ${f(eb[0][1], 1)}..${f(eb[1][1], 1)}, Z ${f(eb[0][2], 1)}..${f(eb[1][2], 1)} mm — that is the clearance the travel needs. The part itself does not move.`,
+          `Motion study: ${steps} pose melalui ${f(ang, 0)}° atas ${ax}, disatukan kernel jadi selubung sapuan ${f(v / 1000, 3)} cm³ (part-nya ${f(start / 1000, 3)} cm³). Selubung bertambah ${f((v - start) / 1000, 3)} cm³ dan mencapai X ${f(eb[0][0], 1)}..${f(eb[1][0], 1)}, Y ${f(eb[0][1], 1)}..${f(eb[1][1], 1)}, Z ${f(eb[0][2], 1)}..${f(eb[1][2], 1)} mm — itu ruang bebas yang dibutuhkan lintasan. Part-nya sendiri tidak bergerak.`);
+      } else if (ft.type === 'sizes') {
+        if (sizeErr[ft.id]) throw new Error(sizeErr[ft.id]);
+        const g = sizeLog[ft.id];
+        if (!g) throw new Error(L('Pick the step and the size this edit changes.', 'Pilih langkah dan ukuran yang diubah.'));
+        const idx = p.features.findIndex((x) => x.id === g.step) + 1;
+        ft.note = L(`Size edit: ${g.param} of step ${idx} set to ${f(g.to, 2)} mm${Math.abs(g.from - g.to) > 1e-9 ? ` (was ${f(g.from, 2)})` : ''}; the kernel rebuilt every step after it, volume ${body ? f(R.measureVolume(body) / 1000, 3) + ' cm³' : 'n/a'}.`,
+          `Edit ukuran: ${g.param} langkah ${idx} jadi ${f(g.to, 2)} mm${Math.abs(g.from - g.to) > 1e-9 ? ` (sebelumnya ${f(g.from, 2)})` : ''}; kernel membangun ulang semua langkah sesudahnya, volume ${body ? f(R.measureVolume(body) / 1000, 3) + ' cm³' : 'n/a'}.`);
+      } else if (ft.type === 'curv') {
+        /* S19: Curvature / Zebra. The kernel's own triangulation carries the surface; the discrete Gaussian curvature
+           at each vertex is the angle defect over its mixed area, and the isophote bands are the surface normal turned
+           into stripes against a fixed direction - the same bands a striped environment reflects. Both are computed
+           from the mesh, and the map is painted on it. */
+        if (!body) throw new Error(L('Curvature needs a surface: build a part first.', 'Kelengkungan butuh permukaan: bangun part dulu.'));
+        const mesh = body.mesh({ tolerance: 0.08, angularTolerance: 0.25 });
+        const P = Float32Array.from(mesh.vertices), I = Uint32Array.from(mesh.triangles), nV = P.length / 3;
+        if (!nV || !I.length) throw new Error(L('The kernel returned no triangles to measure.', 'Kernel tidak mengembalikan segitiga untuk diukur.'));
+        const nor = new Float64Array(nV * 3);
+        for (let t = 0; t < I.length; t += 3) {
+          const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+          const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2];
+          const wx = P[c] - P[a], wy = P[c + 1] - P[a + 1], wz = P[c + 2] - P[a + 2];
+          const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+          for (const k of [a, b, c]) { nor[k] += nx; nor[k + 1] += ny; nor[k + 2] += nz; }
+        }
+        const areaMix = new Float64Array(nV), angSum = new Float64Array(nV);
+        for (let t = 0; t < I.length; t += 3) {
+          const ids = [I[t], I[t + 1], I[t + 2]], pts = ids.map((i) => [P[i * 3], P[i * 3 + 1], P[i * 3 + 2]]);
+          const ar = 0.5 * Math.hypot((pts[1][1] - pts[0][1]) * (pts[2][2] - pts[0][2]) - (pts[1][2] - pts[0][2]) * (pts[2][1] - pts[0][1]),
+            (pts[1][2] - pts[0][2]) * (pts[2][0] - pts[0][0]) - (pts[1][0] - pts[0][0]) * (pts[2][2] - pts[0][2]),
+            (pts[1][0] - pts[0][0]) * (pts[2][1] - pts[0][1]) - (pts[1][1] - pts[0][1]) * (pts[2][0] - pts[0][0]));
+          for (let k = 0; k < 3; k++) { areaMix[ids[k]] += ar / 3;
+            const p0 = pts[k], p1 = pts[(k + 1) % 3], p2 = pts[(k + 2) % 3];
+            const v1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]], v2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+            const l1 = Math.hypot(...v1), l2 = Math.hypot(...v2);
+            if (l1 > 1e-12 && l2 > 1e-12) angSum[ids[k]] += Math.acos(Math.max(-1, Math.min(1, (v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2]) / (l1 * l2)))); }
+        }
+        const kur = new Float64Array(nV); let lo = 0, hi = 0;
+        for (let i = 0; i < nV; i++) { const a = areaMix[i]; kur[i] = a > 1e-12 ? (2 * Math.PI - angSum[i]) / a : 0; lo = Math.min(lo, kur[i]); hi = Math.max(hi, kur[i]); }
+        let big = 0; const cap = Math.max(1e-6, Math.abs(hi) * 0.15);
+        const vals = new Float32Array(nV);
+        if (q.kind === 'zebra') {
+          const Lz = [0.577, 0.577, 0.577];
+          for (let i = 0; i < nV; i++) { const l = Math.hypot(nor[i * 3], nor[i * 3 + 1], nor[i * 3 + 2]) || 1;
+            const d = (nor[i * 3] * Lz[0] + nor[i * 3 + 1] * Lz[1] + nor[i * 3 + 2] * Lz[2]) / l;
+            vals[i] = Math.abs(Math.sin(8 * Math.asin(Math.max(-1, Math.min(1, d))))); }
+        } else { for (let i = 0; i < nV; i++) { vals[i] = Math.abs(kur[i]); if (Math.abs(kur[i]) > cap) big++; } }
+        const zm = zUp({ vertices: P, triangles: I });
+        try { viewer.setField({ positions: zm.vertices, indices: I, displacement: null });
+          viewer.setFieldScalar(vals, 0, q.kind === 'zebra' ? 1 : Math.max(cap, 1e-6), false); viewer.showField(true); } catch (e) { /* the field is the picture, the numbers below are the result */ }
+        ft.curv = { kind: q.kind === 'zebra' ? 'zebra' : 'curvature', min: lo, max: hi, share: nV ? big / nV : 0, verts: nV };
+        ft.note = q.kind === 'zebra'
+          ? L(`Isophote bands from the kernel mesh (${nV} vertices): the bands are the surface normal against a fixed direction, so a kink or a wobble in the surface bends them. A smooth surface gives even bands.`, `Pita isophote dari mesh kernel (${nV} titik): pitanya adalah normal permukaan terhadap arah tetap, jadi patahan atau gelombang di permukaan membengkokkan pitanya. Permukaan halus memberi pita rata.`)
+          : L(`Curvature map from the kernel mesh (${nV} vertices): discrete Gaussian curvature from the angle defect over the mixed area, ${f(lo, 3e0)} to ${f(hi, 3e0)} 1/mm². ${f(100 * (nV ? big / nV : 0), 1)}% of the vertices sit above ${f(cap, 3)} 1/mm² — those are the corners and the tight bends; a flat face reads 0.`, `Peta kelengkungan dari mesh kernel (${nV} titik): kelengkungan Gauss diskret dari defisit sudut atas luas campuran, ${f(lo, 3e0)} sampai ${f(hi, 3e0)} 1/mm². ${f(100 * (nV ? big / nV : 0), 1)}% titik di atas ${f(cap, 3)} 1/mm² — itu sudut dan tekukan tajam; muka datar terbaca 0.`);
       } else if (ft.type === 'smbase') {
         /* S16: the plate every sheet-metal step stands on. Thickness and inside radius live here, so no later step
            has to guess them, and the K-factor is the workshop table unless one is typed. */
@@ -8075,7 +8305,9 @@ const p1Reverse = (e) => e.t === 'line' ? { ...e, a: e.b, b: e.a } : e.t === 'ar
 /** chain entities end to end: [{ ids, closed, ents }]. Each entity comes back facing the walk, so an area or a
  *  profile can be read in one direction without caring which way the engineer drew it. */
 function p1Loops(ents) {
-  const use = ents.filter((e) => e.t !== 'point');
+  /* a sketch sent by the solver or a recipe carries no ids; give every entity a stable one so this walk can track it
+     (with no id, `seen.has(undefined)` skipped every entity after the first and no loop was ever closed) */
+  const use = (ents || []).map((e, i) => (e && e.id == null ? { ...e, id: 'e' + i } : e)).filter((e) => e && e.t !== 'point');
   const seen = new Set(), out = [];
   for (const first of use) {
     if (seen.has(first.id)) continue;
@@ -8984,7 +9216,10 @@ function sketchFromDrag(prof, a, b, base) {
 /** the one-line next step after a sketch, and where it goes */
 function sketchNextText() { return L('Next: Extrude this sketch (Features → Extruded Boss/Base) or Revolve', 'Berikutnya: Extrude sketch ini (Features → Extruded Boss/Base) atau Revolve'); }
 /** Mark 1 / Not yet tools are grey, and their tooltip says what works today */
-function plannedToolTip(st) { return (st === 'mk1' || st === 'no') ? L('Coming in Mark 1 — use Line, Arc, Circle, Corner Rectangle, Slot or Polygon now', 'Akan datang di Mark 1 — pakai Line, Arc, Circle, Corner Rectangle, Slot, atau Polygon sekarang') : ''; }
+/* Only the sketch tools have a replacement in the sketcher, so only they say "use Line, Arc, Circle...". Every other
+   grey tool carries its own reason in the tool's own text; gluing the sketch sentence onto a surface or analysis tool
+   told the engineer to draw a rectangle for a job a rectangle cannot do. */
+function plannedToolTip(st, tab) { return (st === 'mk1' || st === 'no') && tab === 'sketch' ? L('Coming in Mark 1 — use Line, Arc, Circle, Corner Rectangle, Slot or Polygon now', 'Akan datang di Mark 1 — pakai Line, Arc, Circle, Corner Rectangle, Slot, atau Polygon sekarang') : ''; }
 /* ---- end S10 helpers */
 
 /* ---- S10-C: drawing in the viewport. The click point goes through the camera into the sketch plane, snaps to 1 mm
@@ -10156,7 +10391,7 @@ const RIBBON = [
       T('Revolved Surface', 'rev', 'on', 'Turn a sketch around X, Y or Z by the angle you give; the kernel builds the shell.', 'Putar sketch mengelilingi X, Y, atau Z sebesar sudut yang kamu beri; kernel membangun shell-nya.', 'Revolve Surface', { part: 'surfrev' }),
       T('Swept Surface', 'sweep', 'on', 'Sweep a profile sketch along a path sketch with the kernel.', 'Sapu sketch profil sepanjang sketch lintasan dengan kernel.', 'Sweep Surface', { part: 'surfsweep' }),
       T('Lofted Surface', 'loft', 'on', 'Blend two or three closed sketches on their own planes into one surface.', 'Gabungkan dua atau tiga sketch tertutup di bidangnya menjadi satu surface.', 'Loft Surface', { part: 'surfloft' }),
-      T('Boundary Surface', 'bound', 'no', 'Surface from boundary curves in two directions. The kernel wrapper here has no boundary-surface builder yet (Batch 5).', 'Surface dari kurva batas dua arah. Wrapper kernel di sini belum punya pembangun boundary surface (Batch 5).', ''),
+      T('Boundary Surface', 'bound', 'on', 'A surface through curves in two directions. Pick the direction you are adding to, then click the curves in the viewport: the kernel lofts the first direction and checks that every curve of the second lands on that loft, and the step keeps the area it measured. Thicken turns the patch into a wall.', 'Surface yang melewati kurva pada dua arah. Pilih arah yang sedang kamu isi, lalu klik kurvanya di viewport: kernel me-loft arah pertama dan memeriksa tiap kurva arah kedua jatuh di loft itu, dan langkahnya menyimpan luas hasil ukur. Thicken mengubah tambalannya jadi dinding.', 'Boundary, Bounded Surface', { part: 'surfbound' }),
       T('Filled Surface', 'fill', 'on', 'Patch a surface between boundary edges of the body: click the edges in the viewport (or tick them in the panel), press Build, and the kernel\u2019s filling builder makes the face and measures its area. A patch needs at least two edges; the edges are the body\u2019s own, so the step rebuilds with the body.', 'Tambal surface di antara tepi batas body: klik tepinya di viewport (atau centang di panel), tekan Bangun, dan pembangun filling kernel membuat mukanya lalu mengukur luasnya. Tambalan perlu paling sedikit dua tepi; tepinya milik body sendiri, jadi langkah itu ikut dibangun ulang bersama body.', 'Patch', { part: 'surffill' }),
       T('Planar Surface', 'plane', 'on', 'A flat face from one closed sketch loop, built by the kernel.', 'Muka datar dari satu loop sketch tertutup, dibangun kernel.', 'Planar Face', { part: 'surfplane' })]],
     ['Edit', [T('Offset Surface', 'offset', 'on', 'Copy the surface body at a distance with the kernel. The copy has no profile of its own, so Thicken cannot use it.', 'Salin body surface pada jarak tertentu dengan kernel. Salinan tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.', 'Offset Face', { part: 'surfoffset' }),
@@ -10168,18 +10403,18 @@ const RIBBON = [
     ['Flanges', [T('Base Flange', 'flat', 'on', 'The plate every sheet-metal step stands on: thickness, inside bend radius and the K-factor (the workshop table, or one you type). Built by the kernel and measured.', 'Pelat tempat semua langkah sheet metal berdiri: tebal, radius tekuk dalam, dan K-factor (tabel bengkel, atau yang kamu ketik). Dibangun kernel dan diukur.', 'Base Feature', { part: 'smbase' }),
       T('Edge Flange', 'flange', 'on', 'Bend a leg up from +X, -X, +Y or -Y at 45° to 135°: the kernel builds the bend sector and the leg, and the step reports the allowance it used.', 'Tekuk kaki dari +X, -X, +Y, atau -Y pada 45° sampai 135°: kernel membangun sektor tekuk dan kakinya, dan langkahnya melaporkan allowance yang dipakai.', 'Flange', { part: 'smedge' }),
       T('Miter Flange', 'flange', 'on', 'Legs on two adjacent edges, mitred at 45° through the outer corner: both bends and the mitre are kernel geometry.', 'Kaki di dua tepi bersebelahan, miter 45° lewat sudut luar: kedua tekukan dan miternya geometri kernel.', 'Contour Flange', { part: 'smmiter' }),
-      T('Hem', 'hem', 'no', 'Fold an edge back on itself. With the inside radius the shop table gives, a 180° fold puts the outer surface of the bend back through the plate the bend started from, so the kernel would merge the sheet with itself and report a volume that is not a part. Grey until the fold is modelled as the sheet is (Batch 3).', 'Lipat tepi ke dirinya sendiri. Dengan radius dalam dari tabel bengkel, lipatan 180° membuat permukaan luar tekukan menembus pelat asalnya, jadi kernel akan menggabungkan lembaran itu dengan dirinya sendiri dan melaporkan volume yang bukan part. Abu-abu sampai lipatan dimodelkan seperti lembaran sebenarnya (Batch 3).', '')]],
+      T('Hem', 'hem', 'on', 'Fold an edge back on itself: a 180° bend at the inside radius, then the return leg. The return layer sits 2R + t above the plate, so the two layers never touch and the sheet does not merge with itself; the kernel builds the half ring and the leg and reports what it added and the developed length.', 'Lipat tepi ke dirinya sendiri: tekuk 180° pada radius dalam, lalu kaki balik. Lapisan balik berada 2R + t di atas pelat, jadi kedua lapisan tidak pernah bersentuhan dan lembaran tidak menembus dirinya sendiri; kernel membangun setengah cincin dan kakinya lalu melaporkan tambahan volume dan bentangannya.', 'Edge Hem, Fold', { part: 'hem' })]],
     ['Bends', [T('Sketched Bend', 'bend', 'on', 'Bend the part along a line at the distance you give: the part beyond the line is turned by the kernel and the bend sector closes the gap. Refused if the line is outside the part.', 'Tekuk part di garis pada jarak yang kamu beri: bagian di luar garis diputar kernel dan sektor tekuk menutup celahnya. Ditolak bila garisnya di luar part.', 'Bend', { part: 'smbend' }),
       T('Unfold / Fold', 'unfold', 'on', 'Open the bends into the flat plate of the developed length, then fold back: both states are kernel solids, and the flat is the chain of allowances, not the folded volume divided by the thickness.', 'Buka tekukan jadi pelat datar sepanjang bentangan, lalu lipat kembali: kedua keadaan adalah solid kernel, dan bentangannya adalah rangkaian allowance, bukan volume terlipat dibagi tebal.', '', { part: 'smunfold' }),
-      T('Jog', 'jog', 'no', 'Two opposite bends from a sketch line. In this sector model the second bend leaves the lower plate inside the web it just made, so the sheet would pass through itself: grey until the fold model can carry a web (Batch 3).', 'Dua tekukan berlawanan dari garis sketch. Pada model sektor ini tekukan kedua meninggalkan pelat bawah di dalam web yang baru dibuat, jadi lembaran menembus dirinya sendiri: abu-abu sampai model lipatan bisa membawa web (Batch 3).', ''),
+      T('Jog', 'jog', 'on', 'Two opposite 90° bends from a line at the distance you give, with the web between them: the sheet is carried up by the rise and continues at the new height. The section is swept along the bend path by the kernel, so the volume is the path length times thickness times width, and the two bend allowances are added to the developed length. Refused if the rise cannot clear both bends.', 'Dua tekukan 90° berlawanan dari garis pada jarak yang kamu beri, dengan web di antaranya: lembaran terangkat setinggi yang diminta dan meneruskan di ketinggian baru. Penampangnya disapu kernel sepanjang lintasan tekuk, jadi volumenya panjang lintasan kali tebal kali lebar, dan dua allowance tekukan ditambahkan ke bentangan. Ditolak bila naiknya tidak cukup melewati kedua tekukan.', 'Offset Bend, Step', { part: 'jog' }),
       T('Bend Allowance', 'bend', 'on', 'One bend: BA = θ·(R + K·t), the setback and the straight length, with the K-factor labelled a workshop default. Opens in the Edit page of the left panel.', 'Satu tekukan: BA = θ·(R + K·t), setback, dan panjang lurus, dengan K-factor disebut default bengkel. Terbuka di halaman Edit panel kiri.', 'Sheet Metal Bend, Bend Deduction', 'sheetMetalBend'),
       T('Flat Pattern', 'flat', 'on', 'The flat length of this bend chain and a DXF of the flat part with its bend lines. Opens in the Edit page of the left panel.', 'Panjang bentangan rangkaian tekuk ini dan DXF part datar dengan garis tekuknya. Terbuka di halaman Edit panel kiri.', 'Unfold, Flat Pattern DXF', 'sheetMetalFlat'),
       T('Flatten', 'flat', 'on', 'The flat pattern of the part you built: a plate of the developed length, with a DXF that names every bend, its radius, its K and its allowance.', 'Bentangan datar part yang kamu bangun: pelat sepanjang bentangan, dengan DXF yang menyebut tiap tekukan, radius, K, dan allowance-nya.', 'Flat Pattern', { part: 'smflatten' }),
       T('Corner Relief', 'relief', 'on', 'Cut a round or square relief notch at a picked corner of the part: the kernel cuts it and the step reports what it removed.', 'Potong relief bulat atau kotak di sudut part yang dipilih: kernel memotongnya dan langkahnya melaporkan berapa yang dibuang.', 'Closed Corner', { part: 'smrelief' }),
-      T('Forming Tool', 'form', 'no', 'Louvres, embosses, lances.', 'Louvre, emboss, lance.', 'Punch'), T('Convert to Sheet Metal', 'flat', 'on', 'Take thickness and bend radius from the plate already open, so the sheet-metal steps can work on it. The thickness is measured from the body; the volume does not change.', 'Ambil tebal dan radius tekuk dari pelat yang sudah terbuka, supaya langkah sheet metal bisa bekerja di atasnya. Tebalnya diukur dari bodi; volumenya tidak berubah.', '', { part: 'smconvert' })]]]],
+      T('Forming Tool', 'form', 'on', 'Press a punch into the sheet: an emboss is the spherical cap of the punch above the top face (radius from the diameter and depth, volume by the cap formula, geometry fused by the kernel), and a lance is that cap cut in half. The forming tool must sit fully on the sheet, and the depth must stay under half the diameter.', 'Tekan punch ke lembaran: emboss adalah tudung bola dari punch di atas muka atas (radius dari diameter dan kedalaman, volume dengan rumus tudung, geometri disatukan kernel), dan lance adalah tudung itu dipotong setengah. Forming tool harus seluruhnya di atas lembaran, dan kedalamannya di bawah setengah diameter.', 'Punch, Louver, Emboss', { part: 'form' }), T('Convert to Sheet Metal', 'flat', 'on', 'Take thickness and bend radius from the plate already open, so the sheet-metal steps can work on it. The thickness is measured from the body; the volume does not change.', 'Ambil tebal dan radius tekuk dari pelat yang sudah terbuka, supaya langkah sheet metal bisa bekerja di atasnya. Tebalnya diukur dari bodi; volumenya tidak berubah.', '', { part: 'smconvert' })]]]],
   ['weld', 'Weldments', 'Weldment', [
     ['Frame', [T('Structural Member', 'member', 'on', 'Standard profiles along straight sketch lines: SHS and CHS (EN 10219), L (EN 10056), UPN and IPE (EN 10365), each row naming its standard. Ends are cut at shared corners on request.', 'Profil standar sepanjang garis sketch lurus: SHS dan CHS (EN 10219), L (EN 10056), UPN dan IPE (EN 10365), tiap baris menyebut standarnya. Ujung dipotong di sudut bersama bila diminta.', 'Frame Generator', P('member')),
-      T('Trim/Extend', 'trim', 'no', 'Cut one member back where another runs through it. On a hollow section the walls cross in separate pieces, so the kernel cut measured here breaks the frame into four separate solids (one corner of two SHS 40×40×3 members is 2706 mm³ of crossing walls). Grey until the joint is modelled as a cope on the member, not a boolean on the walls; today the member step cuts its own ends at shared corners instead.', 'Potong member di tempat member lain menembusnya. Pada penampang berongga dindingnya bersilangan sebagai potongan terpisah, jadi potongan kernel yang diukur di sini memecah rangka menjadi empat solid terpisah (satu sudut dua member SHS 40×40×3 = 2706 mm³ dinding bersilangan). Abu-abu sampai sambungannya dimodelkan sebagai cope pada member, bukan boolean pada dinding; sekarang langkah member memotong ujungnya sendiri di sudut bersama.', 'Notch, Miter'), T('End Cap', 'endcap', 'on', 'A plate of the profile size at both ends of every member in the sketch.', 'Pelat seukuran profil di kedua ujung tiap member pada sketch.', '', P('endcap')),
+      T('Trim/Extend', 'trim', 'on', 'Cut a member back where another one runs through it: the cutter is the other profile along a straight sketch line, extended past the body by the distance you give. The kernel measures what it removed, and the step refuses when that cut would leave more than one solid — a cut through both walls of a hollow section splits it, and that is reported instead of being passed off as a part.', 'Potong member di tempat member lain menembusnya: pemotongnya profil member lain sepanjang garis sketch lurus, diperpanjang melewati body sejauh yang kamu beri. Kernel mengukur yang dibuang, dan langkahnya menolak bila potongan menyisakan lebih dari satu solid — potongan menembus kedua dinding penampang berongga memecahnya, dan itu dilaporkan, bukan dianggap part jadi.', 'Notch, Miter, Cope', { part: 'weldtrim' }), T('End Cap', 'endcap', 'on', 'A plate of the profile size at both ends of every member in the sketch.', 'Pelat seukuran profil di kedua ujung tiap member pada sketch.', '', P('endcap')),
       T('Gusset', 'gusset', 'on', 'A triangular plate on the top face of a corner: two legs along the faces and the thickness you type, extruded by the kernel and measured. The corner is read from two sketch lines that share an end at the X, Y you type.', 'Pelat segitiga di muka atas sebuah sudut: dua kaki sepanjang muka dan tebal yang kamu ketik, ditarik oleh kernel dan diukur. Sudutnya dibaca dari dua garis sketch yang berbagi ujung di X, Y yang kamu ketik.', '', P('gusset')), T('Weld Bead', 'weld', 'on', 'A fillet weld bead along the inside of a corner: leg length on both faces, the profile\'s own section height along the joint, extruded by the kernel and measured. Built on SHS, whose two faces meet at a right angle.', 'Bead las fillet di sepanjang sisi dalam sebuah sudut: panjang kaki di kedua muka, setinggi penampang profil sepanjang sambungan, ditarik oleh kernel dan diukur. Dibangun pada SHS, yang dua mukanya bertemu siku.', 'Fillet Weld', P('weld')),
       T('Cut List', 'list', 'on', 'Profile, length, quantity and mass for the shop, read from the members the kernel built.', 'Profil, panjang, jumlah, dan massa untuk bengkel, dibaca dari member yang dibangun kernel.', '', 'weldCutListShow')]]]],
   ['mold', 'Mold', 'Mold', [
@@ -10198,17 +10433,17 @@ const RIBBON = [
     ['Review', [T('Interference Detection', 'intf', 'gb', 'Find parts that overlap.', 'Temukan part yang saling tumpang tindih.', 'Interference, Clash', 'gbCheck', ALT_GB),
       T('Exploded View', 'explode', 'on', 'Slide the assembly components apart along Z with a distance slider; their real positions do not change.', 'Geser komponen assembly terpisah sepanjang Z dengan slider jarak; posisi aslinya tidak berubah.', 'Explode', 'asmExplode'),
       T('Bill of Materials', 'bom', 'on', 'Parts list from the assembly: name, quantity, material and mass from the kernel.', 'Daftar part dari assembly: nama, jumlah, material, dan massa dari kernel.', 'BOM, Parts List', 'asmBom'),
-      T('Motion Study', 'motion', 'no', 'An animation needs a time step and a driving constraint; the kernel here builds static solids and models no motion, so this stays grey. The geometry it can measure is the first contact along a travel \u2014 that is Collision Detection.', 'Animasi butuh langkah waktu dan constraint penggerak; kernel di sini hanya membangun solid statis dan tidak memodelkan gerak, jadi tombol ini tetap abu-abu. Geometri yang bisa diukurnya adalah sentuhan pertama sepanjang lintasan \u2014 itu Collision Detection.', 'Motion Link, Kinematics'),
+      T('Motion Study', 'motion', 'on', 'Turn the part through the travel in the number of steps you give and let the kernel fuse those poses into the swept envelope: its volume, how much it grows over the part, and how far it reaches in X, Y and Z — the clearance the travel needs. The part itself does not move. (To find the first contact against another component, that is Collision Detection.)', 'Putar part melalui lintasan dalam jumlah langkah yang kamu beri dan biarkan kernel menyatukan pose-pose itu jadi selubung sapuan: volumenya, pertambahannya terhadap part, dan sejauh mana ia mencapai X, Y, Z — ruang bebas yang dibutuhkan lintasan. Part-nya sendiri tidak bergerak. (Untuk mencari sentuhan pertama terhadap komponen lain, itu Collision Detection.)', 'Motion Link, Kinematics', { part: 'motion' }),
       T('Collision Detection', 'intf', 'on', 'Move the selected component along X, Y or Z in steps you type and report the first step where its common volume with another component is not zero, with the travel distance and the overlap. The model itself does not move.', 'Gerakkan komponen terpilih sepanjang X, Y, atau Z dalam langkah yang kamu ketik dan laporkan langkah pertama saat volume irisannya dengan komponen lain tidak nol, dengan jarak tempuh dan tumpangannya. Modelnya sendiri tidak berubah.', 'Contact Set', 'asmCollide')]]]],
   ['eval', 'Evaluate', 'Evaluasi', [
     ['Measure', [T('Measure', 'measure', 'on', 'Size of the part from the kernel.', 'Ukuran part dari kernel.', 'Inspect, Measure', 'measureAny'),
       T('Mass Properties', 'mass', 'on', 'Volume and area from the kernel, mass = volume × density, with the density and its source shown.', 'Volume dan luas dari kernel, massa = volume × densitas, dengan densitas dan sumbernya ditampilkan.', 'Physical Properties', 'mass'),
       T('Section View', 'section', 'on', 'Cut the model open on XY, XZ or YZ at an offset. The section is the kernel’s own solid, not a picture.', 'Potong model pada XY, XZ, atau YZ di offset tertentu. Potongannya solid kernel sendiri, bukan gambar.', 'Section Analysis', 'sectionAny')]],
-    ['Analysis', [T('Edit Sizes on the Model', 'edit', 'gb', 'Drag handles (wall, face width); the solver rebuilds and re-checks.', 'Tarik pegangan (dinding, lebar gigi); solver membangun ulang dan mengecek lagi.', 'Direct Edit, Press Pull', 'gbEdit', ALT_GB),
+    ['Analysis', [      T('Edit Sizes on the Model', 'edit', 'on', 'Change one size of any step in the tree and the kernel rebuilds from that step: pick the step, the size and the new value, and the note names the step, the size and what it was. The same edit also drives a sketch size, which Smart Dimension sets.', 'Ubah satu ukuran dari langkah mana pun di pohon dan kernel membangun ulang dari langkah itu: pilih langkah, ukuran, dan nilai barunya, dan catatannya menyebut langkah, ukuran, dan nilai sebelumnya. Edit yang sama juga bisa mengatur ukuran sketch, seperti Smart Dimension.', 'Direct Edit, Press Pull, Parameters', { part: 'sizes' }),
       T('Design for Manufacturing', 'dfm', 'gb', 'Tool access, wall thickness, standard parts.', 'Akses pahat, tebal dinding, part standar.', 'DFMXpress, Manufacturability', 'gbCheck', ALT_GB),
       T('Draft Analysis', 'draft', 'on', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.', '', 'dfmDraft'),
       T('Thickness Analysis', 'thick', 'no', 'Find thin and thick regions.', 'Temukan bagian tipis dan tebal.', 'Wall Thickness'),
-      T('Curvature / Zebra', 'curv', 'no', 'Surface quality.', 'Kualitas surface.', 'Zebra Stripes')]]]],
+      T('Curvature / Zebra', 'curv', 'on', 'Surface quality from the kernel mesh: the curvature map colours every vertex by its discrete Gaussian curvature (angle defect over mixed area) and reports the range and the share of the surface above the threshold; the isophote bands turn the same normals into stripes against a fixed direction, so a kink or a wobble in the surface bends them. Both are painted on the triangulation the kernel returned.', 'Kualitas surface dari mesh kernel: peta kelengkungan mewarnai tiap titik dengan kelengkungan Gauss diskret (defisit sudut atas luas campuran) dan melaporkan rentang serta porsi permukaan di atas ambang; pita isophote mengubah normal yang sama menjadi garis terhadap arah tetap, jadi patahan atau gelombang permukaan membengkokkan pitanya. Keduanya dilukis di triangulasi yang dikembalikan kernel.', 'Zebra Stripes, Curvature Analysis', { part: 'curv' })]]]],
   ['sim', 'Simulation · FEA', 'Simulasi · FEA', [
     ['Gearbox (solver)', [T('Gear Rating ISO 6336', 'gear', 'gb', 'Bending and contact safety of the gears.', 'Keamanan bending dan kontak gear.', 'KISSsoft, Romax', 'gbCheck', ALT_GB),
       T('Static Stress (FEA)', 'fea', 'on', 'Static stress of the open part (Part Stress, solver), or the gearbox housing check. The solver used is named in the result.', 'Tegangan statik part yang terbuka (Part Stress, solver), atau cek housing gearbox. Solver yang dipakai ditulis di hasil.', 'Static, Linear Stress', 'stressAny'),
@@ -10335,7 +10570,7 @@ function renderRibbon() {
     h('div', { class: 'xr-row' }, list.map((t) => { const run = ribRunnable(t), grey = ribGrey(t), why = grey ? ribWhy(t) : '', armed = typeof partArm !== 'undefined' && partArm && t.act && t.act.part === partArm.type && Object.entries(t.act.p || {}).every(([k, v]) => partArm.p[k] === v);
       return h('button', { class: 'xr-t s-' + t.st + (run ? ' run' : '') + (grey ? ' na' : '') + (armed ? ' on' : '') + (t.ai ? ' ai' : ''), disabled: busy && t.st === 'on' && !!(t.act && t.act.part),
         'aria-disabled': grey ? 'true' : undefined,
-        title: `${t.n}${why ? ' — ' + why : ''}${plannedToolTip(t.st) ? '\n' + plannedToolTip(t.st) : ''}\n${L(t.en, t.id)}`,
+        title: `${t.n}${why ? ' — ' + why : ''}${plannedToolTip(t.st, cur[0]) ? '\n' + plannedToolTip(t.st, cur[0]) : ''}\n${L(t.en, t.id)}`,
         'aria-label': `${t.n}, ${L(RIB_ST[t.st][0], RIB_ST[t.st][1])}${why ? ', ' + why : ''}`, onclick: (e) => ribClick(t, e.currentTarget) },
         h('span', { class: 'xr-i' }, ribIcon(t.ic)), h('span', { class: 'xr-n' }, t.n)); })),
     h('div', { class: 'xr-gl' }, g))));
@@ -16342,7 +16577,12 @@ async function manufacturingPanel() {
     if (/^(manufacturing|sambungan|produksi|joining)$/.test(t)) { addUser(text); return manufacturingPanel(); }
     return ht2.apply(this, arguments); }; }
 
-window.__idris = { state, parseText, viewer, frameFit, chat: (t) => chatAI(t), partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), asm: { setJob: (a) => { asmJob = a; renderAsm(); }, job: () => asmJob, assemble: () => asmAssemble(), render: () => renderAsm(),
+window.__idris = { state, parseText, viewer, frameFit, chat: (t) => chatAI(t), partInfo: () => partInfo,
+  /* read-only: the loaded kernel, so a spec or a console can inspect what the wrapper exposes */
+  kernel: () => kernel(),
+  /* read-only: what the ribbon shows for every tool, so a spec can check a tool is really active */
+  ribbon: () => RIBBON.flatMap(([tab, , , groups]) => groups.flatMap(([, list]) => list)
+    .map((t) => ({ n: t.n, st: t.st, run: ribRunnable(t), grey: ribGrey(t), tab }))), genCall: (m, ms) => genCall(m, ms), asm: { setJob: (a) => { asmJob = a; renderAsm(); }, job: () => asmJob, assemble: () => asmAssemble(), render: () => renderAsm(),
     start: () => assyStart(), insert: (p) => assyInsertPart(p), rebuild: (f2) => assyRebuild(f2), tryInfo: () => state.assy2 && state.assy2.info,
     state: () => state.assy2, select: (cid) => { assySel = cid; renderCad(); }, tool: (k) => { asmTool = k; renderCad(); },
     run: { pattern: () => asmPatternRun(), mirror: () => asmMirrorRun(), mate: () => asmMateRun(), collide: () => asmCollideRun() } }, vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, aiUsageRefresh, aiBadgePaint, sheetMetal: sheetMetalPanel, bendAllowance, flatPattern, bendSetback, setback: bendSetback, manufacturingPanel, manufacturing: manufacturingPanel, manufacturingFromParts, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };

@@ -1,7 +1,7 @@
 /* S17: the Weldments tab in the real page (Batch 3).
  *
  * Checks, at 1366×768 and 1280×800:
- *   1. Structural Member, End Cap, Gusset, Weld Bead and Cut List are runnable; Trim/Extend stays grey;
+ *   1. Structural Member, End Cap, Gusset, Weld Bead, Cut List and Trim/Extend are runnable;
  *   2. a 500×300 frame of SHS 40×40×3 built through the forms measures its kernel volume, then a gusset and a weld
  *      bead each add the prism the step says: 2400 mm³ and 720 mm³;
  *   3. the step notes carry the kernel numbers, and Cut List prints the members it built;
@@ -39,9 +39,8 @@ check('the Weldments tab is in the ribbon', () => ok(tabs.includes('Weldments'),
 const openTab = async (n) => { await page.evaluate((x) => [...document.querySelectorAll('#xrib .xr-tabs button')].find((b) => b.textContent.trim() === x).click(), n); await page.waitForTimeout(300); };
 await openTab('Weldments');
 const slot = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#xrib .xr-t')].map((b) => [b.textContent.trim(), b.getAttribute('aria-disabled') === 'true'])));
-const live = ['Structural Member', 'End Cap', 'Gusset', 'Weld Bead', 'Cut List'];
-check('the five weldment steps are runnable', () => { const off = live.filter((n) => slot[n] !== false); ok(!off.length, 'still grey: ' + off.join(', ')); });
-check('Trim/Extend stays grey', () => ok(slot['Trim/Extend'] === true, 'Trim/Extend is runnable although it is not built'));
+const live = ['Structural Member', 'End Cap', 'Gusset', 'Weld Bead', 'Cut List', 'Trim/Extend'];
+check('the six weldment steps are runnable', () => { const off = live.filter((n) => slot[n] !== false); ok(!off.length, 'still grey: ' + off.join(', ')); });
 
 /* the sketch the frame runs along: a page-level sketch step, then every tool below is run from the ribbon */
 await page.evaluate(() => {
