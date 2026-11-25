@@ -1,7 +1,8 @@
 /* S19: the Assembly tab in the real page (Batch 5).
  *
  * Checks, at 1366×768 and 1280×800:
- *   1. Component Pattern, Mirror Components, Mate and Collision Detection all run now, from the ribbon;
+ *   1. Component Pattern, Mirror Components, Mate and Collision Detection all run now, from the ribbon (Motion Study
+ *      joined them in batch 12, with its own spec);
  *   2. a base plate (60×40×20 with a Ø8 through hole) and a top plate (30×20×10 with a Ø8 hole) are built by the
  *      page kernel; the tools then work on those solids:
  *        - collision along x in 5 mm steps: first contact at 60 mm with 1000 mm³ of common volume;
@@ -42,9 +43,8 @@ check('the Assembly tab is in the ribbon', () => ok(tabs.includes('Assembly'), '
 const openTab = async (n) => { await page.evaluate((x) => [...document.querySelectorAll('#xrib .xr-tabs button')].find((b) => b.textContent.trim() === x).click(), n); await page.waitForTimeout(300); };
 await openTab('Assembly');
 const slot = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#xrib .xr-t')].map((b) => [b.textContent.trim(), b.getAttribute('aria-disabled') === 'true'])));
-const live = ['Insert Component', 'Move / Rotate Component', 'Standard Parts', 'Component Pattern', 'Mirror Components', 'Mate', 'Auto Assembly', 'Interference Detection', 'Exploded View', 'Bill of Materials', 'Collision Detection'];
-check('eleven Assembly tools are runnable', () => { const off = live.filter((n) => slot[n] !== false); ok(!off.length, 'still grey: ' + off.join(', ') + ' / ' + JSON.stringify(slot)); });
-check('Motion Study stays grey, with its reason', () => ok(slot['Motion Study'] === true, 'Motion Study is not grey: ' + JSON.stringify(slot)));
+const live = ['Insert Component', 'Move / Rotate Component', 'Standard Parts', 'Component Pattern', 'Mirror Components', 'Mate', 'Auto Assembly', 'Interference Detection', 'Exploded View', 'Bill of Materials', 'Collision Detection', 'Motion Study'];
+check('twelve Assembly tools are runnable', () => { const off = live.filter((n) => slot[n] !== false); ok(!off.length, 'still grey: ' + off.join(', ') + ' / ' + JSON.stringify(slot)); });
 
 /* two plates, built by the page kernel, put into one assembly */
 const build = async (name, feats) => {

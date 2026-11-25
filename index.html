@@ -1408,7 +1408,7 @@ class Viewer {
   }
   setWireframe(on) { this.wire = on; this.dirty = true; }
   setSection(on) { this.section = on; if (on) this.goTo(1.05, 0.3); this.dirty = true; }
-  clear() { if (this.ok) { this._free(); this.setEnvelope(null); this.setMotion(null); this.setField(null); this.zebra = null; } this.anim = null; this.target = [0, 0, 0]; this.yaw = 0.62; this.pitch = 0.42; this.dist = 560; this.model = null; this.motion = null; this.playing = false; this.spinT = 0; this.section = false; this.dirty = true; }
+  clear() { if (this.ok) { this._free(); this.setEnvelope(null); this.setMotion(null); this.setField(null); this.zebra = null; } this.anim = null; this.target = [0, 0, 0]; this.yaw = 0.62; this.pitch = 0.42; this.dist = 560; this.model = null;     this.motion = null; this.motive = null; this.playing = false; this.spinT = 0; this.section = false; this.dirty = true; }
 
   /** Upload several STL parts that share ONE coordinate frame (mm). parts: [{buf, kind, name}].
    *  The whole assembly is centred once, so parts keep their relative positions. */
@@ -1432,7 +1432,7 @@ class Viewer {
       }
     }
     this.model = { radius, size, grid: this._buf(new Float32Array(gp)), gridA: this._buf(new Float32Array(ga)), gridN: gp.length / 3 };
-    this.highlight = -1; this.setMotion(null); this.spinT = 0; this.playing = false; this.explode = null; this.explodeT = 0;
+    this.highlight = -1; this.setMotion(null); this.spinT = 0; this.playing = false; this.explode = null; this.explodeT = 0; this.motive = null;
     this.anim = null; this.target = [0, 0, 0]; this.yaw = 0.62; this.pitch = 0.42; this.dist = this.fitDist(); this.dirty = true;
     return { parts: this.parts.length, triangles: this.parts.reduce((s, p) => s + p.n, 0), size_mm: size };
   }
@@ -1658,6 +1658,8 @@ class Viewer {
     }
     this.dirty = true;
   }
+  /** Per-part display matrices ({partIndex: mat4}): the motion study replays exactly the frames the kernel measured. */
+  setMotive(map) { this.motive = map && map.size ? map : null; this.dirty = true; }
   setPlaying(on) { this.playing = !!on; this._tPrev = null; this.dirty = true; }
   /** Dashed wire box (allowed envelope), centred on c, size [x,y,z]; ok = all margins >= 0. */
   setEnvelope(env) {
@@ -1835,6 +1837,7 @@ class Viewer {
     if (this.motion) for (const q of this.motion) mot.set(q.i, Viewer.rotAbout(q.axis, q.c, q.w * (this.spinT || 0)));
     if (this.explode && this.explodeT > 0) for (const [i, v] of this.explode) { const t = new Float32Array(I); t[12] = v[0] * this.explodeT; t[13] = v[1] * this.explodeT; t[14] = v[2] * this.explodeT; mot.set(i, mot.has(i) ? Viewer.mul(t, mot.get(i)) : t); }
     if (this.fly) for (const [i, v] of this.fly) { const t = new Float32Array(I); t[12] = v[0]; t[13] = v[1]; t[14] = v[2]; mot.set(i, mot.has(i) ? Viewer.mul(t, mot.get(i)) : t); }
+    if (this.motive) for (const [i, M] of this.motive) mot.set(i, mot.has(i) ? Viewer.mul(M, mot.get(i)) : M);
     const MM = (i) => mot.get(i) || I; this._mot = mot;
     const PM = (i) => { const M = mot.get(i); return M ? [Viewer.mul(mvp, M), Viewer.mul(view, M), M] : [mvp, view, I]; };
     const drawEnv = () => { if (this.envBuf) { gl.useProgram(this.pLine); gl.lineWidth(2);
@@ -10053,7 +10056,7 @@ const RIBBON = [
     ['Review', [T('Interference Detection', 'intf', 'gb', 'Find parts that overlap.', 'Temukan part yang saling tumpang tindih.', 'Interference, Clash', 'gbCheck', ALT_GB),
       T('Exploded View', 'explode', 'on', 'Slide the assembly components apart along Z with a distance slider; their real positions do not change.', 'Geser komponen assembly terpisah sepanjang Z dengan slider jarak; posisi aslinya tidak berubah.', 'Explode', 'asmExplode'),
       T('Bill of Materials', 'bom', 'on', 'Parts list from the assembly: name, quantity, material and mass from the kernel.', 'Daftar part dari assembly: nama, jumlah, material, dan massa dari kernel.', 'BOM, Parts List', 'asmBom'),
-      T('Motion Study', 'motion', 'no', 'An animation needs a time step and a driving constraint; the kernel here builds static solids and models no motion, so this stays grey. The geometry it can measure is the first contact along a travel \u2014 that is Collision Detection.', 'Animasi butuh langkah waktu dan constraint penggerak; kernel di sini hanya membangun solid statis dan tidak memodelkan gerak, jadi tombol ini tetap abu-abu. Geometri yang bisa diukurnya adalah sentuhan pertama sepanjang lintasan \u2014 itu Collision Detection.', 'Motion Link, Kinematics'),
+      T('Motion Study', 'motion', 'on', 'Drive the selected component through one joint \u2014 rotate about an axis through its centre or the origin, or slide along an axis \u2014 for a speed and a time you set. The kernel moves the solid at every frame, measures the common volume and the shortest distance to the other components, and the animation replays exactly those frames. One driven joint: a mate-driven solve still needs a constraint solver.', 'Gerakkan komponen terpilih lewat satu joint \u2014 putar terhadap sumbu lewat pusatnya atau titik nol, atau geser sepanjang sumbu \u2014 dengan kecepatan dan waktu yang kamu ketik. Kernel menggerakkan solidnya tiap frame, mengukur volume irisan dan jarak terdekat ke komponen lain, dan animasinya memutar ulang frame yang sama. Satu joint yang digerakkan: solve berbasis mate masih butuh constraint solver.', 'Motion Link, Kinematics', 'asmMotion'),
       T('Collision Detection', 'intf', 'on', 'Move the selected component along X, Y or Z in steps you type and report the first step where its common volume with another component is not zero, with the travel distance and the overlap. The model itself does not move.', 'Gerakkan komponen terpilih sepanjang X, Y, atau Z dalam langkah yang kamu ketik dan laporkan langkah pertama saat volume irisannya dengan komponen lain tidak nol, dengan jarak tempuh dan tumpangannya. Modelnya sendiri tidak berubah.', 'Contact Set', 'asmCollide')]]]],
   ['eval', 'Evaluate', 'Evaluasi', [
     ['Measure', [T('Measure', 'measure', 'on', 'Size of the part from the kernel.', 'Ukuran part dari kernel.', 'Inspect, Measure', 'measureAny'),
@@ -11108,8 +11111,9 @@ function asmCollide(R, moving, others, o) {
   return { axis: ['x', 'y', 'z'][ax], step, travel, steps: n, first, maxV };
 }
 /* ---- S19 UI: the four ribbon tools, on the assembly the engineer already has open */
-const ASM_ARGS = { pattern: { kind: 'linear', count: 3, dx: 40, dy: 0, cx: 0, cy: 0 }, mirror: { plane: 'YZ' }, collide: { axis: 'x', travel: 60, step: 5 } };
-const ASM_TOOL_NAME = { pattern: ['Component pattern', 'Pola komponen'], mirror: ['Mirror components', 'Cermin komponen'], collide: ['Collision detection', 'Deteksi tabrakan'] };
+const ASM_ARGS = { pattern: { kind: 'linear', count: 3, dx: 40, dy: 0, cx: 0, cy: 0 }, mirror: { plane: 'YZ' }, collide: { axis: 'x', travel: 60, step: 5 },
+  motion: { driver: 'rotate', axis: 'z', pivot: 'own', speed: 90, duration: 2, frames: 24 } };
+const ASM_TOOL_NAME = { pattern: ['Component pattern', 'Pola komponen'], mirror: ['Mirror components', 'Cermin komponen'], collide: ['Collision detection', 'Deteksi tabrakan'], motion: ['Motion study', 'Studi gerak'] };
 let asmTool = null;
 function asmPickComp() {
   const a = state.assy2; if (!a) return { refuse: 'assembly' };
@@ -11213,6 +11217,59 @@ async function asmCollideRun() {
     : L(`No collision: ${p.c.name} travels ${f(res.travel, 2)} mm along ${res.axis} in ${f(res.step, 2)} mm steps (${res.steps} steps) and the common volume stays 0.00 mm\u00b3 (OpenCascade).`,
       `Tidak ada tabrakan: ${p.c.name} bergerak ${f(res.travel, 2)} mm sepanjang ${res.axis} dalam langkah ${f(res.step, 2)} mm (${res.steps} langkah) dan volume irisannya tetap 0,00 mm\u00b3 (OpenCascade).`)));
 }
+/* ---- S21n UI: the motion study in the assembly on screen */
+let motRaf = 0;
+function motStop() { if (motRaf) cancelAnimationFrame(motRaf); motRaf = 0; if (viewer.setMotive) viewer.setMotive(null); }
+function motPlay() {
+  const a = state.assy2, s = a && a.motion;
+  if (!s || !viewer.parts) return;
+  const built = a.comps.filter((c) => { const inf = assyInfo(c.cid); return inf && inf.ok; });
+  const i = built.findIndex((c) => c.cid === s.cid);
+  if (i < 0 || !viewer.parts[i]) return;
+  const stopAt = s.first ? s.first.t : s.dur, frames = Math.max(2, s.frames), dur = Math.min(4000, Math.max(900, stopAt * 500)), t0 = performance.now();
+  motStop();
+  const step = (now) => {
+    const e = Math.min(1, Math.max(0, (now - t0) / dur)), tt = stopAt * e;
+    const k = Math.min(frames, Math.max(1, Math.round(frames * tt / s.dur))), r = s.rows[k - 1] || s.rows[s.rows.length - 1];
+    const M = s.driver === 'rotate' ? motMat(s.ax, s.pivot, r.s) : motSlideMat(s.ax, r.s);
+    viewer.setMotive(new Map([[i, motDispMat(M)]]));
+    motRaf = e < 1 ? requestAnimationFrame(step) : 0;
+  };
+  motRaf = requestAnimationFrame(step);
+}
+async function asmMotionRun() {
+  const p = asmPickComp(); if (p.refuse) return asmRefuse(p);
+  const a = p.a, o = ASM_ARGS.motion;
+  const others = a.comps.filter((x) => x.cid !== p.c.cid).map((x) => assyInfo(x.cid)).filter((x) => x && x.ok).map((x) => x.shape);
+  if (!others.length) return say(para(L('A motion study needs a second component that the kernel built: it measures the moving part against the others at every frame. Insert another part first.',
+    'Studi gerak butuh komponen kedua yang dibangun kernel: tiap frame part yang bergerak diukur terhadap yang lain. Masukkan part lain dulu.'), 'm'));
+  const plan = motPlan(o);
+  if (plan.refuse) return say(para({ speed: L(`A motion study needs a speed above 0; the speed is ${plan.speed}.`, `Studi gerak butuh kecepatan di atas 0; kecepatannya ${plan.speed}.`),
+    duration: L(`The run needs a duration above 0 s; it is ${plan.dur} s.`, `Jalannya butuh durasi di atas 0 s; sekarang ${plan.dur} s.`),
+    frames: L(`A run needs at least 2 frames; the count is ${plan.frames}.`, `Jalan butuh minimal 2 frame; jumlahnya ${plan.frames}.`),
+    max: L(`120 frames is the limit here; the count is ${plan.frames}.`, `Batas di sini 120 frame; jumlahnya ${plan.frames}.`) }[plan.refuse], 'm'));
+  const R = await kernel(), bb = p.inf.bounds;
+  const pivot = o.pivot === 'origin' ? [0, 0, 0] : [0, 1, 2].map((k) => (bb[0][k] + bb[1][k]) / 2);
+  motStop();
+  const res = motStudy(R, p.inf.shape, others, o, pivot);
+  if (res.refuse) return say(para(L('The kernel could not run that motion.', 'Kernel tidak bisa menjalankan gerak itu.'), 'm'));
+  a.motion = { cid: p.c.cid, name: p.c.name, driver: res.driver, ax: res.ax, axis: res.axis, speed: res.speed, dur: res.dur, frames: res.frames, total: res.total,
+    pivot: res.pivot, vol0: res.vol0, dv: res.dv, first: res.first, worst: res.worst, crashed: res.crashed, rows: res.rows };
+  const unit = res.driver === 'rotate' ? '\u00b0' : ' mm';
+  const how = res.driver === 'rotate'
+    ? L(`turns ${f(res.total, 2)}\u00b0 about ${res.axis} in ${res.frames} frames (${f(res.speed, 2)} \u00b0/s for ${f(res.dur, 2)} s)`, `berputar ${f(res.total, 2)}\u00b0 terhadap ${res.axis} dalam ${res.frames} frame (${f(res.speed, 2)} \u00b0/s selama ${f(res.dur, 2)} s)`)
+    : L(`slides ${f(res.total, 2)} mm along ${res.axis} in ${res.frames} frames (${f(res.speed, 2)} mm/s for ${f(res.dur, 2)} s)`, `bergeser ${f(res.total, 2)} mm sepanjang ${res.axis} dalam ${res.frames} frame (${f(res.speed, 2)} mm/s selama ${f(res.dur, 2)} s)`);
+  const hit = res.first
+    ? L(`first contact at frame ${res.first.i}/${res.frames} (${f(res.first.s, 2)}${unit}, ${f(res.first.t, 2)} s) with ${f(res.first.v, 2)} mm\u00b3 of common volume`,
+      `sentuhan pertama di frame ${res.first.i}/${res.frames} (${f(res.first.s, 2)}${unit}, ${f(res.first.t, 2)} s) dengan volume irisan ${f(res.first.v, 2)} mm\u00b3`)
+    : L(`no overlap in that run: the solids come closest at frame ${res.worst ? res.worst.i : 0}, ${f(res.worst ? res.worst.d : 0, 2)} mm apart${res.worst && res.worst.d < 0.01 ? ' (touching)' : ''}`,
+      `tidak ada tumpang tindih pada gerak itu: jarak terdekat di frame ${res.worst ? res.worst.i : 0}, ${f(res.worst ? res.worst.d : 0, 2)} mm${res.worst && res.worst.d < 0.01 ? ' (bersentuhan)' : ''}`);
+  const rigid = L(`the kernel moved the solid at every frame and its volume stayed ${f(res.vol0, 3)} mm\u00b3 (largest change ${f(res.dv, 4)} mm\u00b3)`,
+    `kernel menggerakkan solidnya tiap frame dan volumenya tetap ${f(res.vol0, 3)} mm\u00b3 (perubahan terbesar ${f(res.dv, 4)} mm\u00b3)`);
+  say(para(L(`Motion study: ${p.c.name} ${how}; ${hit}; ${rigid}.`, `Studi gerak: ${p.c.name} ${how}; ${hit}; ${rigid}.`)),
+    para(L('The animation replays exactly those frames and stops at the contact frame; the component has not moved.', 'Animasinya memutar ulang frame yang sama dan berhenti di frame sentuhan; komponennya tidak berpindah.'), 'm'));
+  motPlay(); saveAssy(); renderCad();
+}
 function asmToolPanel() {
   const kind = asmTool, o = ASM_ARGS[kind]; if (!kind || !o) return null;
   const num = (k, lab, unit) => h('label', null, h('span', null, lab), h('span', { class: 'pnum' }, h('input', { type: 'number', step: 'any', value: o[k], 'data-k': k, oninput: (e) => { o[k] = +e.target.value; } }), h('em', null, unit)));
@@ -11222,22 +11279,106 @@ function asmToolPanel() {
       o.kind === 'circular' ? num('cx', L('Centre X', 'Pusat X'), 'mm') : num('dx', L('Pitch X', 'Jarak X'), 'mm'),
       o.kind === 'circular' ? num('cy', L('Centre Y', 'Pusat Y'), 'mm') : num('dy', L('Pitch Y', 'Jarak Y'), 'mm')]
     : kind === 'mirror' ? [pick('plane', L('Plane through the origin', 'Bidang lewat titik nol'), [['YZ', 'YZ'], ['XZ', 'XZ'], ['XY', 'XY']])]
+      : kind === 'motion' ? [pick('driver', L('Driver', 'Penggerak'), [['rotate', L('Rotate', 'Putar')], ['slide', L('Slide', 'Geser')]]),
+        pick('axis', L('Axis', 'Sumbu'), [['x', 'X'], ['y', 'Y'], ['z', 'Z']]),
+        o.driver === 'rotate' ? pick('pivot', L('Pivot', 'Pusat putar'), [['own', L('Component centre', 'Pusat komponen')], ['origin', L('Origin', 'Titik nol')]]) : null,
+        num('speed', L('Speed', 'Kecepatan'), o.driver === 'rotate' ? '\u00b0/s' : 'mm/s'), num('duration', L('Duration', 'Durasi'), 's'), num('frames', L('Frames', 'Frame'), '')].filter(Boolean)
       : [pick('axis', L('Travel axis', 'Sumbu gerak'), [['x', 'X'], ['y', 'Y'], ['z', 'Z']]), num('travel', L('Travel', 'Jarak'), 'mm'), num('step', L('Step', 'Langkah'), 'mm')];
   const hint = { pattern: L('Each copy is a solid the kernel builds; copies are checked against each other by common volume.', 'Tiap salinan solid yang dibangun kernel; salinan dicek satu sama lain lewat volume irisan.'),
     mirror: L('The copy is the kernel\u2019s mirrored solid; it must keep the volume of its source.', 'Salinannya solid cermin kernel; volumenya harus sama dengan asalnya.'),
-    collide: L('The component is moved only in the check; its real position does not change.', 'Komponen hanya digerakkan di dalam pengecekan; posisi aslinya tidak berubah.') }[kind];
-  const run = { pattern: asmPatternRun, mirror: asmMirrorRun, collide: asmCollideRun }[kind];
+    collide: L('The component is moved only in the check; its real position does not change.', 'Komponen hanya digerakkan di dalam pengecekan; posisi aslinya tidak berubah.'),
+    motion: L('One driven joint: the kernel moves the solid at every frame and measures the common volume and the shortest distance to the other components. The animation shows those same frames; nothing moves in the model.', 'Satu joint yang digerakkan: kernel menggerakkan solidnya tiap frame dan mengukur volume irisan serta jarak terdekat ke komponen lain. Animasinya menampilkan frame yang sama; modelnya tidak berubah.') }[kind];
+  const run = { pattern: asmPatternRun, mirror: asmMirrorRun, collide: asmCollideRun, motion: asmMotionRun }[kind];
   return h('div', { class: 'gen-src', id: 'asmTool', 'data-tool': kind }, h('b', null, L(...ASM_TOOL_NAME[kind])), h('p', { class: 'hint' }, hint),
-    h('div', { class: 'pform', style: 'grid-template-columns:1fr 1fr;gap:6px 10px' }, rows),
+    h('div', { class: 'pform', style: `grid-template-columns:${kind === 'motion' ? '1fr' : '1fr 1fr'};gap:6px 10px` }, rows),
     h('div', { class: 'pact' }, h('button', { class: 'chip primary', onclick: () => run() }, L('Run', 'Jalankan')), h('button', { class: 'chip', onclick: () => { asmTool = null; renderCad(); } }, L('Close', 'Tutup'))));
 }
 { const ra3 = ribAct; ribAct = function (act) {
-    if (act === 'asmPattern' || act === 'asmMirror' || act === 'asmCollide') {
+    if (act === 'asmPattern' || act === 'asmMirror' || act === 'asmCollide' || act === 'asmMotion') {
       if (!state.assy2) { say(para(L('Start an assembly first: Insert Component brings saved parts, Library parts or ISO bolts into one.', 'Mulai assembly dulu: Insert Component memasukkan part tersimpan, part Library, atau baut ISO ke satu assembly.'), 'm')); return; }
-      asmTool = act === 'asmPattern' ? 'pattern' : act === 'asmMirror' ? 'mirror' : 'collide'; return renderCad(); }
+      asmTool = act === 'asmPattern' ? 'pattern' : act === 'asmMirror' ? 'mirror' : act === 'asmCollide' ? 'collide' : 'motion'; return renderCad(); }
     if (act === 'asmMate') return asmMateRun();
     return ra3.apply(this, arguments); };
 }
+/* ---- S21n: motion study ----------------------------------------------------------------------------------------
+ * A motion study is a driving joint plus a time step, measured at every step. The engine has no constraint solver, so
+ * the joint here is exactly one: a rotation about an axis through a pivot, or a slide along an axis. At every frame
+ * the kernel itself moves the solid (rotate / translate) and the kernel measures the result:
+ *   * the common volume with every other component (0.00 mm3 = clear);
+ *   * the shortest distance between the two solids (BRepExtrema_DistShapeShape);
+ *   * the volume of the moved solid, which a rigid motion must not change.
+ * The animation replays the same transform (motMat / motDispMat), so it shows what was measured, not a guess.
+ * tests/s21n-motion.test.mjs lifts this block and runs it on the same kernel. */
+const MOT_AX = { x: 0, y: 1, z: 2 };
+const motAxisVec = (ax) => { const v = [0, 0, 0]; v[ax] = 1; return v; };
+const motMul4 = (a, b) => { const o = new Float64Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; };
+const motApply = (M, p) => [M[0] * p[0] + M[4] * p[1] + M[8] * p[2] + M[12], M[1] * p[0] + M[5] * p[1] + M[9] * p[2] + M[13], M[2] * p[0] + M[6] * p[1] + M[10] * p[2] + M[14]];
+/** the rigid transform the kernel applies for rotate(deg, pivot, +axis): right-hand rule, pivot fixed */
+function motMat(ax, pivot, deg) {
+  const c = Math.cos(deg * Math.PI / 180), s = Math.sin(deg * Math.PI / 180), p = pivot || [0, 0, 0];
+  const M = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+  if (ax === 0) { M[5] = c; M[6] = s; M[9] = -s; M[10] = c; }
+  else if (ax === 1) { M[0] = c; M[2] = -s; M[8] = s; M[10] = c; }
+  else { M[0] = c; M[1] = s; M[4] = -s; M[5] = c; }
+  const r = [M[0] * p[0] + M[4] * p[1] + M[8] * p[2], M[1] * p[0] + M[5] * p[1] + M[9] * p[2], M[2] * p[0] + M[6] * p[1] + M[10] * p[2]];
+  M[12] = p[0] - r[0]; M[13] = p[1] - r[1]; M[14] = p[2] - r[2];
+  return M;
+}
+function motSlideMat(ax, mm) { const M = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); M[12 + ax] = mm; return M; }
+/* the viewer draws zUp(x, y, z) = (x, z, -y), so a CAD transform becomes Z.M.Zt in the display frame */
+const MOT_Z = new Float64Array([1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1]);
+const MOT_ZT = new Float64Array([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1]);
+const motDispMat = (M) => motMul4(motMul4(MOT_Z, M), MOT_ZT);
+const MOT_BOX = (sh) => { const b = sh.boundingBox.bounds; return [[...b[0]], [...b[1]]]; };
+const motTouch = (a, b) => [0, 1, 2].every((k) => a[0][k] < b[1][k] - 1e-9 && b[0][k] < a[1][k] - 1e-9);
+/** shortest distance between two solids, measured by the kernel */
+function motClear(R, A, B) {
+  const oc = R.getOC();
+  if (!oc || !oc.BRepExtrema_DistShapeShape) return NaN;
+  const d = new oc.BRepExtrema_DistShapeShape();
+  d.LoadS1(A.wrapped); d.LoadS2(B.wrapped); d.Perform();
+  const v = d.IsDone() ? d.Value() : NaN;
+  if (typeof d.delete === 'function') d.delete();
+  return v;
+}
+function motPlan(o) {
+  const driver = o && o.driver === 'slide' ? 'slide' : 'rotate';
+  const ax = MOT_AX[o && o.axis] != null ? MOT_AX[o.axis] : 2;
+  const speed = Math.abs(+((o && o.speed) || 0)), dur = +((o && o.duration) || 0), frames = Math.round(+((o && o.frames) || 0));
+  if (!(speed > 1e-9)) return { refuse: 'speed', speed, dur, frames };
+  if (!(dur > 1e-9)) return { refuse: 'duration', speed, dur, frames };
+  if (!(frames >= 2)) return { refuse: 'frames', speed, dur, frames };
+  if (frames > 120) return { refuse: 'max', speed, dur, frames };
+  const total = speed * dur;
+  return { driver, ax, axis: ['x', 'y', 'z'][ax], speed, dur, frames, total, step: total / frames };
+}
+function motStudy(R, shape, others, o, pivot) {
+  const plan = motPlan(o);
+  if (plan.refuse) return plan;
+  const pv = (pivot || [0, 0, 0]).slice(), av = motAxisVec(plan.ax), list = (others || []).filter(Boolean);
+  const boxes = list.map((s) => MOT_BOX(s)), vol0 = R.measureVolume(shape.clone());
+  const rows = []; let first = null, worst = null, dv = 0;
+  for (let i = 1; i <= plan.frames; i++) {
+    const t = plan.dur * i / plan.frames, s = plan.step * i;
+    const moved = plan.driver === 'rotate' ? shape.clone().rotate(s, pv, av) : shape.clone().translate([av[0] * s, av[1] * s, av[2] * s]);
+    const mb = MOT_BOX(moved);
+    let v = 0, near = Infinity;
+    for (let j = 0; j < list.length; j++) {
+      if (motTouch(mb, boxes[j])) { try { v = Math.max(v, R.measureVolume(moved.clone().intersect(list[j].clone()))); } catch (e) { /* no common solid */ } }
+      const d = motClear(R, moved, list[j]);
+      if (Number.isFinite(d) && d < near) near = d;
+    }
+    const vol = R.measureVolume(moved.clone());
+    dv = Math.max(dv, Math.abs(vol - vol0));
+    const row = { i, t, s, v, d: Number.isFinite(near) ? near : null };
+    rows.push(row);
+    if (v <= 0.01) { if (row.d != null && (!worst || row.d < worst.d)) worst = { d: row.d, i, t, s }; }
+    if (!first && v > 0.01) first = { i, t, s, v };
+  }
+  return { ...plan, pivot: pv, vol0, dv, rows, first, worst, crashed: !!first };
+}
+/* ---- end S21n helpers ---- */
 /* ---- S20: the drawing geometry the kernel measures (section, detail window, flatness, perpendicularity) ----
 /* The two Drawing tools that were grey (Section / Detail View, GD&T) get their geometry here: a boolean cut of the
  * solid, a cylinder window cut out of it and projected, and the form of the B-rep faces measured on their own wires. */
@@ -11397,6 +11538,14 @@ function renderAssyCad() {
       h('button', { class: 'chip primary', disabled: assyBusy, onclick: assyAuto }, 'Auto Assembly'), h('button', { class: 'chip', disabled: assyBusy || !info.length, onclick: () => assyInterference(false) }, L('Check interference', 'Cek interferensi'))),
     (a.joints || []).length ? h('div', { class: 'gen-src' }, h('b', null, L('Mates (kernel probe)', 'Mate (probe kernel)')), ...(a.joints).map((m) => h('p', { class: 'hint' }, L(`${(a.comps.find((c) => c.cid === m.upper) || {}).name || m.upper} \u2192 ${(a.comps.find((c) => c.cid === m.lower) || {}).name || m.lower} \u00b7 ${m.d ? `\u00d8${f(m.d, 1)} concentric, faces flush \u00b7 probe ${f(m.clear, 2)} mm\u00b3 clear, ${f(m.wall, 2)} mm\u00b3 material` : 'faces flush'} \u00b7 gap ${f(m.gap, 3)} mm`,
       `${(a.comps.find((c) => c.cid === m.upper) || {}).name || m.upper} \u2192 ${(a.comps.find((c) => c.cid === m.lower) || {}).name || m.lower} \u00b7 ${m.d ? `\u00d8${f(m.d, 1)} konsentris, muka rata \u00b7 probe ${f(m.clear, 2)} mm\u00b3 bebas, ${f(m.wall, 2)} mm\u00b3 material` : 'muka rata'} \u00b7 celah ${f(m.gap, 3)} mm`)))) : '',
+    a.motion ? h('div', { class: 'gen-src' }, h('b', null, L('Motion study (kernel)', 'Studi gerak (kernel)')),
+      h('p', { class: 'hint' }, `${a.motion.name} \u00b7 ${a.motion.driver === 'rotate' ? L('rotate', 'putar') : L('slide', 'geser')} ${a.motion.axis} \u00b7 ${f(a.motion.total, 2)}${a.motion.driver === 'rotate' ? '\u00b0' : ' mm'} in ${a.motion.frames} frames \u00b7 ` +
+        (a.motion.first ? L(`first contact frame ${a.motion.first.i}/${a.motion.frames} at ${f(a.motion.first.s, 2)}${a.motion.driver === 'rotate' ? '\u00b0' : ' mm'} with ${f(a.motion.first.v, 2)} mm\u00b3`,
+          `sentuhan frame ${a.motion.first.i}/${a.motion.frames} di ${f(a.motion.first.s, 2)}${a.motion.driver === 'rotate' ? '\u00b0' : ' mm'} dengan ${f(a.motion.first.v, 2)} mm\u00b3`)
+          : L(`no overlap, closest ${f(a.motion.worst ? a.motion.worst.d : 0, 2)} mm`, `tidak ada tumpang tindih, terdekat ${f(a.motion.worst ? a.motion.worst.d : 0, 2)} mm`)) +
+        ` \u00b7 ${f(a.motion.vol0, 3)} mm\u00b3`),
+      h('div', { class: 'pact', style: 'flex-wrap:wrap' }, h('button', { class: 'chip', onclick: motPlay }, L('Play motion', 'Mainkan gerak')),
+        h('button', { class: 'chip', onclick: motStop }, L('Back to position', 'Kembali ke posisi')))) : '',
     asmToolPanel(),
     h('div', { class: 'pdoc' }, h('button', { class: 'linkbtn', onclick: () => { const n = prompt(L('Assembly name', 'Nama assembly'), a.name); if (n) { a.name = n.slice(0, 60); saveAssy(); renderCad(); } } }, L('Rename', 'Ganti nama')), ' · ', h('button', { class: 'linkbtn', onclick: assyLeave }, L('Close assembly', 'Tutup assembly'))));
   const pr = propsEl(); pr.innerHTML = '';
@@ -15878,7 +16027,7 @@ async function manufacturingPanel() {
 window.__idris = { state, parseText, viewer, frameFit, chat: (t) => chatAI(t), partInfo: () => partInfo, genCall: (m, ms) => genCall(m, ms), asm: { setJob: (a) => { asmJob = a; renderAsm(); }, job: () => asmJob, assemble: () => asmAssemble(), render: () => renderAsm(),
     start: () => assyStart(), insert: (p) => assyInsertPart(p), rebuild: (f2) => assyRebuild(f2), tryInfo: () => state.assy2 && state.assy2.info,
     state: () => state.assy2, select: (cid) => { assySel = cid; renderCad(); }, tool: (k) => { asmTool = k; renderCad(); },
-    run: { pattern: () => asmPatternRun(), mirror: () => asmMirrorRun(), mate: () => asmMateRun(), collide: () => asmCollideRun() } }, vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, aiUsageRefresh, aiBadgePaint, sheetMetal: sheetMetalPanel, bendAllowance, flatPattern, bendSetback, setback: bendSetback, manufacturingPanel, manufacturing: manufacturingPanel, manufacturingFromParts, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
+    run: { pattern: () => asmPatternRun(), mirror: () => asmMirrorRun(), mate: () => asmMateRun(), collide: () => asmCollideRun(), motion: () => asmMotionRun() } }, vis: { VIS, visModal, visShapeMatch }, tools: { dfmPart, modalPart, bucklingTool, feaCompression, buckPrefill, aiUsageRefresh, aiBadgePaint, sheetMetal: sheetMetalPanel, bendAllowance, flatPattern, bendSetback, setback: bendSetback, manufacturingPanel, manufacturing: manufacturingPanel, manufacturingFromParts, pipeTool, exportAP242, exportSWMacro, swGraph, frameRotation, feaMeshNow, feaTriFace, defaults, startPart, shapeFamilyCtx, dfmWallNote, dfmIsCoarse, dfmDrillRows, ap242Solids, openSketchSession, skSave, skCancel, sketchView, sketchViewExit, skSession, skClick, partTool, planePoint, planeRay, rebuildPart } };
 })();
 </script>
 </body>
