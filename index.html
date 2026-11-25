@@ -6703,6 +6703,20 @@ function weldGussetSolid(R, k, prof, lg, lh, t, at) {
   const w = weldWidth(prof), f = weldFaceCorner(k, w);
   return weldTriSolid(R, [f.p, [f.p[0] + k.u[0] * lg, f.p[1] + k.u[1] * lg], [f.p[0] + k.v[0] * lh, f.p[1] + k.v[1] * lh]], at + w / 2, t);
 }
+/** the reference planes already defined above, as options for a sketch's Plane field */
+function refPlaneOptions() {
+  const fs = (typeof state !== 'undefined' && state.part && state.part.features) || [];
+  return fs.filter((f) => f && f.type === 'refplane').map((f) => [f.id, [FEAT.refplane.label(f.p), FEAT.refplane.label(f.p)]]);
+}
+/** the axes and coordinate systems already defined, as options for Revolve / Repeat */
+function refAxisOptions() {
+  const fs = (typeof state !== 'undefined' && state.part && state.part.features) || [];
+  return fs.filter((f) => f && f.type === 'refaxis').map((f) => [f.id, [FEAT.refaxis.label(f.p), FEAT.refaxis.label(f.p)]]);
+}
+function refCsysOptions() {
+  const fs = (typeof state !== 'undefined' && state.part && state.part.features) || [];
+  return [['', [L('The values below', 'Nilai di bawah')]]].concat(fs.filter((f) => f && f.type === 'csys').map((f) => [f.id, [FEAT.csys.label(f.p), FEAT.csys.label(f.p)]]));
+}
 const FEAT = {
   shape: { en: 'Shape', id: 'Shape', fields: [S('kind', 'Shape', 'Bentuk', [['box', ['Box', 'Balok']], ['cyl', ['Cylinder', 'Silinder']], ['tube', ['Tube', 'Tabung']], ['sphere', ['Sphere', 'Bola']]], 'box'),
       N('L', 'Length X', 'Panjang X', 'mm', 100, { show: (p) => p.kind === 'box' }), N('W', 'Width Y', 'Lebar Y', 'mm', 60, { show: (p) => p.kind === 'box' }),
@@ -6710,15 +6724,17 @@ const FEAT = {
       N('H', 'Height Z', 'Tinggi Z', 'mm', 20, { show: (p) => p.kind !== 'sphere' }),
       N('x', 'Centre X', 'Pusat X', 'mm', 0), N('y', 'Centre Y', 'Pusat Y', 'mm', 0), N('z', 'Base Z', 'Dasar Z', 'mm', 0), S('op', 'With the body', 'Terhadap body', OPS, 'add', { first: false })],
     label: (p) => ({ box: `${L('Box', 'Balok')} ${p.L}×${p.W}×${p.H}`, cyl: `${L('Cylinder', 'Silinder')} Ø${p.D}×${p.H}`, tube: `${L('Tube', 'Tabung')} Ø${p.D}/Ø${p.Di}×${p.H}`, sphere: `${L('Sphere', 'Bola')} Ø${p.D}` }[p.kind]) },
-  sketch: { en: 'Sketch', id: 'Sketch', fields: [S('prof', 'Profile', 'Profil', [['rect', ['Rectangle', 'Persegi panjang']], ['circle', ['Circle', 'Lingkaran']], ['slot', ['Slot', 'Slot']], ['poly', ['Polygon', 'Poligon']], ['ellipse', ['Ellipse', 'Elips']], ['spline', ['Closed spline through points', 'Spline tertutup melalui titik']], ['ents', ['Lines & arcs (interactive)', 'Garis & busur (interaktif)']]], 'rect'),
+  sketch: { en: 'Sketch', id: 'Sketch', get fields() {
+      const base = [S('prof', 'Profile', 'Profil', [['rect', ['Rectangle', 'Persegi panjang']], ['circle', ['Circle', 'Lingkaran']], ['slot', ['Slot', 'Slot']], ['poly', ['Polygon', 'Poligon']], ['ellipse', ['Ellipse', 'Elips']], ['spline', ['Closed spline through points', 'Spline tertutup melalui titik']], ['ents', ['Lines & arcs (interactive)', 'Garis & busur (interaktif)']]], 'rect'),
       N('W', 'Width', 'Lebar', 'mm', 30, { show: (p) => p.prof === 'rect' || p.prof === 'slot' }), N('Hh', 'Height', 'Tinggi', 'mm', 20, { show: (p) => p.prof === 'rect' || p.prof === 'slot' }),
       N('D', 'Diameter', 'Diameter', 'mm', 20, { show: (p) => p.prof === 'circle' || p.prof === 'poly' || p.prof === 'ellipse' }), N('n', 'Sides', 'Jumlah sisi', '', 6, { show: (p) => p.prof === 'poly', step: 1, min: 3 }),
       /* S21: the ellipse is the major (D) and minor (d) diameter the kernel draws; the spline is the closed curve
          through the points typed here, one point per `x,y`, separated by `;` or a new line. */
       N('d', 'Minor diameter', 'Diameter kecil', 'mm', 10, { show: (p) => p.prof === 'ellipse', min: 0.1 }),
       TX('pts', 'Points (x,y; x,y; …)', 'Titik (x,y; x,y; …)', '0,20; 20,0; 0,-20; -20,0', { show: (p) => p.prof === 'spline' }),
-      S('plane', 'Plane', 'Bidang', PLANES, 'XY'), S('at', 'Place on', 'Letakkan di', [['top', ['Top of the body', 'Atas body']], ['value', ['Offset value', 'Nilai offset']]], 'top', { show: (p) => p.plane === 'XY' }),
-      N('off', 'Offset along the normal', 'Offset searah normal', 'mm', 0, { show: (p) => p.plane !== 'XY' || p.at === 'value' }), N('u', 'Centre (1st axis)', 'Pusat (sumbu 1)', 'mm', 0), N('v', 'Centre (2nd axis)', 'Pusat (sumbu 2)', 'mm', 0)],
+      S('plane', 'Plane', 'Bidang', [...PLANES, ...refPlaneOptions()], 'XY'), S('at', 'Place on', 'Letakkan di', [['top', ['Top of the body', 'Atas body']], ['value', ['Offset value', 'Nilai offset']]], 'top', { show: (p) => p.plane === 'XY' }),
+      N('off', 'Offset along the normal', 'Offset searah normal', 'mm', 0, { show: (p) => p.plane !== 'XY' || p.at === 'value' }), N('u', 'Centre (1st axis)', 'Pusat (sumbu 1)', 'mm', 0), N('v', 'Centre (2nd axis)', 'Pusat (sumbu 2)', 'mm', 0)];
+      return base; },
     label: (p) => p.prof === 'ents' ? `${(p.ents || []).length} ${L('entities', 'entitas')} · ${p.plane}` : p.prof === 'spline' ? `${L('Spline', 'Spline')} ${s21SplinePts(p.pts).length} ${L('points', 'titik')} · ${p.plane}` : `${{ rect: `${L('Rectangle', 'Persegi')} ${p.W}×${p.Hh}`, circle: `${L('Circle', 'Lingkaran')} Ø${p.D}`, slot: `Slot ${p.W}×${p.Hh}`, poly: `${p.n}-${L('gon', 'gon')} Ø${p.D}`, ellipse: `${L('Ellipse', 'Elips')} Ø${p.D}×${p.d}` }[p.prof]} · ${p.plane}` },
   push: { en: 'Push/Pull', id: 'Push/Pull', fields: [N('dist', 'Distance (negative = other side)', 'Jarak (negatif = arah sebaliknya)', 'mm', 10, { min: -2000 }), S('op', 'Result', 'Hasil', OPS, 'add'), S('both', 'Direction', 'Arah', [['one', ['One side', 'Satu sisi']], ['both', ['Both sides (symmetric)', 'Dua sisi (simetris)']]], 'one')],
     label: (p) => `${p.op === 'cut' ? L('Cut', 'Potong') : L('Extrude', 'Tarik')} ${p.dist} mm${p.both === 'both' ? ' ⇅' : ''}` },
@@ -6737,7 +6753,8 @@ const FEAT = {
       N('count', 'Count (incl. the first)', 'Jumlah (termasuk yang pertama)', '', 4, { step: 1, min: 2, show: (p) => p.kind !== 'mirror' }),
       N('dx', 'Step X', 'Jarak X', 'mm', 20, { show: (p) => p.kind === 'line' }), N('dy', 'Step Y', 'Jarak Y', 'mm', 0, { show: (p) => p.kind === 'line' }),
       N('cx', 'Centre X', 'Pusat X', 'mm', 0, { show: (p) => p.kind === 'circle' }), N('cy', 'Centre Y', 'Pusat Y', 'mm', 0, { show: (p) => p.kind === 'circle' }),
-      S('plane', 'Mirror plane', 'Bidang cermin', [['YZ', ['YZ (left ↔ right)', 'YZ (kiri ↔ kanan)']], ['XZ', ['XZ (front ↔ back)', 'XZ (depan ↔ belakang)']]], 'YZ', { show: (p) => p.kind === 'mirror' })],
+      S('plane', 'Mirror plane', 'Bidang cermin', [['YZ', ['YZ (left ↔ right)', 'YZ (kiri ↔ kanan)']], ['XZ', ['XZ (front ↔ back)', 'XZ (depan ↔ belakang)']]], 'YZ', { show: (p) => p.kind === 'mirror' }),
+      S('ref', 'Centre from', 'Pusat dari', refCsysOptions(), '', { show: (p) => p.kind === 'circle' })],
     label: (p) => p.kind === 'mirror' ? `${L('Mirror', 'Cermin')} ${p.plane}` : p.kind === 'line' ? `${p.count}× ${L('line', 'garis')} ${p.dx}, ${p.dy}` : `${p.count}× ${L('circle', 'lingkaran')}` },
   wall: { en: 'Wall', id: 'Wall', fields: [N('t', 'Wall thickness', 'Tebal dinding', 'mm', 2, { min: 0.2 }), S('open', 'Open face', 'Sisi terbuka', [['top', ['Top', 'Atas']], ['bottom', ['Bottom', 'Bawah']]], 'top')],
     label: (p) => `Shell ${p.t} mm · ${L('open', 'buka')} ${p.open === 'top' ? L('top', 'atas') : L('bottom', 'bawah')}` },
@@ -6745,10 +6762,10 @@ const FEAT = {
       S('plane', 'Mirror plane', 'Bidang cermin', [['YZ', ['YZ', 'YZ']], ['XZ', ['XZ', 'XZ']], ['XY', ['XY', 'XY']]], 'YZ', { show: (p) => p.kind === 'mirror' }),
       N('dx', 'Move X', 'Geser X', 'mm', 0, { show: (p) => p.kind === 'move' }), N('dy', 'Move Y', 'Geser Y', 'mm', 0, { show: (p) => p.kind === 'move' }), N('dz', 'Move Z', 'Geser Z', 'mm', 0, { show: (p) => p.kind === 'move' })],
     label: (p) => p.kind === 'mirror' ? `${L('Mirror body', 'Cermin body')} ${p.plane}` : `${L('Move', 'Geser')} ${p.dx}, ${p.dy}, ${p.dz}` },
-  revolve: { en: 'Revolved Boss/Base', id: 'Revolved Boss/Base', fields: [
-      S('axis', 'Axis of revolution', 'Sumbu putar', [['Z', ['Z (vertical)', 'Z (tegak)']], ['X', ['X', 'X']], ['Y', ['Y', 'Y']]], 'Z'),
+  revolve: { en: 'Revolved Boss/Base', id: 'Revolved Boss/Base', get fields() {
+      return [S('axis', 'Axis of revolution', 'Sumbu putar', [['Z', ['Z (vertical)', 'Z (tegak)']], ['X', ['X', 'X']], ['Y', ['Y', 'Y']], ...refAxisOptions()], 'Z'),
       N('angle', 'Angle', 'Sudut', '\u00b0', 360, { min: 1, step: 1 }),
-      S('op', 'Result', 'Hasil', OPS, 'add')],
+      S('op', 'Result', 'Hasil', OPS, 'add')]; },
     label: (p) => `${L('Revolve', 'Putar')} ${p.angle}\u00b0 \u00b7 ${p.axis}${p.op === 'cut' ? ' \u00b7 ' + L('cut', 'potong') : ''}` },
   /* S18: the three mould steps. */
   parting: { en: 'Parting Line', id: 'Parting Line', fields: [N('z', 'Parting plane Z', 'Bidang pisah Z', 'mm', 10)],
@@ -6820,6 +6837,44 @@ const FEAT = {
   scale: { en: 'Scale', id: 'Skala', fields: [N('k', 'Factor', 'Faktor', '', 1.5, { min: 0.001 }),
       S('about', 'Scale about', 'Skala terhadap', [['origin', ['The origin', 'Titik nol']], ['centre', ['The body centre', 'Pusat body']]], 'origin')],
     label: (p) => `${L('Scale', 'Skala')} ×${p.k} · ${p.about === 'centre' ? L('centre', 'pusat') : L('origin', 'titik nol')}` },
+  /* ---- Batch B ---- */
+  refplane: { en: 'Reference Plane', id: 'Bidang Referensi', fields: [
+      S('mode', 'From', 'Dari', [['offset', ['Offset from a plane', 'Offset dari bidang']], ['angle', ['Angled from a plane', 'Dimiringkan dari bidang']], ['three', ['Three points', 'Tiga titik']]], 'offset'),
+      S('base', 'Base plane', 'Bidang dasar', [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]], 'XY', { show: (p) => p.mode !== 'three' }),
+      N('dist', 'Offset', 'Offset', 'mm', 50, { show: (p) => p.mode === 'offset' }), N('angle', 'Angle', 'Sudut', '\u00b0', 30, { show: (p) => p.mode === 'angle' }),
+      TX('p1', 'Point 1 (x,y,z)', 'Titik 1 (x,y,z)', '0,0,50', { show: (p) => p.mode === 'three' }),
+      TX('p2', 'Point 2 (x,y,z)', 'Titik 2 (x,y,z)', '100,0,50', { show: (p) => p.mode === 'three' }),
+      TX('p3', 'Point 3 (x,y,z)', 'Titik 3 (x,y,z)', '0,100,50', { show: (p) => p.mode === 'three' })],
+    label: (p) => p.mode === 'offset' ? `${L('Plane', 'Bidang')} ${p.base} + ${p.dist} mm` : p.mode === 'angle' ? `${L('Plane', 'Bidang')} ${p.base} ${p.angle}\u00b0` : L('Plane through three points', 'Bidang lewat tiga titik') },
+  refaxis: { en: 'Reference Axis', id: 'Sumbu Referensi', fields: [
+      S('mode', 'From', 'Dari', [['through', ['A point and a direction', 'Titik dan arah']], ['two', ['Two points', 'Dua titik']]], 'through'),
+      S('dir', 'Direction', 'Arah', [['X', ['X', 'X']], ['Y', ['Y', 'Y']], ['Z', ['Z', 'Z']]], 'Z', { show: (p) => p.mode === 'through' }),
+      N('x', 'Origin X', 'Titik X', 'mm', 50), N('y', 'Origin Y', 'Titik Y', 'mm', 0), N('z', 'Origin Z', 'Titik Z', 'mm', 0),
+      TX('p1', 'Point 1 (x,y,z)', 'Titik 1 (x,y,z)', '50,0,0', { show: (p) => p.mode === 'two' }),
+      TX('p2', 'Point 2 (x,y,z)', 'Titik 2 (x,y,z)', '50,0,100', { show: (p) => p.mode === 'two' })],
+    label: (p) => p.mode === 'two' ? L('Axis through two points', 'Sumbu lewat dua titik') : `${L('Axis along', 'Sumbu searah')} ${p.dir} @ ${p.x}, ${p.y}, ${p.z}` },
+  csys: { en: 'Coordinate System', id: 'Sistem Koordinat', fields: [
+      N('x', 'Origin X', 'Titik X', 'mm', 50), N('y', 'Origin Y', 'Titik Y', 'mm', 0), N('z', 'Origin Z', 'Titik Z', 'mm', 0),
+      N('rz', 'Turn about Z', 'Putar sumbu Z', '\u00b0', 0)],
+    label: (p) => `${L('CSYS at', 'CSYS di')} ${p.x}, ${p.y}, ${p.z}${+p.rz ? ` \u00b7 ${p.rz}\u00b0` : ''}` },
+  dome: { en: 'Dome', id: 'Dome', fields: [N('h', 'Dome height', 'Tinggi dome', 'mm', 5, { min: 0.1 })],
+    label: (p) => `${L('Dome', 'Dome')} ${p.h} mm ${L('on the top face', 'di muka atas')}` },
+  split: { en: 'Split', id: 'Split', fields: [
+      S('plane', 'Cutting plane', 'Bidang potong', [['XY', ['XY (horizontal)', 'XY (horizontal)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]], 'XY'),
+      N('at', 'Plane position', 'Posisi bidang', 'mm', 0)],
+    label: (p) => `${L('Split', 'Split')} ${p.plane} @ ${p.at} mm` },
+  curvepat: { en: 'Curve Pattern', id: 'Pola Kurva', get fields() {
+      const o = sketchOptions();
+      return [S('sketch', 'Path sketch (XY)', 'Sketch lintasan (XY)', o, o[0][0]), N('count', 'Instances', 'Jumlah instance', '', 5, { step: 1, min: 2 })]; },
+    label: (p) => `${p.count}\u00d7 ${L('along the path', 'sepanjang lintasan')}` },
+  fillpat: { en: 'Fill Pattern', id: 'Pola Isi', fields: [
+      N('cols', 'Columns', 'Kolom', '', 3, { step: 1, min: 1 }), N('rows', 'Rows', 'Baris', '', 2, { step: 1, min: 1 }),
+      N('sx', 'Spacing X', 'Jarak X', 'mm', 30, { min: 0.1 }), N('sy', 'Spacing Y', 'Jarak Y', 'mm', 30, { min: 0.1 })],
+    label: (p) => `${p.cols}\u00d7${p.rows} ${L('fill', 'isi')} @ ${p.sx} \u00d7 ${p.sy} mm` },
+  wrap: { en: 'Wrap / Emboss', id: 'Wrap / Emboss', get fields() {
+      const o = sketchOptions();
+      return [S('sketch', 'Sketch to emboss', 'Sketch yang ditimbulkan', o, o[0][0]), N('depth', 'Height', 'Tinggi', 'mm', 2, { min: 0.1 }), S('op', 'Result', 'Hasil', OPS, 'add')]; },
+    label: (p) => `${L('Emboss', 'Emboss')} ${p.depth} mm ${p.op === 'cut' ? L('(deboss)', '(deboss)') : ''}` },
   dim: { get en() { return 'Smart Dimension'; }, get id() { return 'Smart Dimension'; },
     /* the sketch steps are read when the form is drawn, so a new sketch shows up immediately */
     get fields() {
@@ -6906,7 +6961,7 @@ const FEAT = {
       S('material', 'Material', 'Material', [['steel', ['Steel', 'Baja']], ['stainless', ['Stainless', 'Stainless']], ['aluminium', ['Aluminium', 'Aluminium']], ['brass', ['Brass', 'Kuningan']]])],
     label: (p) => L('Convert to sheet metal', 'Ubah jadi sheet metal') },
 };
-const PART_TOOLS = ['shape', 'sketch', 'text', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'gusset', 'weld', 'mold', 'parting', 'shutoff', 'shrink', 'draft', 'dim', 'scale', 'measure',
+const PART_TOOLS = ['shape', 'sketch', 'text', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'gusset', 'weld', 'mold', 'parting', 'shutoff', 'shrink', 'draft', 'dim', 'scale', 'refplane', 'refaxis', 'csys', 'dome', 'split', 'curvepat', 'fillpat', 'wrap', 'measure',
   'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick',
   'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
@@ -6980,9 +7035,61 @@ function idrisTextRects(str, h) {
   }
   return { rects, width: Math.max(0, pen - 1) * cell };
 }
+/* ---- Batch B: datum planes, axes and coordinate systems, plus Dome / Split / Curve Pattern / Fill Pattern /
+   Wrap-Emboss. Every datum is computed from the numbers in its own step (and three points are read as points), and
+   every one that changes the part is measured by the kernel. ---- */
+const S22_BASE = { XY: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] }, XZ: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, -1, 0] }, YZ: { origin: [0, 0, 0], xDir: [0, 1, 0], normal: [1, 0, 0] } };
+const s22Add = (a, b) => a.map((v, i) => v + b[i]);
+const s22Sub = (a, b) => a.map((v, i) => v - b[i]);
+const s22Mul = (a, k) => a.map((v) => v * k);
+const s22Dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const s22Cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const s22Unit = (a) => { const n = Math.hypot(a[0], a[1], a[2]); if (!(n > 1e-12)) throw new Error(L('Those two points are the same point, so they give no direction.', 'Dua titik itu sama, jadi tidak memberi arah.')); return a.map((v) => v / n); };
+/** rotate v about the unit axis k by deg (Rodrigues) */
+const s22Rot = (v, deg, axis) => { const t = deg * Math.PI / 180, c = Math.cos(t), s2 = Math.sin(t), k = s22Unit(axis);
+  return s22Add(s22Add(s22Mul(v, c), s22Mul(s22Cross(k, v), s2)), s22Mul(k, s22Dot(k, v) * (1 - c))); };
+/** one "x,y,z" string as a point; a bad point is refused with what it read */
+function s22Point(t, what) {
+  const a = String(t == null ? '' : t).split(',').map((x) => Number(x.trim()));
+  if (a.length !== 3 || !a.every(Number.isFinite)) throw new Error(L(`${what} must be three numbers, x,y,z; it read ${JSON.stringify(String(t == null ? '' : t))}.`, `${what} harus tiga angka, x,y,z; yang terbaca ${JSON.stringify(String(t == null ? '' : t))}.`));
+  return a;
+}
+/** evenly spaced points along the lines and arcs of a sketch, in the sketch's own 2D coordinates */
+function s22PathPoints(ents, n) {
+  const pts = [];
+  for (const e of ents || []) {
+    if (e.t === 'line') { if (!pts.length) pts.push(e.a); pts.push(e.b); }
+    else if (e.t === 'arc') { if (!pts.length) pts.push(e.a); pts.push(e.m, e.e); }
+  }
+  if (pts.length < 2) throw new Error(L('The path sketch needs at least one line or arc: draw the path in a sketch first.', 'Sketch lintasan butuh minimal satu garis atau busur: gambar lintasannya di sketch dulu.'));
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const total = cum[cum.length - 1];
+  if (!(total > 1e-9)) throw new Error(L('The path has no length: its points are all in one place.', 'Lintasan tidak punya panjang: semua titiknya di satu tempat.'));
+  const out = [];
+  const k = Math.max(2, Math.round(n));
+  for (let i = 0; i < k; i++) {
+    const want = total * i / (k - 1); let j = 1; while (j < cum.length - 1 && cum[j] < want) j++;
+    const seg = cum[j] - cum[j - 1] || 1, t = (want - cum[j - 1]) / seg;
+    out.push([pts[j - 1][0] + (pts[j][0] - pts[j - 1][0]) * t, pts[j - 1][1] + (pts[j][1] - pts[j - 1][1]) * t]);
+  }
+  return { pts: out, length: total };
+}
+/** the face pointing +Z on this body, or null: Dome and Wrap sit on the top face and say so when there is none */
+function s22TopFace(body) {
+  const faces = (body && body.faces) || []; let best = null, bz = -Infinity;
+  for (const fc of faces) {
+    let n = null; try { n = fc.normalAt && fc.normalAt(); } catch (e) { n = null; }
+    const nn = n && (Array.isArray(n) ? n : typeof n.toTuple === 'function' ? n.toTuple() : [n.x, n.y, n.z]);
+    if (!nn || !(Number(nn[2]) > 0.999)) continue;
+    const c = fc.boundingBox && fc.boundingBox.center; const z = c ? Number(c[2]) : 0;
+    if (z > bz) { bz = z; best = fc; }
+  }
+  return best;
+}
 async function buildPart(pArg) {
   const R = await kernel(), p = pArg || state.part; if (!p) return null;
-  let body = null, lastTool = null, lastOp = 'add', sketch = null; const sketches = [];
+  let body = null, lastTool = null, lastOp = 'add', sketch = null; const sketches = []; const bodies = [];
   const bb = () => body ? body.boundingBox.bounds : [[0, 0, 0], [0, 0, 0]];
   const apply = (tool, op) => { if (!body) { if (op === 'cut') throw new Error(L('Nothing to cut yet: start with Shape.', 'Belum ada yang bisa dipotong: mulai dengan Shape.')); body = tool.clone(); }
     else body = op === 'cut' ? body.cut(tool.clone()) : body.fuse(tool.clone()); lastTool = tool; lastOp = op; };
@@ -7012,9 +7119,13 @@ async function buildPart(pArg) {
      Each piece keeps the sketch it was built from, so Thicken can offset that same profile by the wall thickness
      and cut the wall out of the two solids. The kernel measures the area and the volume written in the note. */
   const surfs = [];
+  /* Batch B: every datum this tree has built so far, and the one place a sketch plane becomes a kernel plane */
+  const planes = {}, axes = {}, cs = {};
+  const plArg = (name, at) => { const d = planes[name]; if (!d) return [name, at];
+    const pl = new (R.Plane)(d.origin, d.xDir, d.normal); if (+at) pl.translateZ(+at); return [pl]; };
   const OC3 = typeof R.getOC === 'function' ? R.getOC() : null;
   const v3 = (v) => [v.x, v.y, v.z];
-  const srfOn = (sk) => { const s2 = profile(sk.s).sketchOnPlane(sk.s.plane, sk.at); return { sk: s2, face: s2.face(), wire: s2.wire, dir: v3(s2.defaultDirection) }; };
+  const srfOn = (sk) => { const s2 = profile(sk.s).sketchOnPlane(...plArg(sk.s.plane, sk.at)); return { sk: s2, face: s2.face(), wire: s2.wire, dir: v3(s2.defaultDirection) }; };
   const srfInset = (sk, t) => profile(sk.s).offset(-Math.abs(t), { lineJoinType: 'intersection' }).sketchOnPlane(sk.s.plane, sk.at);
   const srfPrism = (wire, dir, len) => { const m = new OC3.BRepPrimAPI_MakePrism(wire.wrapped, new OC3.gp_Vec(dir[0] * len, dir[1] * len, dir[2] * len)); m.Build(); return R.cast(m.Shape()); };
   const srfThru = (wires, solid) => { const m = new OC3.BRepOffsetAPI_ThruSections(!!solid, false, 1e-6); wires.forEach((w) => m.AddWire(w.wrapped)); m.Build(); if (!m.IsDone() || !m.Shape) throw new Error('thru'); return R.cast(m.Shape()); };
@@ -7108,7 +7219,7 @@ async function buildPart(pArg) {
       } else if (ft.type === 'push') {
         if (!sketch) throw new Error(L('Push/Pull needs a Sketch before it.', 'Push/Pull butuh Sketch sebelumnya.'));
         const dist = +q.dist; if (!dist) throw new Error(L('Distance cannot be 0.', 'Jarak tidak boleh 0.'));
-        let t = profile(sketch.s).sketchOnPlane(sketch.s.plane, sketch.at).extrude(q.both === 'both' ? Math.abs(dist) : dist);
+        let t = profile(sketch.s).sketchOnPlane(...plArg(sketch.s.plane, sketch.at)).extrude(q.both === 'both' ? Math.abs(dist) : dist);
         if (q.both === 'both') t = t.translate(sketch.s.plane === 'XY' ? [0, 0, -Math.abs(dist) / 2] : sketch.s.plane === 'XZ' ? [0, Math.abs(dist) / 2, 0] : [-Math.abs(dist) / 2, 0, 0]);
         apply(t, q.op); sketch.used = true; sketch = null;
       } else if (ft.type === 'hole') {
@@ -7141,15 +7252,18 @@ async function buildPart(pArg) {
         const base = lastTool, op = lastOp;
         if (q.kind === 'mirror') apply(base.clone().mirror(q.plane, [0, 0, 0]), op);
         else { const n = Math.round(+q.count); if (!(n >= 2 && n <= 200)) throw new Error(L('Count must be 2 to 200.', 'Jumlah harus 2 sampai 200.'));
-          for (let i = 1; i < n; i++) apply(q.kind === 'line' ? base.clone().translate([i * +q.dx, i * +q.dy, 0]) : base.clone().rotate(360 * i / n, [+q.cx, +q.cy, 0], [0, 0, 1]), op); }
+          const c0 = q.ref && cs[q.ref] ? cs[q.ref].origin : [+q.cx, +q.cy, 0];
+          for (let i = 1; i < n; i++) apply(q.kind === 'line' ? base.clone().translate([i * +q.dx, i * +q.dy, 0]) : base.clone().rotate(360 * i / n, c0, [0, 0, 1]), op); }
         lastTool = base;
       } else if (ft.type === 'revolve') {
         if (!sketch) throw new Error(L('Revolve needs a Sketch before it.', 'Revolve butuh Sketch sebelumnya.'));
         const ang = +q.angle; if (!(ang > 0 && ang <= 360)) throw new Error(L('The angle must be above 0\u00b0 and at most 360\u00b0.', 'Sudut harus di atas 0\u00b0 dan paling besar 360\u00b0.'));
-        const pl = sketch.s.plane, at = sketch.at, org = pl === 'XY' ? [0, 0, at] : pl === 'XZ' ? [0, at, 0] : [at, 0, 0];
-        const dir = q.axis === 'X' ? [1, 0, 0] : q.axis === 'Y' ? [0, 1, 0] : [0, 0, 1];
+        const ax = axes[q.axis];
+        const pl = sketch.s.plane, at = sketch.at;
+        const org = ax ? ax.origin.slice() : pl === 'XY' ? [0, 0, at] : pl === 'XZ' ? [0, at, 0] : [at, 0, 0];
+        const dir = ax ? ax.dir.slice() : q.axis === 'X' ? [1, 0, 0] : q.axis === 'Y' ? [0, 1, 0] : [0, 0, 1];
         let t;
-        try { t = profile(sketch.s).sketchOnPlane(pl, at).revolve(dir, { origin: org, angle: ang }); }
+        try { t = profile(sketch.s).sketchOnPlane(...plArg(pl, at)).revolve(dir, { origin: org, angle: ang }); }
         catch (e) { throw new Error(L(`The kernel could not revolve this profile around ${q.axis}. Keep the profile clear of the axis and every size above 0 mm.`, `Kernel tidak bisa memutar profil ini mengelilingi ${q.axis}. Jaga profil supaya tidak menyentuh sumbu dan semua ukuran di atas 0 mm.`)); }
         if (Array.isArray(t)) { if (!t.length) throw new Error(L('The profile produced no solid when revolved.', 'Profil tidak menghasilkan solid saat diputar.')); t = t.length === 1 ? t[0] : t.reduce((a, b) => a.fuse(b)); }
         apply(t, q.op || 'add'); sketch.used = true; sketch = null;
@@ -7334,6 +7448,129 @@ async function buildPart(pArg) {
         const after = R.measureVolume(body);
         if (!(after > 0)) throw new Error(L('The kernel returned an empty body at that factor: nothing was scaled.', 'Kernel mengembalikan body kosong pada faktor itu: tidak ada yang diskalakan.'));
         ft.note = L(`The whole body scaled by ${f(k, 3)} about ${q.about === 'centre' ? 'its centre' : 'the origin'}: ${f(before, 1)} → ${f(after, 1)} mm³ (×${f(after / before, 4)}).`, `Seluruh body diskalakan ${f(k, 3)} kali terhadap ${q.about === 'centre' ? 'pusatnya' : 'titik nol'}: ${f(before, 1)} → ${f(after, 1)} mm³ (×${f(after / before, 4)}).`);
+      } else if (ft.type === 'refplane') {
+        /* Batch B: the plane is computed from the numbers in the step. Offset and angle come from the base plane's
+           own origin and normal; three points are read as points and give the normal of their triangle. */
+        const base = S22_BASE[q.base] || S22_BASE.XY;
+        let pl;
+        if (q.mode === 'three') {
+          const p1 = s22Point(q.p1, L('Point 1', 'Titik 1')), p2 = s22Point(q.p2, L('Point 2', 'Titik 2')), p3 = s22Point(q.p3, L('Point 3', 'Titik 3'));
+          const n = s22Cross(s22Sub(p2, p1), s22Sub(p3, p1));
+          if (Math.hypot(n[0], n[1], n[2]) < 1e-9) throw new Error(L('The three points are on one line, so they give no plane.', 'Tiga titik itu segaris, jadi tidak memberi bidang.'));
+          pl = { origin: p1, xDir: s22Unit(s22Sub(p2, p1)), normal: s22Unit(n) };
+        } else if (q.mode === 'angle') {
+          const ang = +q.angle;
+          if (!Number.isFinite(ang) || Math.abs(ang) < 1e-9 || Math.abs(ang) > 180) throw new Error(L('The angle must be above 0\u00b0 and at most 180\u00b0.', 'Sudut harus di atas 0\u00b0 dan paling besar 180\u00b0.'));
+          pl = { origin: base.origin.slice(), xDir: base.xDir.slice(), normal: s22Unit(s22Rot(base.normal, ang, base.xDir)) };
+        } else {
+          const d = +q.dist; if (!Number.isFinite(d)) throw new Error(L('The offset must be a number in mm.', 'Offset harus angka dalam mm.'));
+          pl = { origin: s22Add(base.origin, s22Mul(base.normal, d)), xDir: base.xDir.slice(), normal: base.normal.slice() };
+        }
+        planes[ft.id] = pl;
+        ft.datum = { origin: pl.origin, xDir: pl.xDir, normal: pl.normal };
+        ft.note = L(`Reference plane at (${pl.origin.map((v) => f(v, 2)).join(', ')}) with normal (${pl.normal.map((v) => f(v, 3)).join(', ')}): choose it in a Sketch's Plane field and Extrude or Revolve builds on it.`,
+          `Bidang referensi di (${pl.origin.map((v) => f(v, 2)).join(', ')}) dengan normal (${pl.normal.map((v) => f(v, 3)).join(', ')}): pilih di kolom Plane sebuah Sketch dan Extrude atau Revolve membangun di atasnya.`);
+      } else if (ft.type === 'refaxis') {
+        /* Batch B: a point and a direction, or two points; Revolve (and a circular Repeat through a CSYS) can use it. */
+        let origin, dir;
+        if (q.mode === 'two') {
+          const p1 = s22Point(q.p1, L('Point 1', 'Titik 1')), p2 = s22Point(q.p2, L('Point 2', 'Titik 2'));
+          origin = p1; dir = s22Unit(s22Sub(p2, p1));
+        } else {
+          if (![q.x, q.y, q.z].every((v) => Number.isFinite(+v))) throw new Error(L('The axis origin must be three numbers.', 'Titik asal sumbu harus tiga angka.'));
+          origin = [+q.x, +q.y, +q.z]; dir = q.dir === 'X' ? [1, 0, 0] : q.dir === 'Y' ? [0, 1, 0] : [0, 0, 1];
+        }
+        axes[ft.id] = { origin, dir };
+        ft.datum = { origin, dir };
+        ft.note = L(`Reference axis through (${origin.map((v) => f(v, 2)).join(', ')}) along (${dir.map((v) => f(v, 3)).join(', ')}): Revolve lists it in its Axis field.`,
+          `Sumbu referensi lewat (${origin.map((v) => f(v, 2)).join(', ')}) searah (${dir.map((v) => f(v, 3)).join(', ')}): Revolve mendaftarkannya di kolom Axis.`);
+      } else if (ft.type === 'csys') {
+        /* Batch B: an origin and a turn about Z. A circular Repeat can turn about it, so the datum has a consumer. */
+        if (![q.x, q.y, q.z, q.rz].every((v) => Number.isFinite(+v))) throw new Error(L('A coordinate system needs its three origin numbers and its turn.', 'Sistem koordinat butuh tiga angka titik asal dan putarannya.'));
+        const o = [+q.x, +q.y, +q.z], rz = +q.rz || 0, t = rz * Math.PI / 180;
+        const e = { origin: o, xDir: [Math.cos(t), Math.sin(t), 0], normal: [0, 0, 1] };
+        cs[ft.id] = e;
+        ft.datum = e;
+        ft.note = L(`Coordinate system at (${o.map((v) => f(v, 2)).join(', ')}), turned ${f(rz, 2)}\u00b0 about Z. A circular Repeat can turn about it.`,
+          `Sistem koordinat di (${o.map((v) => f(v, 2)).join(', ')}), diputar ${f(rz, 2)}\u00b0 terhadap Z. Repeat melingkar bisa berputar mengelilinginya.`);
+      } else if (ft.type === 'dome') {
+        /* Batch B: a spherical cap on the +Z face, clipped to that face's own outline by the kernel, so a round top
+           gives the cap the sphere really has and a square top gives the cap clipped to the square. */
+        if (!body) throw new Error(L('Dome needs a body: build one first (a primitive or an Extrude).', 'Dome butuh body: bangun dulu (primitive atau Extrude).'));
+        const h = +q.h; if (!(h > 0)) throw new Error(L('The dome height must be above 0 mm.', 'Tinggi dome harus di atas 0 mm.'));
+        const face = s22TopFace(body);
+        if (!face) throw new Error(L('Dome sits on the flat face that points +Z (the top of the part): this body has none.', 'Dome duduk di muka datar yang menghadap +Z (atas part): body ini tidak punya.'));
+        const area = R.measureArea(face);
+        if (!(area > 0)) throw new Error(L('The top face has no area, so there is nothing to dome.', 'Muka atas tidak punya luas, jadi tidak ada yang bisa di-dome.'));
+        const a = Math.sqrt(area / Math.PI), Rs = (a * a + h * h) / (2 * h);
+        const c = face.boundingBox.center, z0 = Number(c[2]);
+        const cap = R.makeSphere(Rs).translate([Number(c[0]), Number(c[1]), z0 - (Rs - h)]);
+        /* the face's own wire becomes a face, and the kernel prisms it: a prism from a bare wire is a shell with
+           negative volume, which made the intersection empty */
+        const OC = R.getOC();
+        const mf = new OC.BRepBuilderAPI_MakeFace(face.outerWire().wrapped, true); mf.Build();
+        const pm = new OC.BRepPrimAPI_MakePrism(R.cast(mf.Face()).wrapped, new OC.gp_Vec(0, 0, h + 1)); pm.Build();
+        const clip = R.cast(pm.Shape());
+        const piece = cap.intersect(clip);
+        const before = R.measureVolume(body), added = R.measureVolume(piece);
+        if (!(added > 0)) throw new Error(L('The cap came out empty: the height is too small for the kernel tolerance.', 'Tudungnya kosong: tingginya terlalu kecil untuk toleransi kernel.'));
+        apply(piece, 'add');
+        const after = R.measureVolume(body);
+        ft.note = L(`Dome ${f(h, 2)} mm on the +Z face (${f(area, 1)} mm², equivalent radius ${f(a, 2)} mm): sphere radius ${f(Rs, 2)} mm, cap ${f(added, 1)} mm³ added, body ${f(before, 1)} → ${f(after, 1)} mm³ (kernel).`,
+          `Dome ${f(h, 2)} mm di muka +Z (${f(area, 1)} mm², radius setara ${f(a, 2)} mm): radius bola ${f(Rs, 2)} mm, tudung ${f(added, 1)} mm³ ditambahkan, body ${f(before, 1)} → ${f(after, 1)} mm³ (kernel).`);
+      } else if (ft.type === 'split') {
+        /* Batch B: the kernel's own boolean on a big box on each side of the plane. Both halves are kept as bodies,
+           and the step refuses a plane that does not actually cut the part into two. */
+        if (!body) throw new Error(L('Split needs a body: build one first.', 'Split butuh body: bangun dulu.'));
+        const at = +q.at; if (!Number.isFinite(at)) throw new Error(L('The plane position must be a number in mm.', 'Posisi bidang harus angka dalam mm.'));
+        const BIG = 1e5, lo = [-BIG, -BIG, -BIG], hi = [BIG, BIG, BIG];
+        const box = (a2, b2) => R.makeBox(a2, b2);
+        let pos, neg;
+        if ((q.plane || 'XY') === 'XZ') { const cut = box([lo[0], at, lo[2]], [hi[0], hi[1], hi[2]]); pos = body.intersect(cut); neg = body.cut(cut); }
+        else if ((q.plane || 'XY') === 'YZ') { const cut = box([at, lo[1], lo[2]], [hi[0], hi[1], hi[2]]); pos = body.intersect(cut); neg = body.cut(cut); }
+        else { const cut = box([lo[0], lo[1], at], [hi[0], hi[1], hi[2]]); pos = body.intersect(cut); neg = body.cut(cut); }
+        const vp = R.measureVolume(pos), vn = R.measureVolume(neg);
+        if (!(vp > 0 && vn > 0)) throw new Error(L('That plane does not cut the part into two pieces: move it inside the body.', 'Bidang itu tidak membelah part jadi dua: geser ke dalam body.'));
+        body = pos; bodies.push(neg);
+        ft.note = L(`Split by ${q.plane || 'XY'} at ${f(at, 2)} mm: two bodies of ${f(vp, 1)} and ${f(vn, 1)} mm³ (kernel), both drawn.`,
+          `Dibelah ${q.plane || 'XY'} di ${f(at, 2)} mm: dua body ${f(vp, 1)} dan ${f(vn, 1)} mm³ (kernel), keduanya digambar.`);
+      } else if (ft.type === 'curvepat') {
+        /* Batch B: the instances are placed at points spaced evenly along the path sketch's own lines and arcs,
+           every offset taken from the measured path length. The path has to be an XY sketch, and that is said. */
+        if (!lastTool) throw new Error(L('Curve Pattern copies the step before it (Shape, Push/Pull or Hole).', 'Pola Kurva menyalin langkah sebelumnya (Shape, Push/Pull, atau Hole).'));
+        const A = pickSketch(q.sketch);
+        if (A.s.plane !== 'XY') throw new Error(L('The path sketch has to be on XY: the pattern offsets are X and Y. Put the path on XY, or use Repeat.', 'Sketch lintasan harus di XY: offset polanya X dan Y. Taruh lintasan di XY, atau pakai Repeat.'));
+        const { pts, length } = s22PathPoints(A.s.ents || [], +q.count);
+        const base = lastTool, op = lastOp, p0 = pts[0];
+        for (let i = 1; i < pts.length; i++) apply(base.clone().translate([pts[i][0] - p0[0], pts[i][1] - p0[1], 0]), op);
+        lastTool = base;
+        ft.note = L(`${pts.length} instances along ${f(length, 1)} mm of path, ${f(length / (pts.length - 1), 1)} mm apart (kernel length).`,
+          `${pts.length} instance sepanjang ${f(length, 1)} mm lintasan, jarak ${f(length / (pts.length - 1), 1)} mm (panjang dari kernel).`);
+      } else if (ft.type === 'fillpat') {
+        /* Batch B: a rectangular fill. The grid is the count and spacing typed here, and every instance is measured
+           by the body it makes, so nothing is reported that the kernel did not build. */
+        if (!lastTool) throw new Error(L('Fill Pattern copies the step before it (Shape, Push/Pull or Hole).', 'Pola Isi menyalin langkah sebelumnya (Shape, Push/Pull, atau Hole).'));
+        const cols = Math.round(+q.cols), rows = Math.round(+q.rows), sx = +q.sx, sy = +q.sy;
+        if (!(cols >= 1 && rows >= 1 && sx > 0 && sy > 0)) throw new Error(L('Columns and rows must be 1 or more and the spacings above 0 mm.', 'Kolom dan baris minimal 1 dan jaraknya di atas 0 mm.'));
+        if (cols * rows > 400) throw new Error(L('At most 400 instances in one fill: that is already 400 kernel copies.', 'Paling banyak 400 instance dalam satu isi: itu sudah 400 salinan kernel.'));
+        const base = lastTool, op = lastOp;
+        for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) { if (!i && !j) continue; apply(base.clone().translate([i * sx, j * sy, 0]), op); }
+        lastTool = base;
+        ft.note = L(`${cols} \u00d7 ${rows} = ${cols * rows} instances, ${f(sx, 1)} mm apart in X and ${f(sy, 1)} mm in Y (rectangular fill).`,
+          `${cols} \u00d7 ${rows} = ${cols * rows} instance, jarak ${f(sx, 1)} mm di X dan ${f(sy, 1)} mm di Y (isi persegi).`);
+      } else if (ft.type === 'wrap') {
+        /* Batch B: the sketch is placed on the body's +Z face and extruded along that face's normal, so a boss
+           stands on a flat face and a cut debosses it. A curved face is refused by name, not wrapped approximately. */
+        if (!body) throw new Error(L('Wrap / Emboss needs a body: build it first, then emboss on its top face.', 'Wrap / Emboss butuh body: bangun dulu, lalu timbulkan di muka atasnya.'));
+        const A = pickSketch(q.sketch);
+        const face = s22TopFace(body);
+        if (!face) throw new Error(L('Wrap / Emboss works on the flat +Z face of the body. This body has no flat top face, and a curved face is not approximated here.', 'Wrap / Emboss bekerja di muka +Z yang datar dari body. Body ini tidak punya muka atas datar, dan muka lengkung tidak didekati di sini.'));
+        const depth = pos(q.depth), z0 = Number(face.boundingBox.center[2]);
+        const t = profile(A.s).translate(+A.s.u || 0, +A.s.v || 0).sketchOnPlane('XY', z0).extrude(q.op === 'cut' ? -depth : depth);
+        const area = R.measureArea(face), vol = R.measureVolume(t);
+        apply(t, q.op || 'add');
+        ft.note = L(`Emboss ${f(depth, 2)} mm on the +Z face (${f(area, 1)} mm\u00b2): ${f(vol, 1)} mm\u00b3 ${q.op === 'cut' ? 'removed' : 'added'} by the kernel.`,
+          `Emboss ${f(depth, 2)} mm di muka +Z (${f(area, 1)} mm\u00b2): ${f(vol, 1)} mm\u00b3 ${q.op === 'cut' ? 'dihilangkan' : 'ditambahkan'} oleh kernel.`);
       } else if (ft.type === 'draft') {
         if (!body) throw new Error(L('Draft needs a body.', 'Draft butuh body.'));
         const ang = +q.angle; if (!(ang > 0 && ang <= 45)) throw new Error(L('The draft angle must be above 0\u00b0 and at most 45\u00b0.', 'Sudut draft harus di atas 0\u00b0 dan paling besar 45\u00b0.'));
@@ -7611,7 +7848,7 @@ async function buildPart(pArg) {
   }
   const open = sketches.filter((x) => !x.used);
   const sheet = sm.t > 0 ? { t: sm.t, R: sm.R, k: sm.k, mat: sm.mat, L: sm.L, W: sm.W, flat: sm.flat, folds: sm.folds.slice() } : null;
-  return { R, body, open, profile, surfs: surfs.map((x) => x.sh), sheet };
+  return { R, body, bodies, open, profile, surfs: surfs.map((x) => x.sh), sheet };
 }
 /* triangles → binary STL, so the viewer shows the kernel's shape exactly like the solver's parts */
 function meshToSTL(m) {
@@ -7632,6 +7869,8 @@ async function rebuildPart(fit) {
     const out = await buildPart(); if (seq !== partSeq || !state.part) return;
     partShape = out.body; const parts = [];
     if (out.body) parts.push({ buf: meshToSTL(zUp(out.body.mesh({ tolerance: 0.05, angularTolerance: 0.2 }))), kind: 'part', name: state.part.name });
+    /* Batch B: a split part holds more than one body, and every one of them is drawn and measured */
+    (out.bodies || []).forEach((b, i) => { try { parts.push({ buf: meshToSTL(zUp(b.mesh({ tolerance: 0.05, angularTolerance: 0.2 }))), kind: 'part', name: `${state.part.name} · ${L('body', 'body')} ${i + 2}` }); } catch (e) { /* preview only */ } });
     /* S15: a surface body is drawn too: an engineer must see the shell before it becomes a wall */
     (out.surfs || []).forEach((sh, i) => { try { parts.push({ buf: meshToSTL(zUp(sh.mesh({ tolerance: 0.05, angularTolerance: 0.2 }))), kind: 'surface', name: `Surface ${i + 1}` }); } catch (e) { /* preview only */ } });
     out.open.forEach((s, i) => { try { const f = out.profile(s.s).sketchOnPlane(s.s.plane, s.at).extrude(0.2); parts.push({ buf: meshToSTL(zUp(f.mesh({ tolerance: 0.05, angularTolerance: 0.2 }))), kind: 'sketch', name: `Sketch ${i + 1}` }); } catch (e) { /* preview only */ } });
@@ -7641,7 +7880,7 @@ async function rebuildPart(fit) {
       if (cam) { [viewer.yaw, viewer.pitch, viewer.dist, viewer.target] = cam; viewer.dirty = true; }
       $('#vempty').classList.add('hide'); }
     else { viewer.clear(); $('#vempty').classList.remove('hide'); }
-    partInfo = out.body ? (() => { const R = out.R, vol = R.measureVolume(out.body), area = R.measureArea(out.body), b = out.body.boundingBox.bounds, mat = PMAT[state.part.material] || PMAT.aluminium;
+    partInfo = out.body ? (() => { const R = out.R, more = out.bodies || [], vol = R.measureVolume(out.body) + more.reduce((a, x) => a + R.measureVolume(x), 0), area = R.measureArea(out.body) + more.reduce((a, x) => a + R.measureArea(x), 0), bl = [out.body, ...more].map((x) => x.boundingBox.bounds), b = [bl[0][0].map((v, i) => Math.min(v, ...bl.map((q2) => q2[0][i]))), bl[0][1].map((v, i) => Math.max(v, ...bl.map((q2) => q2[1][i])))], mat = PMAT[state.part.material] || PMAT.aluminium;
       /* P1d: a welded frame is steel, so its kernel mass uses 7.85 kg/dm³ and carries the simplified-section label */
       const weld = weldSectionSummary(state.part.features), rho = weld ? 7.85 : mat[1];
       return { vol, area, size: [0, 1, 2].map((k) => b[1][k] - b[0][k]), mass: vol / 1000 * rho, rho, weld, mat, sheet: out.sheet || null }; })()
@@ -7675,7 +7914,7 @@ function partTool(k, preset, label) {
   if (k === 'measure') { partArm = null; partSel = 'measure'; cadTab = 'design'; renderCad(); return; }
   const first = !state.part.features.some((f) => f.type === 'shape' || f.type === 'push');
   /* Push/Pull, Revolve and Smart Dimension all work on a sketch before there is a body */
-  if (first && !['shape', 'sketch', 'text', 'push', 'revolve', 'sweep', 'loft', 'rib', 'dim', 'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick', 'member', 'gusset', 'weld',
+  if (first && !['shape', 'sketch', 'text', 'push', 'revolve', 'refplane', 'refaxis', 'csys', 'sweep', 'loft', 'rib', 'dim', 'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick', 'member', 'gusset', 'weld',
     'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
   if (k === 'push' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Extrude needs a sketch: draw one first.', 'Extrude butuh sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'revolve' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Revolve needs a sketch: draw the profile first.', 'Revolve butuh sketch: buat profilnya dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
@@ -8948,6 +9187,8 @@ function renderFillPanel(pr) {
     const sel = partArm.p.edges || (partArm.p.edges = []);
     partArm.p.edges = sel.includes(i) ? sel.filter((x) => x !== i) : [...sel, i];
     renderCad();
+  });
+}
 /* S21h: the Trim Surface panel. It lists the body's planar faces with the area and centre the kernel reports; the
  * picked face supplies the cutting plane and its normal decides which half is kept. A viewport click picks the face
  * whose centre projects nearest the pointer, and the list stays there for the faces that overlap on screen. */
@@ -9831,24 +10072,24 @@ const RIBBON = [
       T('Draft', 'draft', 'on', 'Taper the \u00b1X or \u00b1Y faces about a neutral plane, so the part leaves the mould.', 'Miringkan muka \u00b1X atau \u00b1Y terhadap bidang netral, supaya part bisa lepas dari cetakan.', 'Draft Angle', P('draft')),
       T('Rib', 'rib', 'on', 'Thin stiffening wall from one open sketch line: thickness across the line, height up from its plane.', 'Dinding tipis penguat dari satu garis sketch terbuka: tebal melintang garis, tinggi naik dari bidangnya.', 'Stiffener, Web', P('rib')),
       T('Thread', 'thread', 'on', 'Cosmetic metric thread: size, pitch (ISO 261) and tap drill (ISO 2306) recorded on the step. The thread is not modelled, so the volume does not change.', 'Ulir metrik kosmetik: ukuran, pitch (ISO 261), dan bor tap (ISO 2306) dicatat di langkahnya. Ulir tidak dimodelkan, jadi volume tidak berubah.', 'Cosmetic Thread', P('thread')),
-      T('Dome', 'dome', 'no', 'Curved cap on a face.', 'Tudung melengkung di sebuah muka.', ''),
-      T('Wrap / Emboss', 'wrap', 'no', 'Wrap or emboss a sketch onto a face.', 'Bungkus atau timbulkan sketch di muka.', 'Emboss')]],
-    ['Reference', [T('Reference Plane', 'rplane', 'no', 'A plane you pick as a sketch plane (offset, angle or three points). Sketches sit on XY, XZ or YZ only in this build, so a reference plane cannot host one yet.', 'Bidang yang bisa dipakai sebagai bidang sketch (offset, sudut, atau tiga titik). Sketch hanya bisa di XY, XZ, atau YZ pada build ini, jadi bidang rujukan belum bisa menampung sketch.', 'Plane, Datum Plane'),
-      T('Reference Axis', 'raxis', 'no', 'A named axis for patterns and mates. Patterns turn around a field value, not a named axis, so there is nothing to point a datum axis at yet.', 'Sumbu bernama untuk pola dan mate. Pola berputar mengelilingi nilai di form, bukan sumbu bernama, jadi belum ada yang bisa ditunjuk datum axis.', 'Axis, Datum Axis')]],
+      T('Dome', 'dome', 'on', 'A spherical cap on the top face: the sphere radius is (a² + h²) / 2h from the face area and the height you type, the cap is clipped to that face outline by the kernel, and the volume added is measured. A body with no flat +Z face is refused by name.', 'Tudung bola di muka atas: radius bola (a² + h²) / 2h dari luas muka dan tinggi yang kamu ketik, tudungnya dipotong sesuai garis luar muka oleh kernel, dan volume yang ditambahkan diukur. Body tanpa muka +Z datar ditolak dengan namanya.', 'Dome', P('dome')),
+      T('Wrap / Emboss', 'wrap', 'on', 'A sketch placed on the body’s flat +Z face and extruded along that face’s normal: a boss stands on it, a cut debosses it, and the volume added or removed is measured by the kernel. A curved face is refused by name instead of being approximated.', 'Sketch yang diletakkan di muka +Z datar dan ditarik sepanjang normal muka itu: boss berdiri di atasnya, potongan membuat deboss, dan volume yang ditambah atau dihilangkan diukur kernel. Muka lengkung ditolak dengan namanya, bukan didekati.', 'Emboss, Deboss', P('wrap'))]],
+    ['Reference', [T('Reference Plane', 'rplane', 'on', 'A real datum plane from an offset, an angle about the base plane’s own axis, or three points. It lists in every Sketch’s Plane field, and Extrude or Revolve builds on it with the same kernel plane.', 'Bidang datum sungguhan dari offset, sudut terhadap sumbu bidang dasarnya, atau tiga titik. Ia muncul di kolom Plane setiap Sketch, dan Extrude atau Revolve membangun di atasnya dengan bidang kernel yang sama.', 'Plane, Datum Plane', P('refplane')),
+      T('Reference Axis', 'raxis', 'on', 'A datum axis from a point and a direction or from two points; Revolve lists it in its Axis field and turns the profile about exactly that line.', 'Sumbu datum dari titik dan arah atau dari dua titik; Revolve mendaftarkannya di kolom Axis dan memutar profil tepat mengelilingi garis itu.', 'Axis, Datum Axis', P('refaxis'))]],
     ['Pattern', [T('Linear Pattern', 'lpat', 'on', 'Repeat the step before along X/Y.', 'Ulangi langkah sebelumnya sepanjang X/Y.', 'Rectangular Pattern', P('repeat', { kind: 'line' })),
       T('Circular Pattern', 'cpat', 'on', 'Repeat the step before around a centre.', 'Ulangi langkah sebelumnya mengelilingi pusat.', 'Polar Pattern', P('repeat', { kind: 'circle' })),
       T('Mirror', 'mirror', 'on', 'Mirror the step before about YZ or XZ.', 'Cerminkan langkah sebelumnya terhadap YZ atau XZ.', 'Symmetry', P('repeat', { kind: 'mirror' })),
-      T('Curve Pattern', 'spline', 'no', 'Repeat along a curve.', 'Ulangi sepanjang kurva.', 'Pattern on Path'),
-      T('Fill Pattern', 'spat', 'no', 'Fill a region with a pattern.', 'Isi sebuah area dengan pola.', '')]],
+      T('Curve Pattern', 'spline', 'on', 'Repeats the step before it at points spaced evenly along a path sketch’s own lines and arcs, with the spacing taken from the measured path length. The path has to be on XY, and that is said when it is not.', 'Mengulang langkah sebelumnya di titik yang berjarak sama sepanjang garis dan busur sketch lintasan, jaraknya dari panjang lintasan yang diukur. Lintasan harus di XY, dan itu disebutkan bila bukan.', 'Pattern on Path', P('curvepat')),
+      T('Fill Pattern', 'spat', 'on', 'A rectangular fill of the step before it: columns, rows and a spacing in X and Y, up to 400 kernel copies.', 'Isi persegi dari langkah sebelumnya: kolom, baris, dan jarak di X dan Y, sampai 400 salinan kernel.', 'Fill Pattern', P('fillpat'))]],
     ['Body', [T('Combine', 'comb', 'on', 'Add or cut a primitive into the body (choose “With the body”). Common/intersect later.', 'Tambah atau potong primitive ke body (pilih “Terhadap body”). Common/irisan menyusul.', 'Boolean, Union, Subtract', P('shape', { op: 'cut' })),
       T('Mirror Body', 'mirror', 'on', 'Mirror the whole body and join it.', 'Cerminkan seluruh body lalu gabungkan.', 'Symmetry (body)', P('bodies', { kind: 'mirror' })),
       T('Move/Copy Body', 'move', 'on', 'Move the body by X, Y, Z.', 'Geser body sejauh X, Y, Z.', 'Translate, Move', P('bodies', { kind: 'move' })),
-      T('Split', 'split', 'no', 'Split a body with a plane.', 'Belah body dengan bidang.', 'Split Body'),
+      T('Split', 'split', 'on', 'Splits a body with a plane into two real bodies, both kept and both drawn, each measured by the kernel; a plane that does not cut the part in two is refused.', 'Membelah body dengan bidang jadi dua body sungguhan, keduanya disimpan dan digambar, masing-masing diukur kernel; bidang yang tidak membelah part jadi dua ditolak.', 'Split Body', P('split')),
       T('Scale', 'scale', 'on', 'Scale the whole body by one factor about the origin or its centre, with the kernel doing the scaling and the step reporting the volume before and after (×k³). Negative factors are refused: this step does not mirror or split the body.', 'Skala seluruh body dengan satu faktor terhadap titik nol atau pusatnya, kernel yang melakukan skalanya dan langkahnya melaporkan volume sebelum dan sesudah (×k³). Faktor negatif ditolak: langkah ini tidak mencerminkan atau memecah body.', 'Body Scale', P('scale')),
-      T('Thicken', 'thick', 'no', 'Turn a surface into a solid. It is one tool with one name: the working copy is Surface → Thicken, and the button below opens exactly that tool. This grey copy is not a second implementation.', 'Ubah surface menjadi solid. Ini satu alat dengan satu nama: yang berjalan adalah Surface → Thicken, dan tombol di bawah membuka alat itu. Salinan abu-abu ini bukan implementasi kedua.', '', null, ['Open Surface → Thicken', 'Buka Surface → Thicken', { part: 'surfthick' }])]],
-    ['Reference', [T('Plane', 'plane', 'mk1', 'Reference plane by offset, angle or three points. Today: sketch on XY, XZ, YZ with an offset.', 'Bidang referensi dengan offset, sudut, atau tiga titik. Saat ini: sketch di XY, XZ, YZ dengan offset.', 'Construction Plane, Datum Plane', null, ALT_SK),
-      T('Axis', 'axis', 'mk1', 'Reference axis for revolves and patterns.', 'Sumbu referensi untuk revolve dan pola.', 'Datum Axis'),
-      T('Coordinate System', 'csys', 'no', 'Extra coordinate system.', 'Sistem koordinat tambahan.', 'Datum CSYS')]]]],
+      T('Thicken', 'thick', 'on', 'Turn a surface into a solid. It is one tool with one name: clicking this opens Surface → Thicken, the one implementation, and that is the only Thicken in the app.', 'Ubah surface menjadi solid. Ini satu alat dengan satu nama: klik di sini membuka Surface → Thicken, satu-satunya implementasi, dan itu satu-satunya Thicken di aplikasi.', '', P('surfthick'), ['Open Surface → Thicken', 'Buka Surface → Thicken', { part: 'surfthick' }])]],
+    ['Reference', [T('Plane', 'plane', 'on', 'Reference plane by offset, angle or three points; a sketch can name it.', 'Bidang referensi dengan offset, sudut, atau tiga titik; sketch bisa memakainya.', 'Construction Plane, Datum Plane', P('refplane')),
+      T('Axis', 'axis', 'on', 'Reference axis for revolves.', 'Sumbu referensi untuk revolve.', 'Datum Axis', P('refaxis')),
+      T('Coordinate System', 'csys', 'on', 'A named origin and a turn about Z; a circular Repeat can turn about it.', 'Titik asal bernama dan putaran terhadap Z; Repeat melingkar bisa berputar mengelilinginya.', 'Datum CSYS', P('csys'))]]]],
   ['surf', 'Surface', 'Surface', [
     ['Create', [T('Extruded Surface', 'surf', 'on', 'Push a closed sketch along its normal: the kernel builds the shell, its area is measured, and Thicken turns it into a wall.', 'Tarik sketch tertutup sepanjang normalnya: kernel membangun shell, luasnya diukur, dan Thicken mengubahnya jadi dinding.', 'Extrude Surface', { part: 'surfext' }),
       T('Revolved Surface', 'rev', 'on', 'Turn a sketch around X, Y or Z by the angle you give; the kernel builds the shell.', 'Putar sketch mengelilingi X, Y, atau Z sebesar sudut yang kamu beri; kernel membangun shell-nya.', 'Revolve Surface', { part: 'surfrev' }),
