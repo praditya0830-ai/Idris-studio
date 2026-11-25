@@ -288,6 +288,35 @@ table.grid td.best{color:var(--ok);font-weight:500}
 .steps li.wait .ic::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--line2)}
 .steps li.bad .ic::before{content:"✕";color:var(--bad);font-size:12px}
 .tnote{font-size:11.5px;color:var(--warn);padding:0 10px 8px}
+/* ------------------------------------------------ the nine stages, above the chat */
+.proc{flex:none;border-bottom:1px solid var(--line);background:var(--panel);padding:6px 8px 7px}
+.proc[hidden]{display:none}
+.proc-h{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);cursor:pointer;user-select:none}
+.proc-h b{font-size:11px;color:var(--text);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.proc-h .pnow{margin-left:auto;color:var(--accent);font-weight:600;font-size:10.5px;white-space:nowrap}
+.proc-h .chev{transition:transform .2s;font-size:10px}
+.proc.closed .chev{transform:rotate(-90deg)} .proc.closed .proc-bar{display:none}
+.proc-bar{display:flex;gap:2px;margin:5px 0 0;list-style:none;padding:0}
+.proc-bar li{flex:1 1 0;min-width:0}
+.proc-bar button{display:block;width:100%;background:none;border:0;padding:0;text-align:left;cursor:default}
+.proc-bar li.done button{cursor:pointer}
+.proc-bar .dot{display:block;height:4px;border-radius:2px;background:var(--line2)}
+.proc-bar .lab{display:block;font-size:9.5px;line-height:1.2;color:var(--dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proc-bar li.done .dot{background:var(--ok)} .proc-bar li.now .dot{background:var(--accent)}
+.proc-bar li.done .lab{color:var(--muted)} .proc-bar li.now .lab{color:var(--accent);font-weight:600}
+.proc-bar li.done button:hover .lab{color:var(--text);text-decoration:underline}
+.proc-flash{animation:procflash 1.1s ease}
+@keyframes procflash{0%{background:var(--accent-bg)}100%{background:transparent}}
+.proc-trace{border:1px solid var(--line);border-radius:5px;background:var(--panel);margin:6px 0}
+.proc-trace>summary{cursor:pointer;padding:5px 9px;font-size:11.5px;color:var(--muted);user-select:none}
+.proc-trace ol{list-style:none;margin:0;padding:0 9px 7px}
+.proc-trace li{display:grid;grid-template-columns:14px minmax(0,1fr);gap:7px;padding:2px 0;font-size:11.5px;align-items:start}
+.proc-trace .st{width:14px;text-align:center;font-weight:700;line-height:1.5}
+.proc-trace li.tr-done .st{color:var(--ok)} .proc-trace li.tr-failed .st{color:var(--bad)}
+.proc-trace li.tr-running .st{color:var(--accent)} .proc-trace li.tr-skipped .st{color:var(--dim)}
+.proc-trace .tt{color:var(--text)} .proc-trace .dt{color:var(--muted);font-size:11px;line-height:1.35}
+.rep-save{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin:4px 0 2px}
+.rep-save.saved{color:var(--ok)} .rep-save.error{color:var(--bad)}
 .cards{display:flex;flex-direction:column;gap:5px;margin:6px 0}
 .vcard{display:block;width:100%;text-align:left;background:var(--white);border:1px solid var(--line);border-radius:5px;padding:7px 9px;transition:border-color .15s,background .15s}
 .vcard:hover{border-color:var(--accent-line);background:var(--hover)}
@@ -1237,6 +1266,12 @@ if(t==="system")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"lig
       <div class="phead">IDRIS AI <small>engineering assistant</small><button class="x" id="chatClose" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
       <section class="cad-only cprops" id="cadProps" aria-label="Properties"></section>
       <section class="learn" id="learn" aria-label="First design guide" hidden></section>
+      <div class="proc" id="proc" hidden aria-label="Design process">
+        <div class="proc-h" id="procH" role="button" tabindex="0" aria-expanded="true" aria-controls="procBar">
+          <b id="procTitle">Process</b><span class="pnow" id="procNow"></span><span class="chev">▾</span>
+        </div>
+        <ol class="proc-bar" id="procBar"></ol>
+      </div>
       <div class="chat" id="chat"></div>
       <div class="input">
         <div class="inbox">
@@ -2657,6 +2692,7 @@ function askMissing(got) {
 
 function resetAll() {
   state.userSet = {}; state.pending = null; state.data = null; state.variants = []; state.sel = null; state.stl = {}; state.housing = null;
+  try { procReset(0); } catch (e) { /* the process bar is UI only */ }
   renderAll(); clearViewport();
   state.studyId = null; renderTree();
   say(L('Cleared. Describe a new design whenever you are ready.', 'Dikosongkan. Jelaskan desain baru kapan saja.') + (state.studies.length ? L(' Earlier studies stay under Saved studies.', ' Studi sebelumnya tetap ada di Saved studies.') : ''),
@@ -11643,7 +11679,7 @@ let lastChatMeta = null;
 { const f3 = window.fetch; window.fetch = async function (url, opt) {
     const r = await f3(url, opt);
     if (typeof url === 'string' && url === API + '/chat' && !(opt && opt.headers && opt.headers['X-Idris-Concept'])) {
-      try { const j = await r.clone().json(); lastChatMeta = j ? { ...jobMeta(j), references: j.references || null, job: j.job_id ? { id: j.job_id, estimate: j.estimate || null } : j.design_job || null, status: r.status, budget: budgetHit(r.status, j), context_reset: j.context_reset || null, concepts: Array.isArray(j.concepts) ? j.concepts.length : 0, had_cad: !!j.cad, loads: !!(j.cad && j.cad.requirements && ((j.cad.requirements.loads || []).length)) } : null; } catch (e) { lastChatMeta = null; } }
+      try { const j = await r.clone().json(); if (j && j.stage) { try { procSetStage(j.stage); } catch (e) { /* UI only */ } } lastChatMeta = j ? { ...jobMeta(j), references: j.references || null, job: j.job_id ? { id: j.job_id, estimate: j.estimate || null } : j.design_job || null, status: r.status, budget: budgetHit(r.status, j), context_reset: j.context_reset || null, stage: j.stage || null, stage_name: j.stage_name || null, trace: Array.isArray(j.trace) ? j.trace : null, concepts: Array.isArray(j.concepts) ? j.concepts.length : 0, had_cad: !!j.cad, loads: !!(j.cad && j.cad.requirements && ((j.cad.requirements.loads || []).length)) } : null; } catch (e) { lastChatMeta = null; } }
     return r; }; }
 { const ga = genFromAI; genFromAI = function (cad) { const before = state.part, meta = lastChatMeta; const r = ga.apply(this, arguments); const p = state.part;
     if (p && p !== before && p.gen && meta && !(designJob && designJob.status === 'running')) { Object.assign(p.gen, jobMeta(meta)); if (meta.references) p.gen.references = meta.references; savePart(); }
@@ -11653,7 +11689,7 @@ let chatResetNote = null;
     const last = [...document.querySelectorAll('#chat .msg.ai .ai-body')].pop();
     if (m && m.job && m.job.id && !(designJob && designJob.status === 'running')) { designJob = { status: 'running', message: text, events: [], round: 0, id: m.job.id, estimate: m.job.estimate, t0: Date.now() }; renderJob(); pollJob(designJob); }
     /* the solver says the sentence is a new product: drop the old brief and the pending sizes, and say so */
-    if (m && m.context_reset) { clearDesignContext(m.context_reset); }
+    if (m && m.context_reset) { procReset(1); clearDesignContext(m.context_reset); }
     /* a badge only when a model exists: "Full design" on a question would be a claim about nothing */
     const hasModel = !!(typeof partShape !== 'undefined' && partShape);
     if (m && last) {
@@ -11663,6 +11699,8 @@ let chatResetNote = null;
       if (m.rung && m.rung !== 'failed') last.append(metaBox(m));
       else if (hasModel && (m.fidelity || m.target_check || (m.not_checked && m.not_checked.length) || m.validated === false)) last.append(metaBox(m));
       else if (!hasModel && m.fidelity) last.append(h('div', { class: 'newnote' }, L('No model yet: this answer only asks for sizes, so it carries no design badge.', 'Belum ada model: jawaban ini hanya menanyakan ukuran, jadi tidak ada badge desain.')));
+      /* the stage bar and "How IDRIS got here" read the solver's own fields, never a guess */
+      try { procNoteReply(m, last.closest('.msg')); } catch (e) { /* UI only */ }
     }
     /* a free design shows the steps that really happen */
     if (m && (m.had_cad || m.concepts > 1)) {
@@ -11728,6 +11766,12 @@ function designReportCard(rep, meta, text) {
     const res = await apiJSON(`/design/job/${encodeURIComponent(jobId)}/feedback`, { part_check: { design_report: r } }, 30000).catch((err) => ({ status: 0, d: { error: err.message } }));
     b.textContent = res.ok ? L('Report sent to feedback', 'Laporan terkirim ke feedback') : L('Feedback refused: ', 'Feedback ditolak: ') + String((res.d && res.d.error) || ('HTTP ' + res.status)).slice(0, 160);
   } }, L('Send the report to feedback', 'Kirim laporan ke feedback'))));
+  /* no job to carry the report: it is saved on its own, once, and the card says which id it got */
+  if (!jobId) {
+    const saveRow = h('div', { class: 'rep-save' });
+    box.append(saveRow);
+    failedReportSave(r, text, saveRow).catch(() => {});
+  }
   if (typeof startDesignJob === 'function' && text) box.append(h('div', { class: 'gen-var' },
     h('button', { class: 'chip', onclick: () => startDesignJob(String(text)) }, L('Design it as a background job', 'Desain sebagai job latar'))));
   return box;
@@ -14560,6 +14604,145 @@ function renderColleague(j) {
     colleagueLast = (state.lastChat && state.lastChat.response) || null;
     try { renderColleague(colleagueLast); } catch (e) { /* UI only */ }
     return r; }; }
+
+/* ---- the design process the solver actually ran (doc: alur kerja IDRIS di UI, 25 Nov 2026)
+ * 1 A nine-stage bar above the chat, filled from `stage` / `stage_name` on the /chat answer (colleague.STAGES).
+ * 2 "How IDRIS got here" under a reply that carries `trace`: the steps the solver wrote down, with their status.
+ * 3 A failed report with no job id is saved to POST /design/report once, and the card says which id it got.
+ * Nothing here invents a stage or a step: no `stage` -> no bar, no `trace` -> no list. */
+const PROC_STAGES = [
+  ['Brief', 'Brief'], ['References', 'Referensi'], ['Concept & layout', 'Konsep & tata letak'],
+  ['Part design', 'Desain part'], ['Joining & manufacturing', 'Sambungan & manufaktur'],
+  ['Assembly check', 'Cek rakitan'], ['Simulation', 'Simulasi'], ['DFM', 'DFM'], ['Outputs', 'Keluaran'],
+];
+const PROC_SHORT = [['Brief', 'Brief'], ['Refs', 'Ref'], ['Concept', 'Konsep'], ['Part', 'Part'],
+  ['Join', 'Sambung'], ['Asm', 'Rakit'], ['Sim', 'Sim'], ['DFM', 'DFM'], ['Out', 'Keluar']];
+const PROC_TRACE_LABELS = {
+  'Read the request': ['Read the request', 'Membaca permintaan'],
+  'Checked the brief': ['Checked the brief', 'Memeriksa brief'],
+  'Searched design references': ['Searched design references', 'Mencari referensi desain'],
+  'Picked a build route': ['Picked a build route', 'Memilih jalur desain'],
+  'Built with features': ['Built with features', 'Membangun dari fitur'],
+  'Built with code': ['Built with code', 'Menulis kode desain'],
+  'Build failed': ['Build failed', 'Gagal membangun part'],
+};
+const procState = { stage: 0, at: new Map() };
+function procLabel(i) { return L(PROC_STAGES[i][0], PROC_STAGES[i][1]); }
+function procRender() {
+  const el = $('#proc'), bar = $('#procBar');
+  if (!el || !bar) return;
+  el.hidden = !(procState.stage > 0);
+  if (el.hidden) { bar.innerHTML = ''; return; }
+  bar.innerHTML = '';
+  PROC_STAGES.forEach((s, i) => {
+    const n = i + 1, state = n < procState.stage ? 'done' : n === procState.stage ? 'now' : 'todo';
+    bar.append(h('li', { class: state },
+      h('button', { type: 'button', 'data-stage': n, title: `${n}. ${procLabel(i)}`,
+        'aria-label': `${n}. ${procLabel(i)}${state === 'done' ? L(' — done, click to see its first answer', ' — selesai, klik untuk balasan pertamanya') : state === 'now' ? L(' — now', ' — sekarang') : ''}`,
+        onclick: () => procJump(n) },
+        h('span', { class: 'dot' }), h('span', { class: 'lab' }, L(PROC_SHORT[i][0], PROC_SHORT[i][1])))));
+  });
+  const t = $('#procTitle'); if (t) t.textContent = L('Process', 'Proses');
+  const now = $('#procNow');
+  if (now) now.textContent = `${procState.stage}/${PROC_STAGES.length} · ${procLabel(procState.stage - 1)}`;
+}
+function procSetStage(stage) {
+  const n = Math.round(Number(stage));
+  if (!(n >= 1)) return;
+  procState.stage = Math.max(1, Math.min(PROC_STAGES.length, n));
+  procRender();
+}
+function procReset(stage) {
+  const n = Math.round(Number(stage));
+  procState.stage = Number.isFinite(n) && n > 0 ? Math.min(PROC_STAGES.length, n) : 0;
+  procState.at = new Map();
+  procRender();
+}
+function procNoteReply(meta, msgEl) {
+  if (!meta) return;
+  const n = Math.round(Number(meta.stage));
+  if (n >= 1) {
+    if (msgEl && !procState.at.has(n)) procState.at.set(n, msgEl);
+    procSetStage(n);
+  }
+  const rows = Array.isArray(meta.trace) ? meta.trace : [];
+  if (msgEl && rows.length) {
+    const body = msgEl.querySelector('.ai-body');
+    if (body && !body.querySelector('.proc-trace')) body.append(procTraceCard(rows));
+  }
+}
+function procJump(n) {
+  if (!(n >= 1 && n < procState.stage)) return;      /* only a stage that is already behind us */
+  const at = procState.at.get(n);
+  if (!at) return;
+  at.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  at.classList.remove('proc-flash');
+  void at.offsetWidth;
+  at.classList.add('proc-flash');
+}
+function procTraceCard(rows) {
+  const list = rows.filter((r) => r && typeof r === 'object');
+  const box = h('details', { class: 'proc-trace' },
+    h('summary', null, L('How IDRIS got here', 'Bagaimana IDRIS sampai ke sini') + ` · ${list.length}`));
+  const ol = h('ol');
+  list.forEach((r) => {
+    const status = ['done', 'running', 'skipped', 'failed'].includes(String(r.status)) ? String(r.status) : 'done';
+    const icon = status === 'done' ? '✓' : status === 'failed' ? '✕' : status === 'running' ? '…' : '–';
+    const pair = PROC_TRACE_LABELS[String(r.step)] || [String(r.step || ''), String(r.step || '')];
+    ol.append(h('li', { class: `tr-${status}`, title: r.source ? L('Source: ', 'Sumber: ') + String(r.source) : '' },
+      h('span', { class: 'st', 'aria-hidden': 'true' }, icon),
+      h('div', null, h('div', { class: 'tt' }, L(pair[0], pair[1])),
+        r.detail ? h('div', { class: 'dt' }, String(r.detail)) : null)));
+  });
+  box.append(ol);
+  return box;
+}
+if ($('#procH')) $('#procH').addEventListener('click', () => {
+  const el = $('#proc'), head = $('#procH');
+  if (!el || !head) return;
+  el.classList.toggle('closed');
+  head.setAttribute('aria-expanded', el.classList.contains('closed') ? 'false' : 'true');
+});
+if ($('#procH')) $('#procH').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#procH').click(); }
+});
+
+/* a failed report with no job id: saved once per report, with its id on the card; a refusal is shown, not hidden */
+const failedReportSaved = new Map();
+function failedReportKey(rep) {
+  const r = rep && typeof rep === 'object' ? rep : {};
+  const tried = (Array.isArray(r.rungs_tried) ? r.rungs_tried : []).map((t) => t && t.rung);
+  return JSON.stringify([r.part_id || null, r.part_name || null, r.shape_class || null,
+    (r.requested || {}).intent || null, tried]).slice(0, 400);
+}
+function failedReportPaint(row, entry, rep, text) {
+  if (!row) return;
+  row.innerHTML = '';
+  row.className = 'rep-save ' + String(entry.state || '');
+  if (entry.state === 'saving') { row.append(h('span', null, L('Saving the failed report…', 'Menyimpan laporan gagal…'))); return; }
+  if (entry.state === 'saved') { row.append(h('span', null, L('Report saved to feedback', 'Laporan tersimpan ke feedback') + ` (#${entry.id})`)); return; }
+  const why = entry.error ? String(entry.error).slice(0, 220) : L('the engine refused it', 'mesin menolaknya');
+  row.append(h('span', null, L('The report was not saved: ', 'Laporan gagal disimpan: ') + why));
+  row.append(h('button', { type: 'button', class: 'chip', onclick: () => { failedReportSave(rep, text, row, true).catch(() => {}); } }, L('Try again', 'Coba lagi')));
+}
+async function failedReportSave(rep, text, row, force) {
+  const key = failedReportKey(rep);
+  const seen = failedReportSaved.get(key);
+  if (seen && (seen.state === 'saving' || (seen.state === 'saved' && !force))) { failedReportPaint(row, seen, rep, text); return; }
+  const entry = { state: 'saving', id: null, error: null };
+  failedReportSaved.set(key, entry);
+  failedReportPaint(row, entry, rep, text);
+  const brief = typeof chatBrief !== 'undefined' ? chatBrief : null;
+  const topic = (brief && brief.object) ? brief.object : ((state.part && (state.part.title || state.part.name)) || null);
+  let res = null;
+  try {
+    res = await apiJSON('/design/report', { report: rep, message: String(text || ''),
+      topic: topic ? String(topic) : null, solver_version: state.solverVersion || null }, 30000);
+  } catch (e) { res = { status: 0, ok: false, d: { error: e && e.message } }; }
+  if (res && res.ok && res.d && res.d.ok && res.d.id) { entry.state = 'saved'; entry.id = res.d.id; }
+  else { entry.state = 'error'; entry.error = (res && res.d && (res.d.error || res.d.detail)) || ('HTTP ' + ((res && res.status) || 0)); }
+  failedReportPaint(row, entry, rep, text);
+}
 
 /* ---- v0.42 manufacturing panel (solver `joining.py`): the assembly goes to POST /join/plan, and what comes back
  * is the workshop's view — the geometry checks with the parts they name, then BOM, cut list, weld list, bolt list
