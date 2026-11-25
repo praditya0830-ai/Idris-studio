@@ -6552,6 +6552,7 @@ const loadSavedPart = () => { try { const p = JSON.parse(localStorage.getItem(PA
 /* feature definitions: fields for the form, a label for the tree, and the build step */
 const N = (k, en, id, unit, def, extra = {}) => ({ k, en, id, unit, def, t: 'num', ...extra });
 const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel', ...extra });
+const TX = (k, en, id, def, extra = {}) => ({ k, en, id, def, t: 'txt', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
 const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', gusset: 'gusset', weld: 'weld', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
@@ -6745,12 +6746,16 @@ const FEAT = {
       N('H', 'Height Z', 'Tinggi Z', 'mm', 20, { show: (p) => p.kind !== 'sphere' }),
       N('x', 'Centre X', 'Pusat X', 'mm', 0), N('y', 'Centre Y', 'Pusat Y', 'mm', 0), N('z', 'Base Z', 'Dasar Z', 'mm', 0), S('op', 'With the body', 'Terhadap body', OPS, 'add', { first: false })],
     label: (p) => ({ box: `${L('Box', 'Balok')} ${p.L}×${p.W}×${p.H}`, cyl: `${L('Cylinder', 'Silinder')} Ø${p.D}×${p.H}`, tube: `${L('Tube', 'Tabung')} Ø${p.D}/Ø${p.Di}×${p.H}`, sphere: `${L('Sphere', 'Bola')} Ø${p.D}` }[p.kind]) },
-  sketch: { en: 'Sketch', id: 'Sketch', fields: [S('prof', 'Profile', 'Profil', [['rect', ['Rectangle', 'Persegi panjang']], ['circle', ['Circle', 'Lingkaran']], ['slot', ['Slot', 'Slot']], ['poly', ['Polygon', 'Poligon']], ['ents', ['Lines & arcs (interactive)', 'Garis & busur (interaktif)']]], 'rect'),
+  sketch: { en: 'Sketch', id: 'Sketch', fields: [S('prof', 'Profile', 'Profil', [['rect', ['Rectangle', 'Persegi panjang']], ['circle', ['Circle', 'Lingkaran']], ['slot', ['Slot', 'Slot']], ['poly', ['Polygon', 'Poligon']], ['ellipse', ['Ellipse', 'Elips']], ['spline', ['Closed spline through points', 'Spline tertutup melalui titik']], ['ents', ['Lines & arcs (interactive)', 'Garis & busur (interaktif)']]], 'rect'),
       N('W', 'Width', 'Lebar', 'mm', 30, { show: (p) => p.prof === 'rect' || p.prof === 'slot' }), N('Hh', 'Height', 'Tinggi', 'mm', 20, { show: (p) => p.prof === 'rect' || p.prof === 'slot' }),
-      N('D', 'Diameter', 'Diameter', 'mm', 20, { show: (p) => p.prof === 'circle' || p.prof === 'poly' }), N('n', 'Sides', 'Jumlah sisi', '', 6, { show: (p) => p.prof === 'poly', step: 1, min: 3 }),
+      N('D', 'Diameter', 'Diameter', 'mm', 20, { show: (p) => p.prof === 'circle' || p.prof === 'poly' || p.prof === 'ellipse' }), N('n', 'Sides', 'Jumlah sisi', '', 6, { show: (p) => p.prof === 'poly', step: 1, min: 3 }),
+      /* S21: the ellipse is the major (D) and minor (d) diameter the kernel draws; the spline is the closed curve
+         through the points typed here, one point per `x,y`, separated by `;` or a new line. */
+      N('d', 'Minor diameter', 'Diameter kecil', 'mm', 10, { show: (p) => p.prof === 'ellipse', min: 0.1 }),
+      TX('pts', 'Points (x,y; x,y; …)', 'Titik (x,y; x,y; …)', '0,20; 20,0; 0,-20; -20,0', { show: (p) => p.prof === 'spline' }),
       S('plane', 'Plane', 'Bidang', PLANES, 'XY'), S('at', 'Place on', 'Letakkan di', [['top', ['Top of the body', 'Atas body']], ['value', ['Offset value', 'Nilai offset']]], 'top', { show: (p) => p.plane === 'XY' }),
       N('off', 'Offset along the normal', 'Offset searah normal', 'mm', 0, { show: (p) => p.plane !== 'XY' || p.at === 'value' }), N('u', 'Centre (1st axis)', 'Pusat (sumbu 1)', 'mm', 0), N('v', 'Centre (2nd axis)', 'Pusat (sumbu 2)', 'mm', 0)],
-    label: (p) => p.prof === 'ents' ? `${(p.ents || []).length} ${L('entities', 'entitas')} · ${p.plane}` : `${{ rect: `${L('Rectangle', 'Persegi')} ${p.W}×${p.Hh}`, circle: `${L('Circle', 'Lingkaran')} Ø${p.D}`, slot: `Slot ${p.W}×${p.Hh}`, poly: `${p.n}-${L('gon', 'gon')} Ø${p.D}` }[p.prof]} · ${p.plane}` },
+    label: (p) => p.prof === 'ents' ? `${(p.ents || []).length} ${L('entities', 'entitas')} · ${p.plane}` : p.prof === 'spline' ? `${L('Spline', 'Spline')} ${s21SplinePts(p.pts).length} ${L('points', 'titik')} · ${p.plane}` : `${{ rect: `${L('Rectangle', 'Persegi')} ${p.W}×${p.Hh}`, circle: `${L('Circle', 'Lingkaran')} Ø${p.D}`, slot: `Slot ${p.W}×${p.Hh}`, poly: `${p.n}-${L('gon', 'gon')} Ø${p.D}`, ellipse: `${L('Ellipse', 'Elips')} Ø${p.D}×${p.d}` }[p.prof]} · ${p.plane}` },
   push: { en: 'Push/Pull', id: 'Push/Pull', fields: [N('dist', 'Distance (negative = other side)', 'Jarak (negatif = arah sebaliknya)', 'mm', 10, { min: -2000 }), S('op', 'Result', 'Hasil', OPS, 'add'), S('both', 'Direction', 'Arah', [['one', ['One side', 'Satu sisi']], ['both', ['Both sides (symmetric)', 'Dua sisi (simetris)']]], 'one')],
     label: (p) => `${p.op === 'cut' ? L('Cut', 'Potong') : L('Extrude', 'Tarik')} ${p.dist} mm${p.both === 'both' ? ' ⇅' : ''}` },
   hole: { en: 'Hole', id: 'Hole', fields: [S('type', 'Type', 'Jenis', [['simple', ['Simple', 'Biasa']], ['clear', ['Clearance for a bolt (ISO 273)', 'Lubang baut (ISO 273)']], ['cbore', ['Counterbore', 'Counterbore']], ['tap', ['Tapped ISO M', 'Ulir ISO M']]], 'simple'),
@@ -6838,6 +6843,14 @@ const FEAT = {
       N('angle', 'Draft angle', 'Sudut draft', '\u00b0', 3, { min: 0.1 }),
       S('neutral', 'Neutral plane', 'Bidang netral', [['bottom', ['Bottom of the part', 'Dasar part']], ['top', ['Top of the part', 'Atas part']]], 'bottom')],
     label: (p) => `${L('Draft', 'Draft')} ${p.angle}\u00b0 \u00b7 ${p.sides} \u00b7 ${p.neutral === 'top' ? L('top', 'atas') : L('bottom', 'bawah')}` },
+  /* Batch A: Text. A bundled 5×7 block font; each glyph is closed rectangles the kernel fuses into one profile,
+     then extrudes as a boss or cuts as a deboss. The step reports the profile area and the measured volume. */
+  text: { en: 'Text', id: 'Teks', fields: [TX('s', 'Text', 'Teks', 'IDRIS'),
+      N('h', 'Text height', 'Tinggi teks', 'mm', 14, { min: 2 }), N('depth', 'Depth', 'Kedalaman', 'mm', 3, { min: 0.1 }),
+      S('plane', 'Sketch plane', 'Bidang sketch', PLANES, 'XY'), N('off', 'Plane offset', 'Offset bidang', 'mm', 0),
+      N('u', 'Position along the plane', 'Posisi sepanjang bidang', 'mm', 0), N('v', 'Position across the plane', 'Posisi melintang bidang', 'mm', 0),
+      S('op', 'Result', 'Hasil', OPS, 'add')],
+    label: (p) => `“${p.s}” ${p.h} mm · ${p.depth} mm ${p.op === 'cut' ? L('deboss', 'deboss') : L('emboss', 'emboss')}` },
   dim: { get en() { return 'Smart Dimension'; }, get id() { return 'Smart Dimension'; },
     /* the sketch steps are read when the form is drawn, so a new sketch shows up immediately */
     get fields() {
@@ -6916,7 +6929,7 @@ const FEAT = {
       S('material', 'Material', 'Material', [['steel', ['Steel', 'Baja']], ['stainless', ['Stainless', 'Stainless']], ['aluminium', ['Aluminium', 'Aluminium']], ['brass', ['Brass', 'Kuningan']]])],
     label: (p) => L('Convert to sheet metal', 'Ubah jadi sheet metal') },
 };
-const PART_TOOLS = ['shape', 'sketch', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'gusset', 'weld', 'mold', 'parting', 'shutoff', 'shrink', 'draft', 'dim', 'measure',
+const PART_TOOLS = ['shape', 'sketch', 'text', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'gusset', 'weld', 'mold', 'parting', 'shutoff', 'shrink', 'draft', 'dim', 'measure',
   'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick',
   'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
@@ -6940,6 +6953,56 @@ function smFlatDxf(model) {
   return lines.join('\n');
 }
 /* rebuild: run every feature in order; a feature that fails is marked and skipped, the rest still runs */
+/* ---- Batch A: Sketch Text. The font ships with the app as a 5×7 cell table, so a glyph is a set of closed
+   rectangles the kernel can fuse, sketch and extrude. It is a block font, and the step says so; nothing here asks
+   the page for a font file it does not have (the kernel's own drawText needs an opentype asset). ---- */
+const IDRIS_FONT = {
+  A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'], B: ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
+  C: ['01111', '10000', '10000', '10000', '10000', '10000', '01111'], D: ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
+  E: ['11111', '10000', '10000', '11110', '10000', '10000', '11111'], F: ['11111', '10000', '10000', '11110', '10000', '10000', '10000'],
+  G: ['01111', '10000', '10000', '10111', '10001', '10001', '01111'], H: ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
+  I: ['11111', '00100', '00100', '00100', '00100', '00100', '11111'], J: ['00111', '00010', '00010', '00010', '00010', '10010', '01100'],
+  K: ['10001', '10010', '10100', '11000', '10100', '10010', '10001'], L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+  M: ['10001', '11011', '10101', '10101', '10001', '10001', '10001'], N: ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
+  O: ['01110', '10001', '10001', '10001', '10001', '10001', '01110'], P: ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
+  Q: ['01110', '10001', '10001', '10001', '10101', '10011', '01101'], R: ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+  S: ['01111', '10000', '10000', '01110', '00001', '00001', '11110'], T: ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
+  U: ['10001', '10001', '10001', '10001', '10001', '10001', '01110'], V: ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
+  W: ['10001', '10001', '10001', '10101', '10101', '11011', '10001'], X: ['10001', '10001', '01010', '00100', '01010', '10001', '10001'],
+  Y: ['10001', '10001', '01010', '00100', '00100', '00100', '00100'], Z: ['11111', '00001', '00010', '00100', '01000', '10000', '11111'],
+  0: ['01110', '10001', '10011', '10101', '11001', '10001', '01110'], 1: ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
+  2: ['01110', '10001', '00001', '00010', '00100', '01000', '11111'], 3: ['11111', '00010', '00100', '00010', '00001', '10001', '01110'],
+  4: ['00010', '00110', '01010', '10010', '11111', '00010', '00010'], 5: ['11111', '10000', '11110', '00001', '00001', '10001', '01110'],
+  6: ['00110', '01000', '10000', '11110', '10001', '10001', '01110'], 7: ['11111', '00001', '00010', '00100', '01000', '01000', '01000'],
+  8: ['01110', '10001', '10001', '01110', '10001', '10001', '01110'], 9: ['01110', '10001', '10001', '01111', '00001', '00010', '01100'],
+  '-': ['00000', '00000', '00000', '11111', '00000', '00000', '00000'], '.': ['00000', '00000', '00000', '00000', '00000', '01100', '01100'],
+  ':': ['00000', '01100', '01100', '00000', '01100', '01100', '00000'], '/': ['00001', '00010', '00010', '00100', '01000', '01000', '10000'],
+  '+': ['00000', '00100', '00100', '11111', '00100', '00100', '00000'], ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
+};
+const IDRIS_FONT_CELLS = 7, IDRIS_FONT_PITCH = 6, IDRIS_FONT_COLS = 5;
+/** the text as merged cell rectangles in the sketch plane, plus its width; an unknown character is refused by name. */
+function idrisTextRects(str, h) {
+  const cell = h / IDRIS_FONT_CELLS, rects = [];
+  let pen = 0;
+  for (const raw of String(str == null ? '' : str)) {
+    const ch = raw.toUpperCase();
+    if (ch === '\n' || ch === '\r' || ch === '\t') continue;
+    const g = IDRIS_FONT[ch];
+    if (!g) throw new Error(L(`The bundled font has no ${JSON.stringify(ch)}: it carries A-Z, 0-9, space, - . : / and +. Change that character or type the text in another way.`, `Font bawaan tidak punya ${JSON.stringify(ch)}: isinya A-Z, 0-9, spasi, - . : / dan +. Ganti karakter itu atau tulis teksnya dengan cara lain.`));
+    for (let r = 0; r < IDRIS_FONT_CELLS; r++) {
+      let c = 0;
+      while (c < IDRIS_FONT_COLS) {
+        if (g[r][c] === '1') {
+          let n = 1; while (c + n < IDRIS_FONT_COLS && g[r][c + n] === '1') n++;
+          rects.push({ x: (pen + c) * cell, y: (IDRIS_FONT_CELLS - 1 - r) * cell, w: n * cell, h: cell });
+          c += n;
+        } else c++;
+      }
+    }
+    pen += IDRIS_FONT_PITCH;
+  }
+  return { rects, width: Math.max(0, pen - 1) * cell };
+}
 async function buildPart(pArg) {
   const R = await kernel(), p = pArg || state.part; if (!p) return null;
   let body = null, lastTool = null, lastOp = 'add', sketch = null; const sketches = [];
@@ -6947,6 +7010,9 @@ async function buildPart(pArg) {
   const apply = (tool, op) => { if (!body) { if (op === 'cut') throw new Error(L('Nothing to cut yet: start with Shape.', 'Belum ada yang bisa dipotong: mulai dengan Shape.')); body = tool.clone(); }
     else body = op === 'cut' ? body.cut(tool.clone()) : body.fuse(tool.clone()); lastTool = tool; lastOp = op; };
   const profile = (s) => {
+    /* S21: an ellipse or a closed spline. Both are kernel curves (ellipse arcs, exact cubic Béziers through the
+       points), and both go through the same plane/extrude/revolve path as every other sketch. */
+    if (s.prof === 'ellipse' || s.prof === 'spline') return s21Sketch(R, s).translate(+s.u || 0, +s.v || 0);
     /* P1a: a sketch drawn from lines and arcs. The kernel gets real lines and real three-point arcs, not a
        polygon, so a bore drawn as an arc stays round in STEP; only the largest closed loop is extruded. */
     if (s.prof === 'ents') { const d = p1Drawing(R, s.ents || []);
@@ -7022,8 +7088,8 @@ async function buildPart(pArg) {
     if (!tgt || tgt.type !== 'sketch') { dimErr[d.id] = L('Pick the sketch this dimension drives: it must be a Sketch step above.', 'Pilih sketch yang diatur dimensi ini: harus langkah Sketch yang sudah ada.'); continue; }
     if (!(v > 0)) { dimErr[d.id] = L('A dimension must be greater than 0.', 'Dimensi harus lebih besar dari 0.'); continue; }
     if (d.p.param === 'n' && (!(v >= 3) || Math.round(v) !== v)) { dimErr[d.id] = L('Sides must be a whole number, 3 or more.', 'Jumlah sisi harus bilangan bulat, 3 atau lebih.'); continue; }
-    const needs = { W: ['rect', 'slot'], Hh: ['rect', 'slot'], D: ['circle', 'poly'], n: ['poly'] }[d.p.param];
-    if (needs && !needs.includes(tgt.p.prof)) { dimErr[d.id] = L(`That sketch is a ${tgt.p.prof === 'poly' ? 'polygon' : tgt.p.prof === 'slot' ? 'slot' : tgt.p.prof === 'circle' ? 'circle' : 'rectangle'}, which has no ${d.p.param === 'n' ? 'side count' : d.p.param === 'D' ? 'diameter' : d.p.param === 'W' ? 'width' : 'height'} to drive.`, `Sketch itu ${tgt.p.prof === 'poly' ? 'poligon' : tgt.p.prof === 'slot' ? 'slot' : tgt.p.prof === 'circle' ? 'lingkaran' : 'persegi'}, tidak punya dimensi itu untuk diatur.`); continue; }
+    const needs = { W: ['rect', 'slot'], Hh: ['rect', 'slot'], D: ['circle', 'poly', 'ellipse'], n: ['poly'] }[d.p.param];
+    if (needs && !needs.includes(tgt.p.prof)) { dimErr[d.id] = L(`That sketch is a ${tgt.p.prof === 'poly' ? 'polygon' : tgt.p.prof === 'slot' ? 'slot' : tgt.p.prof === 'circle' ? 'circle' : tgt.p.prof === 'ellipse' ? 'ellipse' : tgt.p.prof === 'spline' ? 'spline' : 'rectangle'}, which has no ${d.p.param === 'n' ? 'side count' : d.p.param === 'D' ? 'diameter' : d.p.param === 'W' ? 'width' : 'height'} to drive.`, `Sketch itu ${tgt.p.prof === 'poly' ? 'poligon' : tgt.p.prof === 'slot' ? 'slot' : tgt.p.prof === 'circle' ? 'lingkaran' : tgt.p.prof === 'ellipse' ? 'elips' : tgt.p.prof === 'spline' ? 'spline' : 'persegi'}, tidak punya dimensi itu untuk diatur.`); continue; }
     (dims[tgt.id] = dims[tgt.id] || {})[d.p.param] = v;
   }
   for (const ft of p.features) {
@@ -7040,10 +7106,28 @@ async function buildPart(pArg) {
         apply(t, body ? (q.op || 'add') : 'add');
       } else if (ft.type === 'sketch') {
         const driven = { ...q, ...(dims[ft.id] || {}) };
+        /* S21: an ellipse or spline profile is checked here, so the tree marks the sketch step that is wrong, not
+           only the extrude that would have used it. */
+        if (driven.prof === 'ellipse' || driven.prof === 'spline') s21Check(driven);
         sketch = { s: driven, at: sketchAt(driven) }; sketches.push(sketch);
         /* v67: for the SolidWorks macro. Guarded so buildPart also runs where SW_AT does not exist (the tests
            lift this function out of the page), instead of failing the sketch step with "SW_AT is not defined". */
         if (typeof SW_AT !== 'undefined') SW_AT.set(ft, { s: driven, at: sketch.at });
+      } else if (ft.type === 'text') {
+        /* Batch A: the bundled font is fused cell by cell into one closed profile, then extruded. The note carries
+           the profile area and the volume the kernel measures, so the number on screen is the built volume. */
+        const str = String(q.s == null ? '' : q.s).trim();
+        if (!str) throw new Error(L('Type the text first.', 'Ketik teksnya dulu.'));
+        const h = +q.h; if (!(h >= 2)) throw new Error(L('Text height must be at least 2 mm: below that the 5×7 cells are thinner than the kernel tolerance.', 'Tinggi teks minimal 2 mm: di bawah itu sel 5×7 lebih tipis dari toleransi kernel.'));
+        const depth = pos(q.depth);
+        const { rects, width } = idrisTextRects(str, h);
+        if (!rects.length) throw new Error(L('That text has no drawn cells: type letters, digits or one of - . : / +.', 'Teks itu tidak punya sel tergambar: ketik huruf, angka, atau salah satu dari - . : / +.'));
+        let d = null;
+        for (const r of rects) { const c = R.drawRectangle(r.w, r.h).translate(r.x + r.w / 2, r.y + r.h / 2); d = d ? d.fuse(c) : c; }
+        const t = d.translate(+q.u || 0, +q.v || 0).sketchOnPlane(q.plane || 'XY', +q.off || 0).extrude(depth);
+        const vol = R.measureVolume(t), area = vol / depth;
+        apply(t, q.op || 'add');
+        ft.note = L(`“${str}” in the bundled 5×7 block font: ${rects.length} fused cells, ${f(area, 1)} mm² profile × ${f(depth, 2)} mm = ${f(vol, 1)} mm³ measured by the kernel. ${f(width, 1)} mm wide, ${f(h, 1)} mm tall.`, `“${str}” dengan font blok 5×7 bawaan: ${rects.length} sel tergabung, profil ${f(area, 1)} mm² × ${f(depth, 2)} mm = ${f(vol, 1)} mm³ diukur kernel. Lebar ${f(width, 1)} mm, tinggi ${f(h, 1)} mm.`);
       } else if (ft.type === 'push') {
         if (!sketch) throw new Error(L('Push/Pull needs a Sketch before it.', 'Push/Pull butuh Sketch sebelumnya.'));
         const dist = +q.dist; if (!dist) throw new Error(L('Distance cannot be 0.', 'Jarak tidak boleh 0.'));
@@ -7548,7 +7632,7 @@ function partTool(k, preset, label) {
   if (k === 'measure') { partArm = null; partSel = 'measure'; cadTab = 'design'; renderCad(); return; }
   const first = !state.part.features.some((f) => f.type === 'shape' || f.type === 'push');
   /* Push/Pull, Revolve and Smart Dimension all work on a sketch before there is a body */
-  if (first && !['shape', 'sketch', 'push', 'revolve', 'sweep', 'loft', 'rib', 'dim', 'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick', 'member', 'gusset', 'weld',
+  if (first && !['shape', 'sketch', 'text', 'push', 'revolve', 'sweep', 'loft', 'rib', 'dim', 'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick', 'member', 'gusset', 'weld',
     'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
   if (k === 'push' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Extrude needs a sketch: draw one first.', 'Extrude butuh sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'revolve' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Revolve needs a sketch: draw the profile first.', 'Revolve butuh sketch: buat profilnya dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
@@ -7574,6 +7658,8 @@ function pform(type, p, onOk, okLabel, onCancel) {
       const lab = h('label', null, h('span', null, L(x.en, x.id)));
       if (x.t === 'num') lab.append(h('span', { class: 'pnum' }, h('input', { type: 'number', inputmode: 'decimal', value: p[x.k], step: x.step || 'any', min: x.min ?? 0, 'data-k': x.k,
         oninput: (e) => { p[x.k] = e.target.value === '' ? '' : Number(e.target.value); ghost(); } }), x.unit ? h('em', null, x.unit) : null));
+      else if (x.t === 'txt') lab.append(h('span', { class: 'pnum' }, h('input', { type: 'text', value: p[x.k] ?? x.def ?? '', 'data-k': x.k, spellcheck: 'false',
+        oninput: (e) => { p[x.k] = e.target.value; ghost(); } })));
       else lab.append(h('select', { 'data-k': x.k, onchange: (e) => { p[x.k] = e.target.value; draw(); ghost(); } }, x.opts.map(([v, t]) => h('option', { value: v, selected: v === p[x.k] }, L(...t)))));
       box.append(lab); });
     box.append(h('div', { class: 'pact' }, h('span', { class: 'skp', id: 'skPrev', hidden: true }),
@@ -7953,7 +8039,139 @@ function p1Drawing(R, ents) {
   const out = pen.close();
   return out && typeof out.done === 'function' ? out.done() : out;
 }
+/* ---- P1a/S21b: sketching modify. Mirror and pattern are exact 2D transforms of the entities, so a mirrored arc is
+ * still an arc (three reflected points) and a patterned line is still a line; the copies are real entities with
+ * their own ids, and the sketch is built by the kernel exactly like anything else drawn. A copy carries no
+ * relations of its own — the note says so instead of pretending it is solved. */
+const p1Reflect = (p, a, b) => { const d = p1Unit(p1Sub(b, a)), v = p1Sub(p, a), t = v[0] * d[0] + v[1] * d[1], q = p1Add(a, p1Mul(d, t)); return [2 * q[0] - p[0], 2 * q[1] - p[1]]; };
+const p1Rotate2 = (p, c, rad) => { const dx = p[0] - c[0], dy = p[1] - c[1], co = Math.cos(rad), si = Math.sin(rad); return [c[0] + dx * co - dy * si, c[1] + dx * si + dy * co]; };
+const p1MapEnt = (e, fn, id) => e.t === 'line' ? { id, t: 'line', a: fn(e.a), b: fn(e.b), c: 0 }
+  : e.t === 'arc' ? { id, t: 'arc', s: fn(e.s), e: fn(e.e), m: fn(e.m), c: 0 }
+    : { id, t: 'point', p: fn(e.p), c: 0 };
+/** the mirror of the selected entities about a line; null when there is no line or nothing is selected */
+function p1Mirror(ents, ids, line, nextId) {
+  if (!line || line.t !== 'line') return null;
+  const sel = (ents || []).filter((e) => (ids || []).includes(e.id));
+  if (!sel.length || (line.id && ids.includes(line.id))) return null;
+  return sel.map((e) => p1MapEnt(e, (p) => p1Reflect(p, line.a, line.b), nextId()));
+}
+/** n−1 copies of the selection, linearly by (dx, dy) or about (cx, cy) by `angle` (0 = one full turn split evenly) */
+function p1Pattern(ents, ids, cfg, nextId) {
+  const sel = (ents || []).filter((e) => (ids || []).includes(e.id));
+  const n = Math.round(+(cfg && cfg.count));
+  if (!sel.length || !(n >= 2 && n <= 200)) return null;
+  const out = [];
+  if (cfg.kind === 'circle') {
+    const step = Math.abs(+cfg.angle) > 1e-9 ? +cfg.angle : 360 / n;
+    const c = [+cfg.cx || 0, +cfg.cy || 0];
+    for (let i = 1; i < n; i++) for (const e of sel) out.push(p1MapEnt(e, (p) => p1Rotate2(p, c, step * i * Math.PI / 180), nextId()));
+    return out;
+  }
+  const dx = +cfg.dx || 0, dy = +cfg.dy || 0;
+  if (!dx && !dy) return null;
+  for (let i = 1; i < n; i++) for (const e of sel) out.push(p1MapEnt(e, (p) => [p[0] + dx * i, p[1] + dy * i], nextId()));
+  return out;
+}
 /* ---- end P1a helpers */
+/* ---- S21c: Convert Entities. The kernel projects the model onto the sketch plane (hidden-line removal, the
+ * same projection the drawing tab uses), and every projected curve that is a line or a circle becomes a real
+ * sketch entity: a line as a line, a circle as two three-point arcs, so the sketch stays lines and arcs and the
+ * kernel builds it exactly. A projected ellipse, Bézier or B-spline is refused by name — it is never flattened
+ * into a polygon that only looks right. Pure maths on the kernel's output: tests/s21c-convert.test.mjs lifts
+ * this block and runs it in Node. ---- */
+const S21C_EPS = 1e-6;
+const s21cPt = (cu, t) => cu.value(cu.firstParameter + (cu.lastParameter - cu.firstParameter) * t);
+const s21cDist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+/** the curves of a projection drawing, whichever shape the kernel wrapped them in */
+function s21cCurves(dw) {
+  const out = [], node = dw && (dw.innerShape || dw);
+  const walk = (n) => { if (!n) return;
+    if (Array.isArray(n.curves)) { out.push(...n.curves); return; }
+    if (Array.isArray(n.blueprints)) n.blueprints.forEach(walk); };
+  walk(node); return out;
+}
+/** one projected curve → sketch entities, or the reason it cannot be one */
+function s21cCurveEnts(cu, idf) {
+  const t = String(cu.geomType || '');
+  if (t === 'LINE') { const a = cu.firstPoint, b = cu.lastPoint;
+    if (s21cDist(a, b) < S21C_EPS) return { ents: [], skip: 'length' };
+    return { ents: [{ id: idf(), t: 'line', a, b, c: 0 }], kind: 'line' }; }
+  if (t === 'CIRCLE') {
+    const p0 = s21cPt(cu, 0), p1 = s21cPt(cu, 0.25), p2 = s21cPt(cu, 0.5), p3 = s21cPt(cu, 0.75);
+    if (!(s21cDist(p0, p2) / 2 > S21C_EPS)) return { ents: [], skip: 'radius' };
+    return { ents: [{ id: idf(), t: 'arc', s: p0, m: p1, e: p2, c: 0 }, { id: idf(), t: 'arc', s: p2, m: p3, e: p0, c: 0 }], kind: 'circle' }; }
+  return { ents: [], refuse: t || 'OTHER_CURVE' };
+}
+function s21cConvert(dw, idf) {
+  const ents = [], refused = []; let lines = 0, circles = 0, skipped = 0;
+  for (const cu of s21cCurves(dw)) {
+    const r = s21cCurveEnts(cu, idf);
+    ents.push(...r.ents);
+    if (r.kind === 'line') lines++; else if (r.kind === 'circle') circles++;
+    if (r.refuse) refused.push(r.refuse); if (r.skip) skipped++;
+  }
+  return { ents, refused: [...new Set(refused)], lines, circles, skipped };
+}
+/* ---- end S21c helpers ---- */
+
+/* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
+ * Both are real OpenCascade geometry, never a polygon stand-in: the ellipse is two ellipse arcs, the closed spline is
+ * a chain of exact cubic Bézier segments through every point (Catmull–Rom tangents: the curve passes through each
+ * point and the joins are smooth), closed on itself. They go through the same profile() path every other sketch
+ * uses, so Extrude, Revolve, Sweep, Loft and the surface steps build from them and the tree keeps the step.
+ * A profile that cannot be built is refused with the reason; nothing is silently approximated into another shape. */
+/** `0,20; 20,0; 0,-20` → [[0,20],[20,0],[0,-20]]; anything that is not a pair of numbers is not a point */
+function s21SplinePts(txt) {
+  return String(txt == null ? '' : txt).split(/[;\n]+/).map((s) => s.trim()).filter(Boolean)
+    .map((s) => s.split(/[\s,]+/).filter(Boolean).map(Number))
+    .filter((p) => p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+    .map((p) => [p[0], p[1]]);
+}
+/** do two closed-loop segments cross? a spline through a self-crossing loop has no single inside to extrude */
+function s21SplineSelfCross(pts) {
+  const n = pts.length, seg = (a, b, c, d) => {
+    const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    const o1 = o(a, b, c), o2 = o(a, b, d), o3 = o(c, d, a), o4 = o(c, d, b);
+    return ((o1 > 0 && o2 < 0) || (o1 < 0 && o2 > 0)) && ((o3 > 0 && o4 < 0) || (o3 < 0 && o4 > 0));
+  };
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    if (i === j || (i + 1) % n === j || (j + 1) % n === i) continue;
+    if (seg(pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n])) return true;
+  }
+  return false;
+}
+/** the checks both the sketch step and the build use: a bad profile is refused at the step that holds it */
+function s21Check(s) {
+  if (s.prof === 'ellipse') {
+    const a = +s.D / 2, b = +s.d / 2;
+    if (!(a > 0) || !(b > 0)) throw new Error(L('An ellipse needs its major and minor diameter above 0 mm.', 'Elips butuh diameter besar dan kecil di atas 0 mm.'));
+    if (b > a + 1e-9) throw new Error(L('The minor diameter is larger than the major one: swap the two values.', 'Diameter kecil lebih besar dari diameter besar: tukar kedua nilainya.'));
+    return null;
+  }
+  const pts = s21SplinePts(s.pts);
+  if (pts.length < 3) throw new Error(L(`A closed spline needs at least 3 points; this has ${pts.length}. Write them as x,y; x,y; …`, `Spline tertutup butuh minimal 3 titik; ini ada ${pts.length}. Tulis sebagai x,y; x,y; …`));
+  for (let i = 0; i < pts.length; i++) {
+    const q = pts[(i + 1) % pts.length];
+    if (Math.hypot(pts[i][0] - q[0], pts[i][1] - q[1]) < 1e-6) throw new Error(L(`Points ${i + 1} and ${(i + 1) % pts.length + 1} are the same point: remove the duplicate.`, `Titik ${i + 1} dan ${(i + 1) % pts.length + 1} sama: hapus duplikatnya.`));
+  }
+  if (s21SplineSelfCross(pts)) throw new Error(L('The points make the spline cross itself, so it has no inside to extrude. Reorder or move the points.', 'Titik-titik itu membuat spline memotong dirinya sendiri, jadi tidak ada bagian dalam untuk ditarik. Urutkan ulang atau geser titiknya.'));
+  return pts;
+}
+function s21Ellipse(R, s) { s21Check(s); return R.drawEllipse(+s.D / 2, +s.d / 2); }
+function s21Spline(R, s) {
+  const pts = s21Check(s), n = pts.length;
+  let pen = R.draw().movePointerTo([pts[0][0], pts[0][1]]);
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    pen = pen.cubicBezierCurveTo([p2[0], p2[1]], [c1[0], c1[1]], [c2[0], c2[1]]);
+  }
+  return pen.close();
+}
+const s21Sketch = (R, s) => (s.prof === 'ellipse' ? s21Ellipse(R, s) : s21Spline(R, s));
+const s21Curve = (s) => s.prof === 'ellipse' || s.prof === 'spline';
+/* ---- end S21 helpers */
 
 /* ---- P1b: sketch correction. Every fix is a proposal; nothing moves until the engineer accepts it. ---- */
 const P1B_DEG = 3, P1B_MM = 0.5;
@@ -8127,7 +8345,7 @@ function hideSkLabel() { const el = $('#skLabel'); if (el) el.remove(); }
 function sketchPreviewNote(arm, ok) {
   const n = document.getElementById('skPrev'); if (!n) return;
   if (!arm || !ok) { n.hidden = true; n.textContent = ''; return; }
-  const p = arm.p, size = (p.prof === 'circle' || p.prof === 'poly') ? 'Ø ' + f(+p.D || 0, 1) : f(+p.W || 0, 1) + ' × ' + f(+p.Hh || 0, 1);
+  const p = arm.p, size = p.prof === 'ellipse' ? `Ø ${f(+p.D || 0, 1)} × ${f(+p.d || 0, 1)}` : p.prof === 'spline' ? `${s21SplinePts(p.pts).length} ${L('points', 'titik')}` : (p.prof === 'circle' || p.prof === 'poly') ? 'Ø ' + f(+p.D || 0, 1) : f(+p.W || 0, 1) + ' × ' + f(+p.Hh || 0, 1);
   n.hidden = false; n.textContent = L('Preview', 'Pratinjau') + ': ' + size + ' · ' + L('not saved yet', 'belum disimpan');
 }
 async function buildSketchGhost() {
@@ -8210,7 +8428,8 @@ function openSketchSession(tool, editId) {
   const base = editId ? (state.part.features.find((f) => f.id === editId) || {}).p : null;
   const p = base ? JSON.parse(JSON.stringify(base)) : { prof: 'ents', plane: 'XY', at: 'top', off: 0, ents: [], rels: [], dims: [], u: 0, v: 0 };
   p.prof = 'ents'; p.ents = p.ents || []; p.rels = p.rels || []; p.dims = p.dims || [];
-  partArm = { type: 'sketch', p, n: L('Sketch (lines & arcs)', 'Sketch (garis & busur)'), editId: editId || null, tool: tool || 'line', pend: [], pen: [], rad: 5, dist: 5, val: 30 };
+  partArm = { type: 'sketch', p, n: L('Sketch (lines & arcs)', 'Sketch (garis & busur)'), editId: editId || null, tool: tool || 'line', pend: [], pen: [], rad: 5, dist: 5, val: 30,
+    mir: null, pat: { kind: 'line', count: 3, dx: 20, dy: 0, angle: 0, cx: 0, cy: 0 } };
   partSel = null; skSel = []; skPtr = null; cadTab = 'design';
   /* on a wide screen the session panel takes the left column; on a phone/tablet the tree stays a drawer */
   if (!narrow()) document.body.classList.add('sketching');
@@ -8234,6 +8453,12 @@ function skFinishChain() { const a = skSession(); if (!a) return; a.pen = []; a.
 function skClick(pt) {
   const a = skSession(); if (!a) return; const p = a.p;
   const ents = p.ents || [];
+  /* S21b: with Mirror or Pattern open a click is a selection, not a new entity */
+  if (a.tool === 'smirror' || a.tool === 'spat') {
+    const hit = p1Hit(pt, ents, 2.5);
+    if (hit) skSel = skSel.includes(hit.id) ? skSel.filter((x) => x !== hit.id) : [...skSel, hit.id].slice(-20);
+    renderCad(); return;
+  }
   const add = (ent, extra) => { a.p.ents = [...ents, ent]; if (extra) a.p.rels = [...(p.rels || []), extra]; a.p.ents = p1Solve(a.p.ents, a.p.rels, a.p.dims); renderCad(); requestAnimationFrame(skOverlay); };
   if (a.tool === 'line' || a.tool === 'cline') {
     const con = a.tool === 'cline' ? 1 : 0;
@@ -8389,6 +8614,48 @@ document.addEventListener('keydown', (e) => {
 });
 /* orbiting away from the plane raises the angle hint; it comes down as soon as the view is normal again */
 { const pv = viewer.onView; viewer.onView = (m) => { if (pv) pv(m); if (typeof updateNormalHint === 'function') updateNormalHint(); }; }
+/* S21b: Mirror Entities and Sketch Pattern act on the selection through the panel, so the line and the spacing are
+ * the values you typed, not a guess at where you clicked. The copies are real entities and the sketch is rebuilt. */
+function skMirrorApply() {
+  const a = skSession(); if (!a) return; const ents = a.p.ents || [];
+  const line = ents.find((e) => e.id === a.mir);
+  if (!skSel.length) { a.note = L('Select the entities to mirror first: click them in the entity list below, or use Add Relation to click them.', 'Pilih dulu entitas yang mau dicerminkan: klik di daftar entitas di bawah, atau pakai Add Relation untuk mengkliknya.'); return renderCad(); }
+  if (!line) { a.note = L('Pick a centre line as the mirror line: draw one with Centerline first (it is never part of the profile).', 'Pilih centerline sebagai garis cermin: gambar dulu dengan Centerline (centerline tidak pernah jadi bagian profil).'); return renderCad(); }
+  const copies = p1Mirror(ents, skSel, line, skNextId);
+  if (!copies) { a.note = L('The mirror line cannot be one of the selected entities: pick a centre line that is not being mirrored.', 'Garis cermin tidak boleh termasuk entitas yang dicerminkan: pilih centerline yang tidak ikut dicermin.'); return renderCad(); }
+  skSel = copies.map((c) => c.id);
+  return skCommit([...ents, ...copies], L(`${copies.length} entities mirrored about ${line.id}. A copy carries no relations of its own.`, `${copies.length} entitas dicerminkan terhadap ${line.id}. Salinan tidak membawa relasi sendiri.`));
+}
+/* S21c: the click path for Convert Entities. The button calls the kernel's projection, converts what is a line or a
+ * circle, and adds those entities to this sketch step; the whole thing is refused with a reason when there is no
+ * body, when the projection is empty, or when every projected curve is a kind the sketch cannot hold. */
+async function skConvertEntities() {
+  const a = skSession(); if (!a) return; const p = a.p;
+  if (!partShape) { a.note = L('Convert Entities projects the model into this sketch: build a body first (a primitive or an Extrude).', 'Konversi entitas memproyeksikan model ke sketch ini: bangun body dulu (primitive atau Extrude).'); return renderCad(); }
+  let res;
+  try { const R = await kernel(); res = s21cConvert(R.drawProjection(partShape, p.plane).visible, skNextId); }
+  catch (e) { a.note = L('The kernel could not project the model onto this plane: ', 'Kernel tidak bisa memproyeksikan model ke bidang ini: ') + String((e && e.message) || e).slice(0, 160); return renderCad(); }
+  if (!res.ents.length) {
+    a.note = res.refused.length
+      ? L(`Nothing to convert: every projected curve is a ${res.refused.join(', ')}, and this sketch holds lines and arcs only.`, `Tidak ada yang bisa dikonversi: semua kurva hasil proyeksi berupa ${res.refused.join(', ')}, dan sketch ini hanya memuat garis dan busur.`)
+      : L('Nothing to convert: the model has no edge that projects onto this plane.', 'Tidak ada yang bisa dikonversi: model tidak punya tepi yang terproyeksi ke bidang ini.');
+    return renderCad();
+  }
+  const note = L(`${res.ents.length} entities converted from the model: ${res.lines} line(s), ${res.circles} circle(s) as two arcs each.`, `${res.ents.length} entitas dikonversi dari model: ${res.lines} garis, ${res.circles} lingkaran (masing-masing dua busur).`)
+    + (res.refused.length ? ' ' + L(`Refused, not approximated: ${res.refused.join(', ')}.`, `Ditolak, tidak didekati: ${res.refused.join(', ')}.`) : '')
+    + (res.skipped ? ' ' + L(`${res.skipped} projected curve(s) had no length and were left out.`, `${res.skipped} kurva hasil proyeksi tanpa panjang dilewati.`) : '');
+  skSel = res.ents.map((e) => e.id);
+  return skCommit([...(p.ents || []), ...res.ents], note);
+}
+function skPatternApply() {
+  const a = skSession(); if (!a) return; const ents = a.p.ents || [], cfg = a.pat || {};
+  if (!skSel.length) { a.note = L('Select the entities to pattern first: click them in the entity list below.', 'Pilih dulu entitas yang mau dipola: klik di daftar entitas di bawah.'); return renderCad(); }
+  const copies = p1Pattern(ents, skSel, cfg, skNextId);
+  if (!copies) { a.note = L('A pattern needs 2 to 200 instances and a real step: a spacing that is not 0 (linear) or an angle that is not 0 (circular).', 'Pola butuh 2 sampai 200 instance dan langkah nyata: jarak bukan 0 (linear) atau sudut bukan 0 (melingkar).'); return renderCad(); }
+  skSel = copies.map((c) => c.id);
+  const n = Math.round(+cfg.count);
+  return skCommit([...ents, ...copies], L(`${copies.length} copies in a ${cfg.kind === 'circle' ? `circular (${Math.abs(+cfg.angle) > 1e-9 ? cfg.angle + '°' : (360 / n).toFixed(2) + '°'})` : `linear (${cfg.dx || 0}, ${cfg.dy || 0})`} pattern of ${n}. A copy carries no relations of its own.`, `${copies.length} salinan pada pola ${cfg.kind === 'circle' ? `melingkar (${Math.abs(+cfg.angle) > 1e-9 ? cfg.angle + '°' : (360 / n).toFixed(2) + '°'})` : `linear (${cfg.dx || 0}, ${cfg.dy || 0})`} sebanyak ${n}. Salinan tidak membawa relasi sendiri.`));
+}
 /* P1b: accept, reject and undo the corrections; the undo stack keeps the entity list before each fix */
 function skCorrectOne(prop) { const a = skSession(); if (!a) return; const p = a.p;
   const before = JSON.parse(JSON.stringify(p.ents || []));
@@ -8411,7 +8678,8 @@ function renderSketchPanel(pr) {
   const tools = [['line', L('Line', 'Garis')], ['cline', L('Centerline', 'Centerline')], ['arc3', L('Arc 3-point', 'Busur 3 titik')],
     ['arcCenter', L('Arc centre', 'Busur pusat')], ['arcTangent', L('Tangent arc', 'Busur tangen')], ['point', L('Point', 'Titik')],
     ['fillet', L('Sketch Fillet', 'Fillet sketch')], ['offset', L('Offset', 'Offset')], ['trim', L('Trim', 'Trim')], ['extend', L('Extend', 'Extend')],
-    ['dim', L('Smart Dimension', 'Smart Dimension')], ['rel', L('Add Relation', 'Tambah relasi')]];
+    ['dim', L('Smart Dimension', 'Smart Dimension')], ['rel', L('Add Relation', 'Tambah relasi')], ['fix', L('Sketch Correction', 'Koreksi sketch')],
+    ['smirror', L('Mirror Entities', 'Cermin entitas')], ['spat', L('Sketch Pattern', 'Pola sketch')], ['sconvert', L('Convert Entities', 'Konversi entitas')]];
   pr.append(h('h2', null, h('span', null, a.n || L('Sketch', 'Sketch')), h('span', { class: 'phd' }, h('small', null, 'P1a'))));
   pr.append(h('div', { class: 'sktools', role: 'toolbar', 'aria-label': L('Sketch tools', 'Alat sketch') },
     tools.map(([k, label]) => h('button', { class: 'chip' + (a.tool === k ? ' primary' : ''), 'aria-pressed': a.tool === k ? 'true' : 'false', onclick: () => { a.tool = k; a.pend = []; a.pen = []; skSel = []; a.note = null; renderCad(); requestAnimationFrame(skOverlay); } }, label))));
@@ -8425,7 +8693,46 @@ function renderSketchPanel(pr) {
     row(L('Dimension value', 'Nilai dimensi'), h('input', { type: 'number', min: 0.1, step: 'any', value: a.val, oninput: (e) => { a.val = e.target.value; } }))));
   if (a.tool === 'rel') pr.append(h('div', { class: 'sktools' }, ['horizontal', 'vertical', 'coincident', 'equal', 'parallel', 'perpendicular', 'tangent', 'fix']
     .map((k) => h('button', { class: 'chip', onclick: () => skRelation(k) }, k))));
-  pr.append(        h('p', { class: 'hint' }, L(`Click in the viewport to draw. Line and Centerline chain until you double-click or press Esc. ${skSel.length ? skSel.length + ' selected.' : ''}`, `Klik di viewport untuk menggambar. Line dan Centerline menyambung sampai kamu dobel-klik atau tekan Esc. ${skSel.length ? skSel.length + ' terpilih.' : ''}`)));
+  /* S21b: the two modify tools. The selection comes from the viewport or the list, the line and the spacing are
+     typed here, and the copies are added to this same sketch step. */
+  /* S21c: Convert Entities runs the kernel's projection and adds what it returns, so the sketch holds the model's
+     own lines and arcs. Nothing is approximated, and what cannot become a line or an arc is named. */
+  if (a.tool === 'sconvert') {
+    pr.append(h('h3', null, L('Convert Entities', 'Konversi entitas')),
+      h('p', { class: 'hint' }, L('The kernel projects the model onto this sketch plane (hidden lines removed). Projected lines and circles become real sketch entities: a circle as two arcs, so it stays round. A projected ellipse or spline is refused by name instead of being turned into a polygon.', 'Kernel memproyeksikan model ke bidang sketch ini (garis tersembunyi dibuang). Garis dan lingkaran hasil proyeksi menjadi entitas sketch sungguhan: lingkaran jadi dua busur, jadi tetap bulat. Elips atau spline hasil proyeksi ditolak dengan namanya, bukan diubah jadi poligon.')),
+      h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-sk': 'conv-go', onclick: skConvertEntities }, L('Convert from the model', 'Konversi dari model'))));
+  }
+  if (a.tool === 'smirror') {
+    const lines = ents.filter((e) => e.t === 'line' && e.c);
+    if (lines.length && !lines.some((e) => e.id === a.mir)) a.mir = lines[0].id;
+    pr.append(h('h3', null, L('Mirror Entities', 'Cermin entitas')),
+      h('p', { class: 'hint' }, L('Click the entities to mirror (or pick them in the list), choose the centre line, then press Mirror. The copies stay in this sketch.', 'Klik entitas yang mau dicerminkan (atau pilih di daftar), pilih centerline-nya, lalu tekan Cermin. Salinannya tetap di sketch ini.')),
+      h('label', { class: 'skrow' }, h('span', null, L('Mirror line (centre line)', 'Garis cermin (centerline)')),
+        h('select', { 'data-sk': 'mirror', onchange: (e) => { a.mir = e.target.value; } },
+          lines.length ? lines.map((e) => h('option', { value: e.id, selected: a.mir === e.id }, e.id))
+            : [h('option', { value: '', selected: true }, L('(no centre line yet)', '(belum ada centerline)'))])),
+      h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-sk': 'mirror-go', onclick: skMirrorApply }, L('Mirror selection', 'Cermin pilihan') + ` (${skSel.length})`)));
+  }
+  if (a.tool === 'spat') {
+    const cfg = a.pat || (a.pat = { kind: 'line', count: 3, dx: 20, dy: 0, angle: 0, cx: 0, cy: 0 });
+    const num = (k, label, unit) => h('label', { class: 'skrow' }, h('span', null, label),
+      h('input', { type: 'number', step: 'any', 'data-sk': 'pat-' + k, value: cfg[k], oninput: (e) => { cfg[k] = e.target.value; } }));
+    pr.append(h('h3', null, L('Sketch Pattern', 'Pola sketch')),
+      h('p', { class: 'hint' }, L('Select the entities, set the instances and the step, then press Pattern. Copies carry no relations of their own.', 'Pilih entitas, isi jumlah instance dan langkahnya, lalu tekan Pola. Salinan tidak membawa relasi sendiri.')),
+      h('label', { class: 'skrow' }, h('span', null, L('Pattern', 'Pola')),
+        h('select', { 'data-sk': 'pat-kind', onchange: (e) => { cfg.kind = e.target.value; a.pat = cfg; renderCad(); } },
+          [['line', L('Linear', 'Linear')], ['circle', L('Circular', 'Melingkar')]].map(([v, t]) => h('option', { value: v, selected: cfg.kind === v }, t)))),
+      num('count', L('Instances (incl. the first)', 'Jumlah (termasuk yang pertama)')),
+      cfg.kind === 'circle' ? num('angle', L('Angle step (0 = even)', 'Sudut langkah (0 = rata)'), '\u00b0') : num('dx', L('Step X', 'Langkah X'), 'mm'),
+      cfg.kind === 'circle' ? num('cy', L('Centre Y', 'Pusat Y'), 'mm') : num('dy', L('Step Y', 'Langkah Y'), 'mm'),
+      cfg.kind === 'circle' ? num('cx', L('Centre X', 'Pusat X'), 'mm') : null,
+      h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-sk': 'pat-go', onclick: skPatternApply }, L('Pattern selection', 'Pola pilihan') + ` (${skSel.length})`)));
+  }
+  pr.append(        h('p', { class: 'hint' }, a.tool === 'fix'
+    ? L('Sketch Correction reads the entities you have drawn. Every fix appears below as a proposal; accept, reject or undo it, and a size you typed is never changed.', 'Koreksi sketch membaca entitas yang sudah kamu gambar. Tiap perbaikan muncul di bawah sebagai usulan; terima, tolak, atau batalkan, dan ukuran yang kamu ketik tidak pernah diubah.')
+    : (a.tool === 'smirror' || a.tool === 'spat')
+      ? L('Click entities in the viewport to select them, set the values above, then press the button. Nothing is added until you do.', 'Klik entitas di viewport untuk memilih, isi nilainya di atas, lalu tekan tombolnya. Belum ada yang ditambahkan sampai kamu tekan.')
+      : L(`Click in the viewport to draw. Line and Centerline chain until you double-click or press Esc. ${skSel.length ? skSel.length + ' selected.' : ''}`, `Klik di viewport untuk menggambar. Line dan Centerline menyambung sampai kamu dobel-klik atau tekan Esc. ${skSel.length ? skSel.length + ' terpilih.' : ''}`)));
   if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
   pr.append(ents.length ? h('div', { class: 'skstat ' + dof.status }, h('b', null, dof.status === 'fully' ? L('Fully defined', 'Fully defined') : dof.status === 'over' ? L('Over-defined', 'Over-defined') : L('Under-defined', 'Under-defined')),
     h('span', null, dof.status === 'under' ? L(`${dof.dof} free parameter(s)`, `${dof.dof} parameter bebas`) : dof.status === 'over' ? L(`${-dof.dof} redundant relation(s)`, `${-dof.dof} relasi berlebih`) : L('every parameter is fixed', 'semua parameter terkunci')),
@@ -8445,7 +8752,8 @@ function renderSketchPanel(pr) {
   const skItem = (e) => {
     const kind = e.t === 'line' ? (e.c ? L('Centerline', 'Centerline') : L('Line', 'Garis')) : e.t === 'arc' ? L('Arc', 'Busur') : L('Point', 'Titik');
     const size = e.t === 'point' ? `${f(e.p[0], 1)}, ${f(e.p[1], 1)}` : `${f(p1Length(e), 1)} mm${e.t === 'arc' ? ' · R' + f(p1Radius(e), 1) : ''}`;
-    return h('li', { class: skSel.includes(e.id) ? 'on' : '', onclick: () => { skSel = skSel.includes(e.id) ? skSel.filter((x) => x !== e.id) : [...skSel, e.id].slice(-2); renderCad(); requestAnimationFrame(skOverlay); } },
+    return h('li', { class: skSel.includes(e.id) ? 'on' : '', onclick: () => { const cap = (a.tool === 'smirror' || a.tool === 'spat') ? 200 : 2;
+      skSel = skSel.includes(e.id) ? skSel.filter((x) => x !== e.id) : [...skSel, e.id].slice(-cap); renderCad(); requestAnimationFrame(skOverlay); } },
       h('b', null, kind), h('span', null, size));
   };
   pr.append(h('ol', { class: 'sklist' }, ...(ents.length ? ents.map(skItem) : [h('li', { class: 'pempty' }, L('Nothing yet: pick Line and click two points.', 'Belum ada: pilih Line lalu klik dua titik.'))])));
@@ -8779,21 +9087,21 @@ const RIBBON = [
       T('Arc', 'arc', 'on', '3-point arc: click start, end, then a point the arc passes through. Centre-point and tangent arcs are in the sketch panel.', 'Busur 3 titik: klik awal, akhir, lalu satu titik yang dilewati busur. Busur titik-pusat dan tangen ada di panel sketch.', 'Centerpoint Arc, 3 Point Arc, Tangent Arc', { sk: 'arc3' }),
       T('Slot', 'slot', 'on', 'Straight slot by length and width.', 'Slot lurus dengan panjang dan lebar.', 'Straight Slot, Center Point Slot', P('sketch', { prof: 'slot' })),
       T('Polygon', 'poly', 'on', 'Regular polygon by sides and circumscribed diameter.', 'Poligon beraturan dengan jumlah sisi dan diameter luar.', 'Inscribed / Circumscribed Polygon', P('sketch', { prof: 'poly' })),
-      T('Spline', 'spline', 'no', 'Smooth curve through points.', 'Kurva halus melalui titik-titik.', 'Fit Point Spline, Control Point Spline'),
-      T('Ellipse', 'ellipse', 'no', 'Ellipse and partial ellipse.', 'Elips dan elips sebagian.', 'Conic'),
+      T('Spline', 'spline', 'on', 'A closed, smooth spline through the points you type: the kernel builds it as exact cubic Bézier segments through every point, so it extrudes, revolves and sweeps like any other profile. A self-crossing list of points is refused with its reason.', 'Spline tertutup dan halus melalui titik yang kamu ketik: kernel membangunnya sebagai segmen Bézier kubik tepat melalui tiap titik, jadi bisa ditarik, diputar, dan disapu seperti profil lain. Daftar titik yang memotong dirinya sendiri ditolak dengan alasannya.', 'Fit Point Spline, Style Spline', P('sketch', { prof: 'spline' })),
+      T('Ellipse', 'ellipse', 'on', 'A whole ellipse from its major and minor diameter, drawn by the kernel as ellipse arcs (not a polygon), then extruded or revolved. A minor diameter larger than the major one is refused.', 'Elips utuh dari diameter besar dan kecilnya, digambar kernel sebagai busur elips (bukan poligon), lalu ditarik atau diputar. Diameter kecil yang lebih besar dari diameter besar ditolak.', 'Ellipse, Conic', P('sketch', { prof: 'ellipse' })),
       T('Point', 'point', 'on', 'Sketch point, for references and for a hole position later.', 'Titik sketch, untuk referensi dan posisi lubang nanti.', 'Sketch Point', { sk: 'point' }),
       T('Centerline', 'cline', 'on', 'Construction line: drawn, never part of the profile. Use it as a mirror line or a revolve axis.', 'Garis konstruksi: digambar, tidak pernah menjadi bagian profil. Pakai sebagai garis cermin atau sumbu revolve.', 'Construction Line', { sk: 'cline' }),
-      T('Text', 'text', 'no', 'Text in a sketch, to emboss or cut.', 'Teks di sketch, untuk timbul atau potong.', 'Sketch Text')]],
+      T('Text', 'text', 'on', 'Text as a real profile: the bundled 5×7 block font is fused cell by cell into one closed sketch profile, extruded as a boss (emboss) or cut into a body (deboss). The step reports the profile area and the volume the kernel measures. Letters are block letters; a character the bundled font does not carry is refused by name.', 'Teks sebagai profil sungguhan: font blok 5×7 bawaan digabung sel demi sel jadi profil sketch tertutup, lalu ditarik sebagai boss (emboss) atau dipotong ke body (deboss). Langkahnya melaporkan luas profil dan volume yang diukur kernel. Hurufnya blok; karakter yang tidak ada di font bawaan ditolak dengan namanya.', 'Sketch Text, Emboss', P('text'))]],
     ['Modify', [T('Sketch Fillet', 'sfil', 'on', 'Round the corner between two lines: click both lines, with the radius in the sketch panel.', 'Bulatkan sudut antara dua garis: klik kedua garis, radiusnya di panel sketch.', 'Sketch Chamfer', { sk: 'fillet' }),
       T('Offset Entities', 'offset', 'on', 'Copy a closed profile at a distance: click the profile, with the distance in the sketch panel.', 'Salin profil tertutup pada jarak tertentu: klik profilnya, jaraknya di panel sketch.', 'Offset Curve', { sk: 'offset' }),
-      T('Convert Entities', 'proj', 'no', 'Project model edges into the sketch.', 'Proyeksikan tepi model ke sketch.', 'Project, Include, Use Edge'),
+      T('Convert Entities', 'proj', 'on', 'Project the model onto this sketch plane with the kernel\u2019s hidden-line projection and add the result as real sketch entities: a projected line is a line, a projected circle is two arcs, so the sketch stays lines and arcs and builds exactly. A projected ellipse or spline is refused by name instead of being flattened into a polygon.', 'Proyeksikan model ke bidang sketch ini dengan proyeksi garis-tersembunyi dari kernel, lalu tambahkan hasilnya sebagai entitas sketch sungguhan: garis tetap garis, lingkaran jadi dua busur, jadi sketch tetap garis dan busur dan terbangun tepat. Elips atau spline hasil proyeksi ditolak dengan namanya, bukan diubah jadi poligon.', 'Project, Include, Use Edge', { sk: 'sconvert' }),
       T('Trim', 'trim', 'on', 'Cut the clicked piece of a line or arc where it crosses another.', 'Potong bagian garis atau busur yang diklik di titik persilangan.', 'Power Trim', { sk: 'trim' }),
       T('Extend', 'extend', 'on', 'Lengthen the clicked end of a line or arc to the next entity.', 'Perpanjang ujung garis atau busur yang diklik sampai entitas berikutnya.', '', { sk: 'extend' }),
-      T('Mirror Entities', 'smir', 'mk1', 'Mirror sketch lines about a centerline.', 'Cerminkan garis sketch terhadap centerline.', 'Sketch Mirror'),
-      T('Sketch Pattern', 'spat', 'mk1', 'Linear or circular pattern inside the sketch.', 'Pola linear atau melingkar di dalam sketch.', 'Linear / Circular Sketch Pattern')]],
+      T('Mirror Entities', 'smir', 'on', 'Mirror the selected sketch entities about a centre line: the kernel-wise copies are still lines and arcs, they stay in the same sketch step, and they are rebuilt with it. The mirror line is a centre line, never part of the profile.', 'Cerminkan entitas sketch terpilih terhadap centerline: salinannya tetap garis dan busur, tetap di langkah sketch yang sama, dan dibangun ulang bersamanya. Garis cerminnya centerline, bukan bagian profil.', 'Sketch Mirror', { sk: 'smirror' }),
+      T('Sketch Pattern', 'spat', 'on', 'Linear (step X, Y) or circular (angle about a centre) pattern of the selected sketch entities, 2 to 200 instances, inside the same sketch step. A copy carries no relations of its own, and the note says so.', 'Pola linear (langkah X, Y) atau melingkar (sudut terhadap pusat) dari entitas sketch terpilih, 2 sampai 200 instance, di langkah sketch yang sama. Salinan tidak membawa relasi sendiri, dan catatannya menyebut itu.', 'Linear / Circular Sketch Pattern', { sk: 'spat' })]] ,
     ['Constrain', [T('Smart Dimension', 'dim', 'on', 'Drive one size of a sketch. The dimension becomes a step in the tree: change it and the whole part rebuilds.', 'Mengatur satu ukuran sketch. Dimensi menjadi langkah di pohon: ubah nilainya dan seluruh part dibangun ulang.', 'Sketch Dimension', P('dim')),
       T('Add Relation', 'rel', 'on', 'Coincident, horizontal, vertical, parallel, perpendicular, tangent, equal, fix — click the lines/arcs, then the relation.', 'Coincident, horizontal, vertikal, sejajar, tegak lurus, tangen, sama, fix — klik garis/busurnya, lalu relasinya.', 'Constraints, Geometric Constraints', { sk: 'rel' })]],
-    ['IDRIS', [T('Sketch Correction', 'fix', 'mk1', 'IDRIS finds lines that do not meet, overlap, hang loose or are almost horizontal/vertical, shows each fix and applies it after you confirm. Built together with the free-line sketcher.', 'IDRIS menemukan garis yang tidak menyambung, bertumpuk, menggantung, atau hampir horizontal/vertikal, menunjukkan perbaikannya, dan menerapkannya setelah kamu setujui. Dibangun bersama sketcher garis bebas.', 'Repair Sketch, Check Sketch for Feature', null, ALT_SK, true)]]]],
+    ['IDRIS', [T('Sketch Correction', 'fix', 'on', 'Opens the line-and-arc sketcher on its correction list: IDRIS finds lines that do not meet, overlap, hang loose or are almost horizontal/vertical, and every fix is a proposal you accept, reject or undo. Nothing moves until you say so, and the sketch is rebuilt by the kernel when you save it.', 'Membuka sketcher garis dan busur pada daftar koreksinya: IDRIS menemukan garis yang tidak menyambung, bertumpuk, menggantung, atau hampir horizontal/vertikal, dan tiap perbaikan adalah usulan yang kamu terima, tolak, atau batalkan. Tidak ada yang bergerak sampai kamu setuju, dan sketch dibangun kernel saat kamu simpan.', 'Repair Sketch, Check Sketch for Feature', { sk: 'fix' }, ['Open the sketcher', 'Buka sketcher', { sk: 'ents' }], true)]]]],
   ['feat', 'Features', 'Fitur', [
     ['Boss / Base', [T('Extruded Boss/Base', 'ext', 'on', 'Extrude the last sketch and add it to the body, one side or both.', 'Tarik sketch terakhir dan tambahkan ke body, satu sisi atau dua sisi.', 'Extrude, Pad', P('push', { op: 'add' })),
       T('Revolved Boss/Base', 'rev', 'on', 'Turn the last sketch around X, Y or Z, up to 360\u00b0.', 'Putar sketch terakhir mengelilingi X, Y, atau Z, sampai 360\u00b0.', 'Revolve, Shaft', P('revolve')),
@@ -8830,7 +9138,7 @@ const RIBBON = [
       T('Move/Copy Body', 'move', 'on', 'Move the body by X, Y, Z.', 'Geser body sejauh X, Y, Z.', 'Translate, Move', P('bodies', { kind: 'move' })),
       T('Split', 'split', 'no', 'Split a body with a plane.', 'Belah body dengan bidang.', 'Split Body'),
       T('Scale', 'scale', 'no', 'Scale the body.', 'Skala body.', ''),
-      T('Thicken', 'thick', 'no', 'Turn a surface into a solid. Active as Surface → Thicken: one tool, one name, so this copy stays grey and sends you there.', 'Ubah surface menjadi solid. Aktif sebagai Surface → Thicken: satu alat satu nama, jadi salinan ini tetap abu-abu dan mengarah ke sana.', '')]],
+      T('Thicken', 'thick', 'no', 'Turn a surface into a solid. It is one tool with one name: the working copy is Surface → Thicken, and the button below opens exactly that tool. This grey copy is not a second implementation.', 'Ubah surface menjadi solid. Ini satu alat dengan satu nama: yang berjalan adalah Surface → Thicken, dan tombol di bawah membuka alat itu. Salinan abu-abu ini bukan implementasi kedua.', '', null, ['Open Surface → Thicken', 'Buka Surface → Thicken', { part: 'surfthick' }])]],
     ['Reference', [T('Plane', 'plane', 'mk1', 'Reference plane by offset, angle or three points. Today: sketch on XY, XZ, YZ with an offset.', 'Bidang referensi dengan offset, sudut, atau tiga titik. Saat ini: sketch di XY, XZ, YZ dengan offset.', 'Construction Plane, Datum Plane', null, ALT_SK),
       T('Axis', 'axis', 'mk1', 'Reference axis for revolves and patterns.', 'Sumbu referensi untuk revolve dan pola.', 'Datum Axis'),
       T('Coordinate System', 'csys', 'no', 'Extra coordinate system.', 'Sistem koordinat tambahan.', 'Datum CSYS')]]]],
