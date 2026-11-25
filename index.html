@@ -6923,6 +6923,12 @@ const FEAT = {
     label: (p) => `${L('Offset surface', 'Surface offset')} ${p.dist} mm` },
   surfknit: { en: 'Knit Surface', id: 'Knit Surface', fields: [S('solid', 'Result', 'Hasil', [['sheet', ['Surface (sewn)', 'Surface (dijahit)']], ['solid', ['Solid when the pieces close', 'Solid bila potongannya menutup']]], 'sheet')],
     label: (p) => (p.solid === 'solid' ? L('Knit into a solid', 'Jahit menjadi solid') : L('Knit surfaces', 'Jahit surface')) },
+  /* S21h / S21j: these two have no form of their own — their panel is the face list (renderTrimPanel and
+     renderDelPanel), so an empty field list is what defaults() needs and what keeps the panel from being covered. */
+  surftrim: { en: 'Trim Surface', id: 'Trim Surface', fields: [],
+    label: () => L('Trim Surface', 'Trim Surface') },
+  delface: { en: 'Delete Face', id: 'Delete Face', fields: [],
+    label: () => L('Delete Face', 'Delete Face') },
   surfthick: { en: 'Thicken', id: 'Thicken', fields: [N('t', 'Wall thickness', 'Tebal dinding', 'mm', 2, { min: 0.05 })],
     label: (p) => `${L('Thicken', 'Tebalkan')} ${p.t} mm` },
   /* S16: sheet metal (Batch 2). Thickness and bend radius come from Base Flange; the K-factor is the workshop
@@ -7714,6 +7720,25 @@ async function buildPart(pArg) {
         ft.surf = { kind: 'knit', pieces: pieces.length, solid: q.solid === 'solid', area: R.measureArea(sh), vol: solidVol };
         ft.note = L(`Knitted ${pieces.length} piece(s): area ${f(R.measureArea(sh), 1)} mm²${q.solid === 'solid' ? `, closed solid volume ${f(solidVol / 1000, 2)} cm³` : ', still an open surface'} (kernel).`,
           `Menjahit ${pieces.length} potongan: luas ${f(R.measureArea(sh), 1)} mm²${q.solid === 'solid' ? `, volume solid ${f(solidVol / 1000, 2)} cm³` : ', masih surface terbuka'} (kernel).`);
+      } else if (ft.type === 'surftrim') {
+        /* S21h: the surface body is cut by the plane of a face picked on the model, and only the side chosen is kept;
+           the areas before and after are the kernel's own measurements. A solid body is not turned into a surface by
+           this step: it trims the surface body only. */
+        if (!surfs.length) throw new Error(L('Trim Surface trims a surface body: build one first (Extruded Surface, Planar Surface, a Lofted or Filled surface).', 'Trim Surface memotong body surface: bangun dulu (Extruded Surface, Planar Surface, Lofted, atau Filled surface).'));
+        const faces = (body && body.faces) || [];
+        const fi = Math.round(+q.face);
+        if (!(fi >= 0 && fi < faces.length)) throw new Error(L(`Face ${Number.isFinite(fi) ? fi + 1 : q.face} is not on the body: it has ${faces.length} faces.`, `Muka ${Number.isFinite(fi) ? fi + 1 : q.face} tidak ada di body: body punya ${faces.length} muka.`));
+        const pln = s21hPlaneOf(faces[fi]);
+        if (!pln) throw new Error(L(`Face ${fi + 1} is not flat, so it cannot supply a cutting plane.`, `Muka ${fi + 1} bukan datar, jadi tidak bisa jadi bidang potong.`));
+        const shapes = surfs.map((x) => x.sh).filter(Boolean);
+        const areaBefore = shapes.reduce((a, sh) => a + R.measureArea(sh), 0);
+        const kept = s21hTrim(R, shapes, pln, q.keep);
+        const areaAfter = kept.reduce((a, sh) => a + R.measureArea(sh), 0);
+        surfs.splice(0, surfs.length, ...kept.map((sh) => ({ sh })));
+        ft.trim = { face: fi, keep: q.keep, areaBefore, areaAfter, pieces: kept.length };
+        ft.note = L(`Trimmed on the plane of face ${fi + 1}: ${f(areaBefore, 1)} mm² before, ${f(areaAfter, 1)} mm² kept in ${kept.length} piece(s), measured by the kernel. The cut side is the picked face's own normal; a plane that misses the surface leaves it whole.`,
+          `Dipotong pada bidang muka ${fi + 1}: ${f(areaBefore, 1)} mm² sebelum, ${f(areaAfter, 1)} mm² tersisa dalam ${kept.length} potongan, diukur kernel. Sisi potong mengikuti normal muka yang dipilih; bidang yang tidak menyentuh surface membiarkannya utuh.`);
+        lastTool = body; lastOp = 'add';
       } else if (ft.type === 'surfthick') {
         srfNeed();
         const t = pos(q.t);
@@ -10100,8 +10125,8 @@ const RIBBON = [
       T('Planar Surface', 'plane', 'on', 'A flat face from one closed sketch loop, built by the kernel.', 'Muka datar dari satu loop sketch tertutup, dibangun kernel.', 'Planar Face', { part: 'surfplane' })]],
     ['Edit', [T('Offset Surface', 'offset', 'on', 'Copy the surface body at a distance with the kernel. The copy has no profile of its own, so Thicken cannot use it.', 'Salin body surface pada jarak tertentu dengan kernel. Salinan tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.', 'Offset Face', { part: 'surfoffset' }),
       T('Knit Surface', 'knit', 'on', 'Sew the surface pieces into one body, or into a solid when they close.', 'Jahit potongan surface jadi satu body, atau jadi solid bila menutup.', 'Stitch', { part: 'surfknit' }),
-      T('Trim Surface', 'trim', 'no', 'Trim a surface with another. The kernel wrapper here has no surface-trim builder yet (Batch 5).', 'Potong surface dengan surface lain. Wrapper kernel di sini belum punya pembangun trim surface (Batch 5).', ''),
-      T('Delete Face', 'delface', 'no', 'Remove faces and heal the gap. Healing is not in this kernel wrapper yet (Batch 5).', 'Hapus muka dan tutup celahnya. Healing belum ada di wrapper kernel ini (Batch 5).', 'Remove Face'),
+      T('Trim Surface', 'trim', 'on', 'Cut a surface body with the plane of a face you pick on the model: the kernel splits the surface on that face\u2019s own plane (BRepAlgoAPI_Splitter) and keeps only the side you choose, so the same pick always keeps the same half. The area before and after is measured and written into the step; a plane that misses the surface leaves it whole.', 'Potong body surface dengan bidang muka yang kamu pilih di model: kernel memecah surface pada bidang muka itu (BRepAlgoAPI_Splitter) dan menyimpan hanya sisi yang kamu pilih, jadi pilihan yang sama selalu menyimpan separuh yang sama. Luas sebelum dan sesudah diukur dan dicatat di langkahnya; bidang yang tidak menyentuh surface membiarkannya utuh.', 'Cut Surface', { part: 'surftrim' }),
+      T('Delete Face', 'delface', 'on', 'Pick a face and the kernel takes it out of the solid\u2019s shell and patches the opening from its own boundary (BRepOffsetAPI_MakeFilling), sews the body back into one shell and makes it a solid again; the step records the removed area, the patch area and the volume before and after, and only passes if the kernel\u2019s validity check does. A face with an inner loop, or a boundary the kernel cannot fill, is refused and nothing is deleted.', 'Pilih muka, lalu kernel mengeluarkannya dari shell solid dan menambal celahnya dari batasnya sendiri (BRepOffsetAPI_MakeFilling), menjahit body jadi satu shell dan menjadikannya solid lagi; langkahnya mencatat luas yang dihapus, luas tambalan, dan volume sebelum-sesudah, dan hanya lolos bila pemeriksaan validitas kernel lolos. Muka dengan loop dalam, atau batas yang tidak bisa ditambal kernel, ditolak dan tidak ada yang dihapus.', 'Remove Face', { part: 'delface' }),
       T('Thicken', 'thick', 'on', 'Make a solid wall of the thickness you give: the solid between the surface profile and that same profile offset by the thickness in its own plane, with the volume measured by the kernel.', 'Buat dinding solid setebal yang kamu beri: solid antara profil surface dan profil yang sama yang di-offset setebal itu di bidangnya, dengan volume diukur kernel.', 'Thicken', { part: 'surfthick' })]]]],
   ['sheet', 'Sheet Metal', 'Sheet Metal', [
     ['Flanges', [T('Base Flange', 'flat', 'on', 'The plate every sheet-metal step stands on: thickness, inside bend radius and the K-factor (the workshop table, or one you type). Built by the kernel and measured.', 'Pelat tempat semua langkah sheet metal berdiri: tebal, radius tekuk dalam, dan K-factor (tabel bengkel, atau yang kamu ketik). Dibangun kernel dan diukur.', 'Base Feature', { part: 'smbase' }),
