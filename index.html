@@ -6853,6 +6853,8 @@ const FEAT = {
     label: (p) => `${L('Filled', 'Terisi')} ${(p.edges || []).length} ${L('edge(s)', 'tepi')}` },
   surfbound: { en: 'Boundary Surface', id: 'Boundary Surface', fields: [],
     label: (p) => `${L('Boundary', 'Batas')} ${(p.u || []).length} × ${(p.v || []).length}` },
+  boundboss: { en: 'Boundary Boss/Base', id: 'Boundary Boss/Base', fields: [N('t', 'Thickness', 'Tebal', 'mm', 3, { min: 0.1 })],
+    label: (p) => `${L('Boundary boss', 'Batas boss')} ${(p.u || []).length} × ${(p.v || []).length} · ${p.t} mm` },
   surfplane: { en: 'Planar Surface', id: 'Planar Surface', get fields() {
       const o = sketchOptions();
       return [S('sketch', 'Closed loop sketch', 'Sketch loop tertutup', o, o[0][0])]; },
@@ -7333,6 +7335,18 @@ async function buildPart(pArg) {
         ft.surf = { kind: 'bound', area: res.uArea, u: res.u, v: res.v };
         ft.note = L(`Boundary surface from ${res.u} curve(s) in one direction and ${res.v} in the other: area ${f(res.uArea, 1)} mm²${res.vArea != null ? `, and the second direction lofts to ${f(res.vArea, 1)} mm² too` : ''} (kernel). It has no profile of its own, so Thicken cannot use it.`,
           `Boundary surface dari ${res.u} kurva di satu arah dan ${res.v} di arah lain: luas ${f(res.uArea, 1)} mm²${res.vArea != null ? `, dan loft arah kedua juga ${f(res.vArea, 1)} mm²` : ''} (kernel). Tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.`);
+      } else if (ft.type === 'boundboss') {
+        /* S21k: the two-direction patch is offset, walled, sewn and made a solid by the kernel, and the side that adds
+           material to the body is the one fused in. */
+        if (!body) throw new Error(L('Boundary Boss/Base takes its curves from a body: build one first.', 'Boundary Boss/Base mengambil kurvanya dari body: bangun body dulu.'));
+        const be = body.edges || [];
+        const uSel = (q.u || []).map((i) => be[i]).filter(Boolean);
+        const vSel = (q.v || []).map((i) => be[i]).filter(Boolean);
+        const res = s21kBoundarySolid(R, uSel, vSel, q.t, body);
+        body = res.shape; lastTool = res.shape; lastOp = 'add';
+        ft.bound = { u: res.u, v: res.v, uArea: res.uArea, vArea: res.vArea, t: res.t, added: res.added, volBefore: res.volBefore, volAfter: res.volAfter, faces: res.faces, walls: res.walls };
+        ft.note = L(`Boundary boss: ${res.u} curve(s) in one direction and ${res.v} in the other bound ${f(res.uArea, 1)} mm²${res.vArea != null ? ` (the second direction lofts to ${f(res.vArea, 1)} mm² too)` : ''}, thickened ${f(res.t, 1)} mm by the kernel and fused into the body: ${f(res.added / 1000, 3)} cm³ added, ${f(res.volAfter / 1000, 3)} cm³ from ${f(res.volBefore / 1000, 3)} cm³.`,
+          `Boundary boss: ${res.u} kurva di satu arah dan ${res.v} di arah lain membatasi ${f(res.uArea, 1)} mm²${res.vArea != null ? ` (loft arah kedua juga ${f(res.vArea, 1)} mm²)` : ''}, ditebalkan ${f(res.t, 1)} mm oleh kernel dan digabung ke body: bertambah ${f(res.added / 1000, 3)} cm³, jadi ${f(res.volAfter / 1000, 3)} cm³ dari ${f(res.volBefore / 1000, 3)} cm³.`);
       } else if (ft.type === 'delface') {
         /* S21j: the picked face leaves the body and the opening it leaves is patched, sewn and made a solid again by
            the kernel; the step only exists when that result passes the kernel's validity check. */
@@ -8300,6 +8314,115 @@ function s21jDelete(R, body, faceIndex) {
   return { shape: solid, face: k, loops, faces: solid.faces.length, areaRemoved, areaPatch, volBefore, volAfter };
 }
 /* ---- end S21j helpers ---- */
+/* ---- S21k: Boundary Boss/Base. The same two-direction boundary as Boundary Surface (s21iBoundary: the first
+ * direction is lofted by the kernel and the second has to land on that loft, both measured), then made into a solid:
+ * the kernel offsets that patch by the thickness (BRepOffsetAPI_MakeOffsetShape), a wall is lofted from every
+ * boundary curve of the patch to the matching curve of the offset (BRepOffsetAPI_ThruSections), and the patch, the
+ * offset and the walls are sewn into one shell (BRepBuilderAPI_Sewing) and made a solid
+ * (BRepBuilderAPI_MakeSolid). Both thickness directions are built; the one that adds material to the body — decided
+ * by the kernel's own volumes, not by a guess at a normal — is the one kept, and the step records the two patch
+ * areas, the volume added and the body before and after. A closed patch (a tube: the barrel of a cylinder) carries a
+ * seam curve that sits on the face twice, so a wall there would be sewn onto an interior edge and the shell would
+ * not close; that wall is dropped, and only if the kernel then accepts the solid. tests/s21k-boundboss.test.mjs
+ * lifts this block and runs it on the kernel. ---- */
+const s21kPt = (v) => (Array.isArray(v) ? v.map(Number) : v && typeof v.toTuple === 'function' ? v.toTuple() : v ? [v.x, v.y, v.z] : null);
+function s21kEdgeMid(e) {
+  const a = s21kPt(e && e.startPoint), b = s21kPt(e && e.endPoint);
+  if (!a || !b) return null;
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+}
+/** the kernel's own validity check, kept in this block so it can be lifted on its own */
+function s21kValid(R, shape) {
+  const oc = R.getOC();
+  const a = new oc.BRepCheck_Analyzer(shape.wrapped, true, false);
+  const good = !!(a.IsValid_2 ? a.IsValid_2() : a.IsValid_1 ? a.IsValid_1() : a.IsValid());
+  if (a.delete) a.delete();
+  return good;
+}
+/** every curve of every wire of every face: the curves a patch can be walled along */
+function s21kBoundary(sh) {
+  const out = [];
+  for (const fc of (sh && sh.faces) || []) for (const w of fc.wires || []) for (const e of w.edges || []) if (e) out.push(e);
+  return out;
+}
+/** one thickness direction: offset the patch, wall it, sew it, make it a solid — or null when the kernel refuses */
+function s21kSolid(R, patch, t, sign) {
+  const oc = R.getOC();
+  const mk = new oc.BRepOffsetAPI_MakeOffsetShape();
+  mk.PerformByJoin(patch.wrapped, sign * t, 1e-3, oc.BRepOffset_Mode.BRepOffset_Skin, true, false, oc.GeomAbs_JoinType.GeomAbs_Arc);
+  if (!mk.IsDone()) return null;
+  const off = R.cast(mk.Shape());
+  if (!off || !off.faces || !off.faces.length) return null;
+  const pe = s21kBoundary(patch), oe = s21kBoundary(off);
+  if (!pe.length || pe.length > oe.length) return null;
+  const used = new Set(), walls = [];
+  for (const e of pe) {
+    const m = s21kEdgeMid(e);
+    let best = -1, bd = Infinity;
+    oe.forEach((o, i) => {
+      if (used.has(i)) return;
+      const q = s21kEdgeMid(o); if (!m || !q) return;
+      const d = Math.hypot(q[0] - m[0], q[1] - m[1], q[2] - m[2]);
+      if (d < bd) { bd = d; best = i; }
+    });
+    if (best < 0) return null;
+    used.add(best);
+    const w = new oc.BRepOffsetAPI_ThruSections(false, false, 1e-6);
+    let okw = true;
+    for (const x of [e, oe[best]]) {
+      const mw = new oc.BRepBuilderAPI_MakeWire(); mw.Add(x.wrapped);
+      if (!mw.IsDone()) { okw = false; break; }
+      w.AddWire(mw.Wire());
+    }
+    if (!okw) return null;
+    w.Build();
+    if (!w.IsDone()) return null;
+    walls.push(R.cast(w.Shape()));
+  }
+  /* the whole wall set first, then one wall left out: only the kernel's own sewing and validity decide */
+  for (let drop = -1; drop < walls.length; drop++) {
+    try {
+      const sew = new oc.BRepBuilderAPI_Sewing(1e-4);
+      sew.Add(patch.wrapped); sew.Add(off.wrapped);
+      walls.forEach((w, i) => { if (i !== drop) sew.Add(w.wrapped); });
+      sew.Perform();
+      const sewn = R.cast(sew.SewedShape());
+      if (!sewn || !sewn.faces || !sewn.faces.length) continue;
+      const mkS = new oc.BRepBuilderAPI_MakeSolid(oc.TopoDS.Shell(sewn.wrapped));
+      mkS.Build();
+      let solid = R.cast(mkS.Solid());
+      if (!solid) continue;
+      let vol = R.measureVolume(solid);
+      if (vol < 0) { solid = R.cast(oc.TopoDS.Solid(solid.wrapped.Reversed())); vol = R.measureVolume(solid); }
+      if (!(vol > 0) || !s21kValid(R, solid)) continue;
+      return { solid, vol, faces: solid.faces.length, walls: walls.length - (drop >= 0 ? 1 : 0), droppedSeam: drop >= 0 };
+    } catch (e) { /* the next wall set may close */ }
+  }
+  return null;
+}
+function s21kBoundarySolid(R, uCurves, vCurves, thickness, body) {
+  if (!body) throw new Error('Boundary Boss/Base takes its curves from a body: build one first.');
+  const res = s21iBoundary(R, uCurves, vCurves);
+  const t = +thickness;
+  if (!(t > 0)) throw new Error(`Thickness must be above 0 mm; this is ${Number.isFinite(t) ? s21iMm(t) + ' mm' : String(thickness)}.`);
+  const oc = R.getOC();
+  if (!oc || !oc.BRepOffsetAPI_MakeOffsetShape || !oc.BRepBuilderAPI_Sewing || !oc.BRepBuilderAPI_MakeSolid || !oc.BRepOffsetAPI_ThruSections) throw new Error('This kernel has no offset, sewing and solid builders.');
+  const volBefore = R.measureVolume(body);
+  const made = [];
+  for (const sign of [1, -1]) { const s2 = s21kSolid(R, res.shape, t, sign); if (s2) made.push({ ...s2, sign }); }
+  if (!made.length) throw new Error(`The kernel could not close a ${s21iMm(t)} mm thick boundary patch into a solid: use a smaller thickness.`);
+  const tries = [];
+  for (const c of made) {
+    try { const fused = body.fuse(c.solid); tries.push({ ...c, shape: fused, volAfter: R.measureVolume(fused), added: R.measureVolume(fused) - volBefore }); }
+    catch (e) { /* the fuse failed on this side: the other one may still add material */ }
+  }
+  if (!tries.length) throw new Error('The thickened patch could not be joined to the body.');
+  tries.sort((a, b) => b.added - a.added);
+  const good = tries.find((x) => x.added > 1e-6 && s21kValid(R, x.shape));
+  if (!good) throw new Error('Both thickness directions add no material to the body: the patch lies inside it, so no boss was made.');
+  return { shape: good.shape, u: res.u, v: res.v, uArea: res.uArea, vArea: res.vArea, t, volBefore, volAfter: good.volAfter, added: good.added, faces: good.shape.faces.length, walls: good.walls };
+}
+/* ---- end S21k helpers ---- */
 
 /* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
  * Both are real OpenCascade geometry, never a polygon stand-in: the ellipse is two ellipse arcs, the closed spline is
@@ -8817,16 +8940,20 @@ function boundToggle(i) {
   p[dir] = cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i];
 }
 function renderBoundPanel(pr) {
-  const a = partArm, p = a.p;
+  const a = partArm, p = a.p, boss = a.type === 'boundboss';
   if (p.dir !== 'v') p.dir = 'u';
   p.u = p.u || []; p.v = p.v || [];
   const edges = (partShape && partShape.edges) || [], mm = (v) => f(v, 1);
-  pr.append(h('h2', null, h('span', null, L('Boundary Surface', 'Boundary Surface')), h('span', { class: 'phd' }, h('small', null, 'S21i'))));
-  pr.append(h('p', { class: 'hint' }, L('A surface bounded by curves in two directions. Choose the direction you are adding to, then click curves in the viewport or tick them below: the first direction is lofted by the kernel, and the second has to land on that loft (its own loft is measured too). Press Build and the step keeps the area the kernel measured.', 'Surface yang dibatasi kurva pada dua arah. Pilih arah yang sedang kamu isi, lalu klik kurvanya di viewport atau centang di bawah: arah pertama di-loft kernel, dan arah kedua harus jatuh di loft itu (loft arah kedua juga diukur). Tekan Bangun dan langkahnya menyimpan luas hasil ukur kernel.')));
+  pr.append(h('h2', null, h('span', null, boss ? L('Boundary Boss/Base', 'Boundary Boss/Base') : L('Boundary Surface', 'Boundary Surface')), h('span', { class: 'phd' }, h('small', null, boss ? 'S21k' : 'S21i'))));
+  pr.append(h('p', { class: 'hint' }, boss
+    ? L('A solid from curves in two directions. Choose the direction you are adding to, then click curves in the viewport or tick them below: the first direction is lofted by the kernel and the second must land on that loft, then the patch is thickened, walled and sewn into a solid that is fused into the body. Press Build and the step records both areas and the volume the kernel added.', 'Solid dari kurva dua arah. Pilih arah yang sedang kamu isi, lalu klik kurvanya di viewport atau centang di bawah: arah pertama di-loft kernel dan arah kedua harus jatuh di loft itu, lalu tambalannya ditebalkan, diberi dinding dan dijahit jadi solid yang digabung ke body. Tekan Bangun dan langkahnya mencatat kedua luas dan volume yang ditambahkan kernel.')
+    : L('A surface bounded by curves in two directions. Choose the direction you are adding to, then click curves in the viewport or tick them below: the first direction is lofted by the kernel, and the second has to land on that loft (its own loft is measured too). Press Build and the step keeps the area the kernel measured.', 'Surface yang dibatasi kurva pada dua arah. Pilih arah yang sedang kamu isi, lalu klik kurvanya di viewport atau centang di bawah: arah pertama di-loft kernel, dan arah kedua harus jatuh di loft itu (loft arah kedua juga diukur). Tekan Bangun dan langkahnya menyimpan luas hasil ukur kernel.')));
   pr.append(h('label', { class: 'skrow' }, h('span', null, L('Adding to', 'Menambah ke')),
     h('select', { 'data-k': 'dir', onchange: (e) => { partArm.p.dir = e.target.value === 'v' ? 'v' : 'u'; renderCad(); } },
       [['u', L('Direction 1 (lofted)', 'Arah 1 (di-loft)')], ['v', L('Direction 2 (guides)', 'Arah 2 (pemandu)')]]
         .map(([v2, t]) => h('option', { value: v2, selected: p.dir === v2 }, t)))));
+  if (boss) pr.append(h('label', { class: 'skrow' }, h('span', null, L('Thickness', 'Tebal')),
+    h('span', { class: 'pnum' }, h('input', { type: 'number', min: 0.1, step: 'any', 'data-k': 't', value: p.t == null ? 3 : p.t, oninput: (e) => { partArm.p.t = e.target.value; } }), h('em', null, 'mm'))));
   pr.append(h('h3', null, L('Direction 1', 'Arah 1') + ` (${p.u.length})`,
     h('span', { class: 'phd' }, h('small', null, L('direction 2', 'arah 2') + ` (${p.v.length})`))));
   pr.append(edges.length ? h('ol', { class: 'sklist' }, edges.map((e, i) => {
@@ -8840,9 +8967,11 @@ function renderBoundPanel(pr) {
     const now = partArm.p, u = now.u || [], v = now.v || [];
     if (u.length < 2) { a.note = L(`Pick at least two curves in the first direction: ${u.length} selected.`, `Pilih dulu paling sedikit dua kurva di arah pertama: ${u.length} terpilih.`); return renderCad(); }
     if (v.length < 1) { a.note = L(`Pick at least one curve in the second direction: ${v.length} selected.`, `Pilih dulu paling sedikit satu kurva di arah kedua: ${v.length} terpilih.`); return renderCad(); }
-    state.part.features.push({ id: Date.now().toString(36), type: 'surfbound', p: { u: [...u], v: [...v] } });
+    state.part.features.push(boss
+      ? { id: Date.now().toString(36), type: 'boundboss', p: { u: [...u], v: [...v], t: +(now.t || 3) } }
+      : { id: Date.now().toString(36), type: 'surfbound', p: { u: [...u], v: [...v] } });
     partSel = state.part.features.length - 1; partArm = null; rebuildPart();
-  } }, L('Build', 'Bangun')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
+  } }, boss ? L('Build boss', 'Bangun boss') : L('Build', 'Bangun')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
   if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
 }
 { const cv = $('#cv');
@@ -8870,7 +8999,7 @@ function renderBoundPanel(pr) {
       partArm.p.face = i; renderCad();
       return;
     }
-    if (partArm.type === 'surfbound') {
+    if (partArm.type === 'surfbound' || partArm.type === 'boundboss') {
       const i = boundPickIndex(e.clientX, e.clientY);
       if (i == null) return;
       e.preventDefault(); e.stopPropagation();
@@ -9283,7 +9412,7 @@ function renderPartCad() {
   else if (partArm && partArm.type === 'surffill') { renderFillPanel(pr); }
   else if (partArm && partArm.type === 'surftrim') { renderTrimPanel(pr); }
   else if (partArm && partArm.type === 'delface') { renderDelPanel(pr); }
-  else if (partArm && partArm.type === 'surfbound') { renderBoundPanel(pr); }
+  else if (partArm && (partArm.type === 'surfbound' || partArm.type === 'boundboss')) { renderBoundPanel(pr); }
   else if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
       h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : (TOOL_GROUPS.find((g) => g[0] === partArm.type) || [null, null, ''])[2]),
@@ -9548,7 +9677,7 @@ const RIBBON = [
       T('Revolved Boss/Base', 'rev', 'on', 'Turn the last sketch around X, Y or Z, up to 360\u00b0.', 'Putar sketch terakhir mengelilingi X, Y, atau Z, sampai 360\u00b0.', 'Revolve, Shaft', P('revolve')),
       T('Swept Boss/Base', 'sweep', 'on', 'Sweep the last sketch along another sketch drawn as one open line or arc chain. The kernel builds it; the step stays in the tree.', 'Sapukan sketch terakhir sepanjang sketch lain yang digambar sebagai satu rangkaian garis atau busur terbuka. Kernel yang membangun; langkahnya tetap di pohon.', 'Sweep', P('sweep')),
       T('Lofted Boss/Base', 'loft', 'on', 'Blend between two sketches on their own planes. Pick both in the form; the kernel lofts them.', 'Gabungkan dua sketch di bidangnya masing-masing. Pilih keduanya di form; kernel yang me-loft.', 'Loft, Multi-section Solid', P('loft')),
-      T('Boundary Boss/Base', 'bound', 'no', 'Solid from boundary curves in two directions.', 'Solid dari kurva batas dua arah.', '')]],
+      T('Boundary Boss/Base', 'bound', 'on', 'A solid from curves in two directions: pick both sets on the body and give a thickness. The kernel lofts the first direction, checks the second against that loft, offsets the patch, walls it, sews it and makes it a solid, and the side that adds material is fused into the body. The step records both patch areas and the volume it added. Two curves in the first direction and one in the second is the minimum.', 'Solid dari kurva dua arah: pilih kedua set di body dan beri tebal. Kernel me-loft arah pertama, memeriksa arah kedua terhadap loft itu, meng-offset tambalan, membuat dindingnya, menjahitnya dan menjadikannya solid, lalu sisi yang menambah material digabung ke body. Langkahnya mencatat kedua luas tambalan dan volume yang ditambahkan. Minimal dua kurva di arah pertama dan satu di arah kedua.', 'Boundary, Boundary Boss', { part: 'boundboss' })]],
     ['Cut', [T('Extruded Cut', 'cut', 'on', 'Extrude the last sketch and remove it from the body.', 'Tarik sketch terakhir dan buang dari body.', 'Pocket, Extrude Cut', P('push', { op: 'cut', dist: -5 })),
       T('Revolved Cut', 'rev', 'on', 'Cut by turning the last sketch around X, Y or Z, up to 360°. The kernel removes the volume it sweeps.', 'Potong dengan memutar sketch terakhir mengelilingi X, Y, atau Z, sampai 360°. Kernel membuang volume yang disapu.', 'Groove', P('revolve', { op: 'cut' })),
       T('Swept Cut', 'sweep', 'on', 'Cut by sweeping the last sketch along another sketch. Same kernel sweep as the boss, removed from the body.', 'Potong dengan menyapu sketch terakhir sepanjang sketch lain. Sapuan kernel yang sama, dibuang dari body.', 'Slot (CATIA)', P('sweep', { op: 'cut' })),

@@ -41,7 +41,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 
 | Tool | State | What the code has | What is missing | Batch |
 | --- | --- | --- | --- | --- |
-| Boundary Boss/Base | `no` | loft between sketches | a two-direction boundary fill (curves in U and V): `BRepOffsetAPI_MakeFilling` is in the kernel, the wrapper that feeds it two curve sets is not | 6 |
+| Boundary Boss/Base | `on` (shipped) | `s21kBoundarySolid`: the same two-direction boundary as Boundary Surface (`s21iBoundary`: the first direction is lofted by the kernel, every curve of the second must land on that loft, and the second direction's own loft is measured when there are two or more) is made into a solid — the patch is offset by the thickness (`BRepOffsetAPI_MakeOffsetShape`), a wall is lofted from each boundary curve of the patch to the matching curve of the offset (`BRepOffsetAPI_ThruSections`), and patch, offset and walls are sewn into one shell (`BRepBuilderAPI_Sewing`) and made a solid (`BRepBuilderAPI_MakeSolid`); both thickness directions are built and the one that adds material to the body — decided by the kernel's volumes — is fused in, and the step records both patch areas and the volume added | the curves come from the **body**, not from loose sketch entities (a sketch is picked up once it is a body, exactly as for Boundary Surface); a patch whose walls cannot be closed into a valid positive-volume solid is refused with the thickness it could not close, and a patch that lies inside the body adds nothing and is refused instead of silently doing nothing | 6 |
 | Variable Fillet | `no` | constant-radius `fillet()` with edge finders | `BRepFilletAPI_MakeFillet` with a radius per point along the edge, plus a way to pick that edge | 7 |
 | Dome | `no` | sphere, cut, fuse | a cap trimmed by the face outline and fused; the honest version is a spherical cap intersected with the face region | 4 |
 | Wrap / Emboss | `no` | nothing | project a sketch onto a face (planar or cylindrical) and thicken along the normals: `BRepProj_Projection` + offset, neither wrapped | 7 |
@@ -223,16 +223,31 @@ the gap is closed with a patch on its own boundary. For a planar face that patch
 that was removed, so the healed body comes back at the same volume — the step says so with both numbers instead of
 pretending the solid changed.
 
-**Batch 6 status: closed for its kernel tools.** Filled Surface, Trim Surface, Boundary Surface and Delete Face are
-`on` (PRs #51–#54, stacked, none merged yet). Boundary Boss/Base is the one row of this batch still `no`, and it is
-not a switch: it is the same two-direction boundary patch as Boundary Surface, made into a solid, and `Thicken`
-cannot use a patch that has no profile of its own — so it needs a new wrapper that walks a patch along its normal.
-Everything the batch set out to measure is measured and written into the steps: the filled area, the kept area of a
-trim, both direction areas of a boundary, and for Delete Face the removed area, the patch area and the volume before
-and after, with the kernel's own `BRepCheck_Analyzer` verdict.
+**Also shipped in this batch: Boundary Boss/Base.** Features → Boundary Boss/Base opens the same two-direction panel
+as Boundary Surface (one list of the body's curves, a switch for the direction a click adds to) with a thickness
+field. The patch is the boundary's, checked the same way — the first direction is lofted, the second must land on that
+loft — and then it is made a solid: the kernel offsets the patch by the thickness (`BRepOffsetAPI_MakeOffsetShape`),
+a wall is lofted from every boundary curve of the patch to the matching curve of the offset
+(`BRepOffsetAPI_ThruSections`), and patch, offset and walls are sewn into one shell (`BRepBuilderAPI_Sewing`) and
+made a solid (`BRepBuilderAPI_MakeSolid`). Both thickness directions are built and the one that adds material is the
+one fused into the body, chosen by the kernel's own volumes rather than by a guess at a normal. A closed patch (the
+barrel of a cylinder) carries a seam curve that sits on the face twice, so a wall there would be sewn onto an
+interior edge; that wall is left out and the shell closes on its two end walls instead — only if the kernel then
+accepts the solid. Kernel test `tests/s21k-boundboss.test.mjs` (the four top edges of a 40 × 30 × 20 box → 1 200 mm²
+patch, 3 mm → 3 600 mm³ added and 27 600 mm³ from 24 000 mm³; a Ø40 × 30 cylinder's two circles plus its seam →
+2π·20·30 = 3 769.9 mm² patch, 2 mm → π·22²·30 = 45 615.9 mm³ and 7 916.8 mm³ added; the 0 mm thickness, no-body and
+one-curve refusals; the rebuild twice) and browser test `tests/s21k-boundboss.spec.mjs` (ribbon → box → panel list →
+tick both directions → 3 mm → Build boss → 27 600 mm³, viewport pick into the open direction, the one-curve refusal,
+no page error).
+
+**Batch 6 status: closed, all five kernel tools shipped.** Filled Surface, Trim Surface, Boundary Surface, Delete Face
+and Boundary Boss/Base are `on` (PRs #51–#55, stacked, none merged yet). Everything the batch set out to measure is
+measured and written into the steps: the filled area, the kept area of a trim, both direction areas of a boundary, for
+Delete Face the removed area, the patch area and the volume before and after, and for Boundary Boss/Base the volume
+of material the thickness added, with the kernel's own `BRepCheck_Analyzer` verdict on the results.
 
 
-Boundary Surface, Filled Surface, Trim Surface, Delete Face, and Boundary Boss/Base. This is the first batch that
+Boundary Surface, Filled Surface, Trim Surface, Delete Face and Boundary Boss/Base. This is the first batch that
 writes OpenCascade bindings. Each tool must report the area/volume the kernel measures, and a trim or a delete that
 cannot be healed must say so instead of returning a shell with a hole.
 
@@ -292,9 +307,9 @@ cylinder reports 1/R everywhere within tolerance, a plane reports 0, and the vie
 | Capability | In the kernel wrapper today | Needed by |
 | --- | --- | --- |
 | variable-radius fillet | no (`fillet(radius, finder)` only) | Variable Fillet |
-| surface filling / boundary | `BRepOffsetAPI_MakeFilling` (used by Filled Surface) and `BRepOffsetAPI_ThruSections` on curves as wires (used by Boundary Surface, which checks the second direction with `BRepExtrema_DistShapeShape`); no true network/Gordon surface | Boundary Boss |
+| surface filling / boundary | `BRepOffsetAPI_MakeFilling` (used by Filled Surface) and `BRepOffsetAPI_ThruSections` on curves as wires (used by Boundary Surface, which checks the second direction with `BRepExtrema_DistShapeShape`); Boundary Boss/Base adds `BRepOffsetAPI_MakeOffsetShape` for the thickness and walls, `BRepBuilderAPI_Sewing` and `BRepBuilderAPI_MakeSolid`; no true network/Gordon surface | — |
 | trim/split on shells | `BRepAlgoAPI_Splitter` on a face (used by Trim Surface); not on a shell with another shell | Split |
-| heal / remove face | no `ShapeFix_Shape` (the master healer) and no `BRepTools_ReShape`; `ShapeFix_Face`, `ShapeFix_Wire`, `ShapeFix_Solid`, `ShapeUpgrade_UnifySameDomain`, `TopExp_Explorer`, `BRepCheck_Analyzer` and `BRepTools.OuterWire` are exported, and Delete Face patches the opening with `BRepOffsetAPI_MakeFilling` + `BRepBuilderAPI_Sewing` instead of extending neighbours | Boundary Boss/Base |
+| heal / remove face | no `ShapeFix_Shape` (the master healer) and no `BRepTools_ReShape`; `ShapeFix_Face`, `ShapeFix_Wire`, `ShapeFix_Solid`, `ShapeUpgrade_UnifySameDomain`, `TopExp_Explorer`, `BRepCheck_Analyzer` and `BRepTools.OuterWire` are exported, and Delete Face patches the opening with `BRepOffsetAPI_MakeFilling` + `BRepBuilderAPI_Sewing` instead of extending neighbours; `BRepOffsetAPI_MakeThickSolid` is exported but it will not thicken an open patch (it returns a single face of zero volume), which is why Boundary Boss/Base offsets the patch and lofts its own walls | — |
 | projection of a sketch onto a face | no | Wrap/Emboss, Text |
 | curvature at a point on a face | no | Curvature / Zebra |
 | cope on a hollow section | no | Weldments Trim/Extend |
