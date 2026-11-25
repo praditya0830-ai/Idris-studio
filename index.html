@@ -1314,6 +1314,7 @@ class Viewer {
        precision mediump float;
        #endif
        varying vec3 vN; varying vec3 vV; varying vec3 vP; varying float vS; uniform float uClip;
+       uniform float uZebra; uniform float uStripes; uniform vec3 uEye; uniform mat3 uViewR;
        vec3 turbo(float x){ x = clamp(x,0.0,1.0);
          vec4 r4 = vec4(0.13572138, 4.61539260, -42.66032258, 132.13108234); vec4 g4 = vec4(0.09140261, 2.19418839, 4.84296658, -14.18503333);
          vec4 b4 = vec4(0.10667330, 12.64194608, -60.58204836, 110.36276771); vec2 r2 = vec2(-152.94239396, 59.28637943);
@@ -1324,6 +1325,17 @@ class Viewer {
          if(uClip>0.5 && vP.x>0.0) discard;
          vec3 n = normalize(vN); if(!gl_FrontFacing) n = -n;
          vec3 l1 = normalize(vec3(0.35,0.7,0.65)); float d = max(dot(n,l1),0.0); float hemi = 0.5+0.5*n.y;
+         if(uZebra>0.5){
+           /* zebra: a striped environment reflected off the surface. The normal is the kernel's own triangle
+              normal, turned back into the model frame, so the stripes are a property of the measured surface. */
+           vec3 nw = normalize(uViewR*n);
+           vec3 V = normalize(uEye - vP);
+           vec3 Rf = reflect(-V, nw);
+           float lon = atan(Rf.z, Rf.x) * 0.15915494 + 0.5;
+           float f = fract(lon * uStripes);
+           float band = smoothstep(0.42, 0.58, f);          /* broad black/white bands, soft edge */
+           gl_FragColor = vec4(mix(vec3(0.10), vec3(0.93), band) * (0.86 + 0.14*d), 1.0);
+           return; }
          gl_FragColor = vec4(turbo(0.1+0.85*vS)*(0.62+0.28*d+0.10*hemi), 1.0); }`);
     this.pLine = this._prog(
       `attribute vec3 aPos; attribute float aA; uniform mat4 uMVP; uniform mat4 uModel; varying float vA; varying vec3 vP;
@@ -1396,7 +1408,7 @@ class Viewer {
   }
   setWireframe(on) { this.wire = on; this.dirty = true; }
   setSection(on) { this.section = on; if (on) this.goTo(1.05, 0.3); this.dirty = true; }
-  clear() { if (this.ok) { this._free(); this.setEnvelope(null); this.setMotion(null); this.setField(null); } this.anim = null; this.target = [0, 0, 0]; this.yaw = 0.62; this.pitch = 0.42; this.dist = 560; this.model = null; this.motion = null; this.playing = false; this.spinT = 0; this.section = false; this.dirty = true; }
+  clear() { if (this.ok) { this._free(); this.setEnvelope(null); this.setMotion(null); this.setField(null); this.zebra = null; } this.anim = null; this.target = [0, 0, 0]; this.yaw = 0.62; this.pitch = 0.42; this.dist = 560; this.model = null; this.motion = null; this.playing = false; this.spinT = 0; this.section = false; this.dirty = true; }
 
   /** Upload several STL parts that share ONE coordinate frame (mm). parts: [{buf, kind, name}].
    *  The whole assembly is centred once, so parts keep their relative positions. */
@@ -1570,6 +1582,12 @@ class Viewer {
       for (let t = 0; t < nT; t++) for (let v = 0; v < 3; v++) { const n = I[t * 3 + v], o = t * 9 + v * 3; map[t * 3 + v] = n;
         for (let k = 0; k < 3; k++) { tris[o + k] = P[n * 3 + k]; dsp[o + k] = D ? D[n * 3 + k] : 0; } }
       const part = this._build(tris, c, { kind: 'field', name: 'FEA' });
+      /* optional per-vertex normals (the kernel's own): a smooth surface needs them for zebra stripes */
+      if (f.normals && f.normals.length >= P.length) {
+        const nn = new Float32Array(tris.length);
+        for (let t = 0; t < nT; t++) for (let v = 0; v < 3; v++) { const n0 = I[t * 3 + v] * 3; for (let k = 0; k < 3; k++) nn[t * 9 + v * 3 + k] = f.normals[n0 + k]; }
+        gl.deleteBuffer(part.nor); part.nor = this._buf(nn);
+      }
       part.d = this._buf(dsp); part.map = map; part.s = null;
       part.nodes = new Float32Array(P.length); for (let i = 0; i < P.length; i++) part.nodes[i] = P[i] - c[i % 3];
       part.disp = D || null;
@@ -1584,6 +1602,11 @@ class Viewer {
     if (this.field.s) gl.deleteBuffer(this.field.s); this.field.s = this._buf(a); this.dirty = true;
   }
   showField(on) { this.fieldOn = !!(on && this.field); this.dirty = true; }
+  /** Zebra/reflection lines instead of the colour scale, from the kernel's own triangle normals. */
+  setFieldZebra(on, stripes = 12) {
+    this.zebra = { on: !!on, stripes: Math.max(2, Math.min(60, Math.round(+stripes) || 12)) };
+    this.dirty = true;
+  }
   /** osc: mode shapes swing both ways (−1…+1); static loads grow 0…1 */
   setDeform(scale, animate, osc) { this.defScale = scale || 0; this.defAnim = !!animate; this.defOsc = !!osc; this._defT0 = performance.now(); this.dirty = true; }
   _defNow() { if (!this.defScale) return 0; if (!this.defAnim) return this.defScale; const t = (performance.now() - this._defT0) / 1000;
@@ -1824,6 +1847,10 @@ class Viewer {
       gl.uniformMatrix4fv(gl.getUniformLocation(p, 'uMV'), false, view);
       gl.uniform1f(gl.getUniformLocation(p, 'uDef'), def);
       gl.uniform1f(gl.getUniformLocation(p, 'uClip'), this.section ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(p, 'uZebra'), this.zebra && this.zebra.on ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(p, 'uStripes'), (this.zebra && this.zebra.stripes) || 12);
+      gl.uniform3fv(gl.getUniformLocation(p, 'uEye'), eye);
+      gl.uniformMatrix3fv(gl.getUniformLocation(p, 'uViewR'), false, new Float32Array([view[0], view[1], view[2], view[4], view[5], view[6], view[8], view[9], view[10]]));
       const att = [['aPos', f.pos, 3], ['aNor', f.nor, 3], ['aS', f.s, 1], ['aD', f.d, 3]].map(([n, b, k]) => { const l = gl.getAttribLocation(p, n);
         gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, k, gl.FLOAT, false, 0, 0); return l; });
       gl.drawArrays(gl.TRIANGLES, 0, f.n * 3);
@@ -6519,7 +6546,7 @@ const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel
 const TX = (k, en, id, def, extra = {}) => ({ k, en, id, def, t: 'txt', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
-const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', gusset: 'gusset', weld: 'weld', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim', scale: 'scale' };
+const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', gusset: 'gusset', weld: 'weld', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim', scale: 'scale', curv: 'curv' };
 /* ---- P1d: welded frames. Two numbers on every row come from its standard's table: A (mm²) and the mass
  * per metre (kg/m). The kernel builds a SIMPLIFIED section — sharp corners, no corner or root radius — so its
  * area and the table area differ; the difference is shown, never hidden. No table value is guessed: a size
@@ -6857,6 +6884,10 @@ const FEAT = {
     label: (p) => `${L('Boundary boss', 'Batas boss')} ${(p.u || []).length} × ${(p.v || []).length} · ${p.t} mm` },
   vfillet: { en: 'Variable Fillet', id: 'Variable Fillet', fields: [N('r1', 'Radius at one end', 'Radius di ujung satu', 'mm', 2, { min: 0.1 }), N('r2', 'Radius at the other end', 'Radius di ujung lain', 'mm', 6, { min: 0.1 }), N('edge', 'Edge', 'Tepi', '', 0, { step: 1 })],
     label: (p) => `${L('Variable fillet', 'Fillet variabel')} R${p.r1}→${p.r2} mm · ${L('edge', 'tepi')} ${(+p.edge || 0) + 1}` },
+  curv: { en: 'Curvature / Zebra', id: 'Curvature / Zebra', fields: [N('samples', 'Samples per face side', 'Sampel per sisi muka', '', 5, { min: 2, max: 15, step: 1 }),
+    S('view', 'Display', 'Tampilan', [['color', ['Colour by |κ|', 'Warna |κ|']], ['zebra', ['Zebra (reflection lines)', 'Zebra (garis refleksi)']]], 'color'),
+    N('stripes', 'Zebra stripes', 'Garis zebra', '', 12, { min: 2, max: 60, step: 1, show: (p) => p.view === 'zebra' })],
+    label: (p) => `${p.view === 'zebra' ? 'Zebra' : L('Curvature', 'Kelengkungan')} · ${p.samples}×${p.samples} ${L('samples', 'sampel')}${p.view === 'zebra' ? ` · ${+p.stripes || 12} ${L('stripes', 'garis')}` : ''}` },
   surfplane: { en: 'Planar Surface', id: 'Planar Surface', get fields() {
       const o = sketchOptions();
       return [S('sketch', 'Closed loop sketch', 'Sketch loop tertutup', o, o[0][0])]; },
@@ -7075,6 +7106,14 @@ async function buildPart(pArg) {
         ft.vfil = { edge: res.edge, r1: res.r1, r2: res.r2, constant: res.constant, faces: res.faces, volBefore: res.volBefore, volAfter: res.volAfter, removed: res.removed };
         ft.note = L(`Variable fillet on edge ${res.edge + 1}: ${f(res.r1, 1)} mm at one end and ${f(res.r2, 1)} mm at the other${res.constant ? ', equal at both ends so the kernel built the constant fillet' : ''}, ${res.faces} faces. The kernel removed ${f(res.removed / 1000, 3)} cm³: ${f(res.volAfter / 1000, 3)} cm³ from ${f(res.volBefore / 1000, 3)} cm³.`,
           `Variable fillet di tepi ${res.edge + 1}: ${f(res.r1, 1)} mm di ujung satu dan ${f(res.r2, 1)} mm di ujung lain${res.constant ? ', sama di kedua ujung jadi kernel membangun fillet konstan' : ''}, ${res.faces} muka. Kernel membuang ${f(res.removed / 1000, 3)} cm³: ${f(res.volAfter / 1000, 3)} cm³ dari ${f(res.volBefore / 1000, 3)} cm³.`);
+      } else if (ft.type === 'curv') {
+        /* S21m: curvature is measured on the body's own faces and shown as colour; the body does not change. */
+        if (!body) throw new Error(L('Curvature measures the faces of a body: build one first (a primitive, an Extrude or a Revolve).', 'Curvature mengukur muka sebuah body: bangun dulu (primitive, Extrude, atau Revolve).'));
+        const res = s21mCurvature(R, body, q.samples);
+        ft.curv = { samples: res.samples, faces: res.faces.map((x) => ({ i: x.i, type: x.type, area: x.area, kMax: x.kMax, hMax: x.hMax, radius: x.radius })),
+          planar: res.planar, curved: res.curved, maxK: res.maxK, minRadius: res.minRadius, byType: res.byType };
+        ft.note = L(`Measured ${res.faces.length} face(s): ${res.planar} planar (κ = 0) and ${res.curved} curved, the largest |κ| is ${f(res.maxK, 4)} 1/mm${Number.isFinite(res.minRadius) ? ` (a radius of ${f(res.minRadius, 3)} mm)` : ''}. The colours show each face's largest |κ| on the kernel's own triangles. The body is unchanged: ${f(R.measureVolume(body) / 1000, 3)} cm³.`,
+          `Terukur ${res.faces.length} muka: ${res.planar} datar (κ = 0) dan ${res.curved} lengkung, |κ| terbesar ${f(res.maxK, 4)} 1/mm${Number.isFinite(res.minRadius) ? ` (radius ${f(res.minRadius, 3)} mm)` : ''}. Warna menunjukkan |κ| terbesar tiap muka di atas segitiga kernel sendiri. Body tidak berubah: ${f(R.measureVolume(body) / 1000, 3)} cm³.`);
       } else if (ft.type === 'repeat') {
         if (!lastTool) throw new Error(L('Repeat copies the feature before it (Shape, Push/Pull or Hole).', 'Repeat menyalin fitur sebelumnya (Shape, Push/Pull, atau Hole).'));
         const base = lastTool, op = lastOp;
@@ -7579,8 +7618,48 @@ function meshToSTL(m) {
   return buf;
 }
 /* the viewer is Y-up; CAD parts are Z-up, so the mesh is turned (x, y, z) → (x, z, -y) for display only */
-const zUp = (m) => { const v = Float32Array.from(m.vertices); for (let i = 0; i < v.length; i += 3) { const y = v[i + 1]; v[i + 1] = v[i + 2]; v[i + 2] = -y; } return { vertices: v, triangles: m.triangles }; };
+const zUp = (m) => { const v = Float32Array.from(m.vertices); for (let i = 0; i < v.length; i += 3) { const y = v[i + 1]; v[i + 1] = v[i + 2]; v[i + 2] = -y; }
+  if (!m.normals) return { vertices: v, triangles: m.triangles };
+  const n = Float32Array.from(m.normals); for (let i = 0; i < n.length; i += 3) { const y = n[i + 1]; n[i + 1] = n[i + 2]; n[i + 2] = -y; }
+  return { vertices: v, triangles: m.triangles, normals: n }; };
 let partShape = null;
+/* S21m: the curvature step shows its own measurement as colour on the part. The colours ride the field shader the
+ * stress plot uses, on the kernel's triangles of the same body, and the legend names the quantity. A later step that
+ * changes the body withdraws the colours: the step still carries the numbers it measured, and the panel says why. */
+function applyCurvOverlay(out) {
+  const lg = $('#legend'), feats = state.part ? state.part.features : [];
+  let last = -1; feats.forEach((f2, i) => { if (!f2.off) last = i; });
+  const st = last >= 0 ? feats[last] : null;
+  if (!out || !out.body || !st || st.type !== 'curv' || !st.curv) {
+    if (viewer.ok) { viewer.showField(false); viewer.setField(null); viewer.setFieldZebra(false); }
+    if (lg) lg.hidden = true;
+    return null;
+  }
+  try {
+    const m = s21mCurvature(out.R, out.body, st.p.samples), cm = s21mColorMesh(out.R, out.body, m);
+    const mesh = zUp({ vertices: Float32Array.from(cm.positions), triangles: Uint32Array.from(cm.indices), normals: Float32Array.from(cm.normals) });
+    viewer.setField({ positions: mesh.vertices, indices: mesh.triangles, normals: mesh.normals, displacement: null });
+    viewer.setFieldScalar(cm.vals, cm.lo, cm.hi, false);
+    viewer.showField(true);
+    const zebra = (st.p.view || 'color') === 'zebra', stripes = Math.max(2, Math.min(60, Math.round(+st.p.stripes) || 12));
+    viewer.setFieldZebra(zebra, stripes);
+    if (lg) {
+      lg.hidden = false; lg.innerHTML = '';
+      const stops = Array.from({ length: 11 }, (_, i) => turboJS(1 - i / 10)).reverse();
+      lg.append(h('div', { class: 'lg-t' }, zebra ? L('Zebra \u00b7 reflection lines', 'Zebra \u00b7 garis refleksi') : L('Max |\u03ba| per face (1/mm)', '|\u03ba| terbesar per muka (1/mm)')),
+        zebra
+          ? h('div', { class: 'lg-b' }, h('div', { class: 'lg-s' }, L(`${stripes} stripes on the kernel\u2019s own normals \u2014 a wavy stripe is a wavy surface`, `${stripes} garis di atas normal kernel sendiri \u2014 garis yang bergelombang berarti permukaannya bergelombang`)))
+          : h('div', { class: 'lg-b' }, h('div', { class: 'lg-bar', style: `background:linear-gradient(${stops.join(',')})` }),
+            h('div', { class: 'lg-ticks' }, Array.from({ length: 6 }, (_, i) => h('span', null, f(cm.hi - (cm.hi - cm.lo) * i / 5, 4))))),
+        h('div', { class: 'lg-s' }, L(`${m.planar} planar \u00b7 ${m.curved} curved \u00b7 ${m.samples}\u00d7${m.samples} samples per face, kernel`, `${m.planar} datar \u00b7 ${m.curved} lengkung \u00b7 ${m.samples}\u00d7${m.samples} sampel per muka, kernel`)));
+    }
+    return m;
+  } catch (e) {
+    viewer.showField(false); viewer.setField(null); viewer.setFieldZebra(false); if (lg) lg.hidden = true;
+    st.note = String((e && e.message) || e);
+    return null;
+  }
+}
 async function rebuildPart(fit) {
   if (!state.part) return; partBusy = true; renderCad(); const seq = ++partSeq;
   try {
@@ -7603,6 +7682,7 @@ async function rebuildPart(fit) {
       : (out.surfs && out.surfs.length ? (() => { const R = out.R, area = out.surfs.reduce((a, x) => a + R.measureArea(x), 0), b = out.surfs[0].boundingBox.bounds, mat = PMAT[state.part.material] || PMAT.aluminium;
         /* a surface has an area, not a volume: reporting 0 cm3 and 0 g would be numbers that are not true */
         return { surface: true, area, size: [0, 1, 2].map((k) => b[1][k] - b[0][k]), vol: null, mass: null, rho: mat[1], mat, sheet: null }; })() : null);
+    applyCurvOverlay(out);
   } catch (e) {
     partInfo = null; say(h('div', { class: 'warnbox bad' }, h('b', null, L('The CAD kernel could not load', 'Kernel CAD tidak bisa dimuat')),
       para(L(`The part tools need the kernel files in a kernel/ (or Kernel/) folder next to index.html (${String(e.message || e).slice(0, 120)}).`, `Alat part butuh file kernel di folder kernel/ (atau Kernel/) di samping index.html (${String(e.message || e).slice(0, 120)}).`))));
@@ -7618,7 +7698,7 @@ function startPart(saved) {
     'Part baru. Mulai dengan primitive (Box, Cylinder, Tube, Sphere) atau Sketch dari toolbar; setiap langkah tersimpan di pohon fitur dan bisa diubah kapan saja. Kernel CAD (OpenCascade) dimuat saat pertama dipakai, ≈23 MB sekali saja.'), 'm'));
   kernel().catch(() => {});
 }
-function leavePart() { if (!state.part) return; savePart(); state.part = null; partShape = null; partInfo = null; partSel = null; partArm = null; viewer.clear(); $('#vempty').classList.remove('hide'); renderCad(); renderTree(); }
+function leavePart() { if (!state.part) return; savePart(); state.part = null; partShape = null; partInfo = null; partSel = null; partArm = null; viewer.clear(); const lg = $('#legend'); if (lg) lg.hidden = true; $('#vempty').classList.remove('hide'); renderCad(); renderTree(); }
 /** a rail / palette tool: start a part if needed, then open the tool's form in Properties */
 function partTool(k, preset, label) {
   /* S11-B3: Measure on an empty workspace must not start a new part; it asks for a part first. */
@@ -8470,6 +8550,91 @@ function s21lVariableFillet(R, body, edgeIndex, r1, r2) {
   return { shape, edge: k, r1: a, r2: b, constant: !!(mk.IsConstant ? mk.IsConstant(1) : Math.abs(a - b) < 1e-9), faces: shape.faces.length, volBefore, volAfter, removed };
 }
 /* ---- end S21l helpers ---- */
+/* ---- S21m: Curvature / Zebra. Every B-rep face carries its own surface, and the second derivatives of that
+ * surface give the curvature: this is measured, never shaded from a mesh. Each face is sampled on its own UV box
+ * with D2, and the principal curvatures come from the first and second fundamental forms (E,F,G and L,M,N):
+ *     H = (E·N − 2F·M + G·L) / (2(EG − F²)),  K = (L·N − M²)/(EG − F²),  κ1,2 = H ± √(H² − K)
+ * A plane gives 0 everywhere and a cylinder of radius R gives 1/R exactly, which is what the test measures. The
+ * colour map rides the same field path the stress plot uses: one value per face (its largest |κ|) on the kernel's
+ * own triangulation of that face, so the coloured surface is the surface the kernel measured. This step does not
+ * change the body. tests/s21m-curvature.test.mjs lifts this block and runs it on the kernel. ---- */
+const S21M_TOL = 0.05;
+function s21mSamples(v) {
+  const n = Math.round(+v);
+  if (!(n >= 2 && n <= 15)) throw new Error(`Samples per face side must be a whole number from 2 to 15; this is ${Number.isFinite(+v) ? (+v).toFixed(2) : String(v)}.`);
+  return n;
+}
+/** the principal curvatures at one (u, v) on a face's own surface, from its second derivatives */
+function s21mAt(oc, surf, u, v) {
+  const p = new oc.gp_Pnt(), du = new oc.gp_Vec(), dv = new oc.gp_Vec(), duu = new oc.gp_Vec(), duv = new oc.gp_Vec(), dvv = new oc.gp_Vec();
+  /* OCCT's own order: D2(U, V, P, D1U, D1V, D2U, D2V, D2UV) — D2V before D2UV */
+  try { surf.D2(u, v, p, du, dv, duu, dvv, duv); } catch (e) { return null; }
+  const dot = (a, b) => a.X() * b.X() + a.Y() * b.Y() + a.Z() * b.Z();
+  const E = dot(du, du), F = dot(du, dv), G = dot(dv, dv), den = E * G - F * F;
+  if (!(Math.abs(den) > 1e-18)) return null;                 /* a degenerate point carries no curvature */
+  const nx = du.Y() * dv.Z() - du.Z() * dv.Y(), ny = du.Z() * dv.X() - du.X() * dv.Z(), nz = du.X() * dv.Y() - du.Y() * dv.X();
+  const nl = Math.hypot(nx, ny, nz);
+  if (!(nl > 1e-18)) return null;
+  const L = (duu.X() * nx + duu.Y() * ny + duu.Z() * nz) / nl;
+  const M = (duv.X() * nx + duv.Y() * ny + duv.Z() * nz) / nl;
+  const N = (dvv.X() * nx + dvv.Y() * ny + dvv.Z() * nz) / nl;
+  const H = (E * N - 2 * F * M + G * L) / (2 * den), K = (L * N - M * M) / den;
+  const s = Math.sqrt(Math.max(0, H * H - K));
+  return { H, K, k1: H + s, k2: H - s };
+}
+/** one face, sampled on its own UV box; `kMax` is the largest |κ| the surface has at those points */
+function s21mFace(R, oc, face, i, n) {
+  const { uMin, uMax, vMin, vMax } = face.UVBounds;
+  const surf = oc.BRep_Tool.Surface(face.wrapped);
+  let kMax = 0, hMax = 0, used = 0;
+  /* the samples sit at cell centres, never on the UV edge: a sphere's pole or a seam is a degenerate point of the
+     parametrisation, and a curvature read there would be about the parameterisation, not the surface */
+  for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) {
+    const u = uMin + (uMax - uMin) * ((a + 0.5) / n), v = vMin + (vMax - vMin) * ((b + 0.5) / n);
+    const q = s21mAt(oc, surf, u, v);
+    if (!q || !Number.isFinite(q.k1) || !Number.isFinite(q.k2)) continue;
+    used++; kMax = Math.max(kMax, Math.abs(q.k1), Math.abs(q.k2)); hMax = Math.max(hMax, Math.abs(q.H));
+  }
+  if (!used) throw new Error(`Face ${i + 1} (${face.geomType}) has no usable curvature at ${n}×${n} points: raise the samples.`);
+  return { i, type: face.geomType, area: R.measureArea(face), kMax, hMax, radius: kMax > 1e-9 ? 1 / kMax : Infinity, points: used };
+}
+/** every face of the body, with the summary the step writes; the body is not touched */
+function s21mCurvature(R, body, samples) {
+  if (!body) throw new Error('Curvature measures the faces of a body: build one first (a primitive, an Extrude or a Revolve).');
+  const oc = R.getOC();
+  if (!oc || !oc.BRep_Tool || typeof oc.BRep_Tool.Surface !== 'function') throw new Error('This kernel cannot hand out a face’s surface, so curvature cannot be measured.');
+  const n = s21mSamples(samples);
+  const faces = (body.faces || []).map((f, i) => s21mFace(R, oc, f, i, n));
+  const byType = {}; faces.forEach((f) => { byType[f.type] = (byType[f.type] || 0) + 1; });
+  const curved = faces.filter((f) => f.kMax > 1e-9), planar = faces.filter((f) => f.kMax <= 1e-9);
+  return { samples: n, faces, byType, planar: planar.length, curved: curved.length,
+    planeArea: planar.reduce((a, f) => a + f.area, 0), area: faces.reduce((a, f) => a + f.area, 0),
+    maxK: faces.reduce((a, f) => Math.max(a, f.kMax), 0),
+    minRadius: curved.length ? Math.min(...curved.map((f) => f.radius)) : Infinity };
+}
+/** the colour mesh: the kernel's own triangulation of every face, one |κ| value per vertex for the field shader */
+function s21mColorMesh(R, body, m) {
+  if (!body) throw new Error('The colour map needs the body whose faces were measured.');
+  body.mesh({ tolerance: S21M_TOL, angularTolerance: 0.2 });   /* meshing stores the triangulation on each face */
+  const positions = [], indices = [], vals = [], normals = [];
+  let base = 0;
+  (body.faces || []).forEach((face, i) => {
+    const tri = face.triangulation(S21M_TOL);
+    if (!tri || !tri.vertices || !tri.vertices.length) return;
+    const k = (m.faces[i] || { kMax: 0 }).kMax, N = tri.verticesNormals || [];
+    for (let j = 0; j < tri.vertices.length; j += 3) {
+      positions.push(tri.vertices[j], tri.vertices[j + 1], tri.vertices[j + 2]); vals.push(k);
+      /* the kernel's own vertex normals: a zebra stripe interpolated across a triangle needs them, a flat face
+         normal would paint each triangle one band and the stripes would look like blocks */
+      normals.push(N[j] || 0, N[j + 1] || 0, N[j + 2] || 0);
+    }
+    for (const t of tri.trianglesIndexes) indices.push(base + t);
+    base += tri.vertices.length / 3;
+  });
+  if (!indices.length) throw new Error('The kernel returned no triangles for this body, so there is nothing to colour.');
+  return { positions, indices, vals, normals, lo: 0, hi: m.maxK > 0 ? m.maxK : 1 };
+}
+/* ---- end S21m helpers ---- */
 
 /* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
  * Both are real OpenCascade geometry, never a polygon stand-in: the ellipse is two ellipse arcs, the closed spline is
@@ -9050,6 +9215,49 @@ function renderVarPanel(pr) {
   } }, L('Build fillet', 'Bangun fillet')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
   if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
 }
+/* S21m: the Curvature / Zebra panel. Nothing is picked: every B-rep face is measured, and the panel lists what the
+ * kernel measured for each one. The colours follow the step, so deleting or suppressing it takes them off. */
+function renderCurvPanel(pr, fsel) {
+  const isArm = !fsel, p = isArm ? partArm.p : fsel.p;
+  if (p.samples == null) p.samples = 5;
+  if (p.view == null) p.view = 'color';
+  if (p.stripes == null) p.stripes = 12;
+  const m = fsel ? fsel.curv : null;
+  pr.append(h('h2', null, h('span', null, L('Curvature / Zebra', 'Curvature / Zebra')), h('span', { class: 'phd' }, h('small', null, 'S21m'))));
+  if (!isArm) pr.append(h('div', { class: 'hint' }, h('b', null, `${partSel + 1}. ${featName(fsel)}`)));
+  pr.append(h('p', { class: 'hint' }, L('The kernel reads each face\u2019s own surface and takes the principal curvatures from its second derivatives: a plane is 0 and a cylinder of radius R is exactly 1/R. The part is then drawn on the kernel\u2019s own triangles, either as that |\u03ba| in colour or as zebra: a striped environment reflected off the kernel\u2019s own normals, where a stripe that bends is a surface that bends. The legend names what is shown; nothing is approximated from a mesh and the body does not change.',
+    'Kernel membaca permukaan tiap muka sendiri dan mengambil kelengkungan utamanya dari turunan kedua: bidang datar 0 dan silinder berjari-jari R tepat 1/R. Part lalu digambar di atas segitiga kernel sendiri, entah sebagai |\u03ba| dalam warna atau sebagai zebra: lingkungan bergaris yang dipantulkan normal kernel sendiri, di mana garis yang membelok berarti permukaan yang membelok. Legendanya menyebut yang ditampilkan; tidak ada yang didekati dari mesh dan body tidak berubah.')));
+  if (fsel && fsel.err) pr.append(h('div', { class: 'warnbox bad' }, h('b', null, L('This step failed', 'Langkah ini gagal')), h('div', null, fsel.err)));
+  if (fsel && fsel.note) pr.append(h('p', { class: 'hint' }, fsel.note));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Samples per face side', 'Sampel per sisi muka')),
+    h('span', { class: 'pnum' }, h('input', { type: 'number', min: 2, max: 15, step: 1, 'data-k': 'samples', value: p.samples, oninput: (e) => { p.samples = e.target.value; } }), h('em', null, '×'))));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Display', 'Tampilan')),
+    h('span', { class: 'pnum' }, h('select', { 'data-k': 'view', onchange: (e) => { p.view = e.target.value; renderCad(); } },
+      [['color', L('Colour by |κ|', 'Warna |κ|')], ['zebra', L('Zebra (reflection lines)', 'Zebra (garis refleksi)')]]
+        .map(([v, t]) => h('option', { value: v, selected: (p.view || 'color') === v }, t))))));
+  if ((p.view || 'color') === 'zebra') pr.append(h('label', { class: 'skrow' }, h('span', null, L('Zebra stripes', 'Garis zebra')),
+    h('span', { class: 'pnum' }, h('input', { type: 'number', min: 2, max: 60, step: 1, 'data-k': 'stripes', value: p.stripes, oninput: (e) => { p.stripes = e.target.value; } }))));
+  if (m) {
+    pr.append(h('h3', null, L('Measured faces', 'Muka terukur') + ` (${m.faces.length})`));
+    pr.append(h('table', { class: 'cutlist' },
+      h('tr', null, h('th', null, '#'), h('th', null, L('Surface', 'Permukaan')), h('th', null, L('Area', 'Luas')), h('th', { title: L('Largest |\u03ba| at the sampled points, 1/mm', '|\u03ba| terbesar di titik sampel, 1/mm') }, '|κ| max'), h('th', null, L('Radius', 'Radius'))),
+      m.faces.slice(0, 40).map((x) => h('tr', null, h('td', null, String(x.i + 1)), h('td', null, x.type), h('td', null, f(x.area, 1) + ' mm²'),
+        h('td', null, f(x.kMax, 4)), h('td', null, Number.isFinite(x.radius) ? f(x.radius, 2) + ' mm' : '∞'))),
+      m.faces.length > 40 ? h('tr', null, h('td', { colspan: 5 }, L(`… ${m.faces.length - 40} more faces, all in the colour map`, `… ${m.faces.length - 40} muka lagi, semuanya ada di peta warna`))) : null));
+    pr.append(h('p', { class: 'hint' }, L(`${m.planar} planar (κ = 0) and ${m.curved} curved of ${m.faces.length} faces; the largest |κ| is ${f(m.maxK, 4)} 1/mm${Number.isFinite(m.minRadius) ? `, a radius of ${f(m.minRadius, 3)} mm` : ''}.`, `${m.planar} datar (κ = 0) dan ${m.curved} lengkung dari ${m.faces.length} muka; |κ| terbesar ${f(m.maxK, 4)} 1/mm${Number.isFinite(m.minRadius) ? `, radius ${f(m.minRadius, 3)} mm` : ''}.`)));
+    const feats = state.part ? state.part.features : [];
+    let last = -1; feats.forEach((f2, i) => { if (!f2.off) last = i; });
+    if (feats.indexOf(fsel) !== last) pr.append(h('p', { class: 'hint' }, L('A later step changes the body, so the colours are not drawn. Put this step last (delete it and add it again) to see them.', 'Ada langkah setelah ini yang mengubah body, jadi warnanya tidak digambar. Taruh langkah ini paling akhir (hapus lalu tambahkan lagi) untuk melihatnya.')));
+  }
+  if (isArm) pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-curv-go': '1', onclick: () => {
+    if (!partShape) { partArm.note = L('Build a body first: curvature measures its faces.', 'Bangun body dulu: curvature mengukur muka-mukanya.'); return renderCad(); }
+    state.part.features.push({ id: Date.now().toString(36), type: 'curv', p: { samples: +(partArm.p.samples || 5) } });
+    partSel = state.part.features.length - 1; partArm = null; rebuildPart();
+  } }, L('Measure & colour', 'Ukur & warnai')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
+  else pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-curv-update': '1', onclick: () => { fsel.p = { ...fsel.p, samples: +(fsel.p.samples || 5) }; rebuildPart(); } }, L('Update & rebuild', 'Perbarui & bangun ulang')),
+    h('button', { class: 'chip', onclick: () => { partSel = null; renderCad(); setLpTab('tree'); } }, L('Close', 'Tutup'))));
+  if (isArm && partArm.note) pr.append(h('div', { class: 'warnbox' }, partArm.note));
+}
 { const cv = $('#cv');
   cv.addEventListener('pointerdown', (e) => {
     if (!partArm || partBusy || e.button > 0) return;
@@ -9497,6 +9705,8 @@ function renderPartCad() {
   else if (partArm && partArm.type === 'delface') { renderDelPanel(pr); }
   else if (partArm && (partArm.type === 'surfbound' || partArm.type === 'boundboss')) { renderBoundPanel(pr); }
   else if (partArm && partArm.type === 'vfillet') { renderVarPanel(pr); }
+  else if (partArm && partArm.type === 'curv') { renderCurvPanel(pr); }
+  else if (fsel && fsel.type === 'curv') { renderCurvPanel(pr, fsel); }
   else if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
       h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : (TOOL_GROUPS.find((g) => g[0] === partArm.type) || [null, null, ''])[2]),
@@ -9853,7 +10063,7 @@ const RIBBON = [
       T('Design for Manufacturing', 'dfm', 'gb', 'Tool access, wall thickness, standard parts.', 'Akses pahat, tebal dinding, part standar.', 'DFMXpress, Manufacturability', 'gbCheck', ALT_GB),
       T('Draft Analysis', 'draft', 'on', 'Share of the surface with less than 1° draft to the pull direction (+Z), for casting.', 'Porsi permukaan dengan draft kurang dari 1° terhadap arah tarik (+Z), untuk pengecoran.', '', 'dfmDraft'),
       T('Thickness Analysis', 'thick', 'no', 'Find thin and thick regions.', 'Temukan bagian tipis dan tebal.', 'Wall Thickness'),
-      T('Curvature / Zebra', 'curv', 'no', 'Surface quality.', 'Kualitas surface.', 'Zebra Stripes')]]]],
+      T('Curvature / Zebra', 'curv', 'on', 'Measure every B-rep face\u2019s own surface in the kernel and show it on the kernel\u2019s own triangles, either as its largest |\u03ba| in colour (a plane is 0, a cylinder of radius R is exactly 1/R) or as zebra reflection lines on the kernel\u2019s own normals. The legend names what is shown, the panel lists what each face measured, and the step does not change the body.', 'Ukur permukaan tiap muka B-rep di kernel dan tampilkan di atas segitiga kernel sendiri, entah sebagai |\u03ba| terbesarnya dalam warna (bidang datar 0, silinder berjari-jari R tepat 1/R) atau sebagai garis refleksi zebra di atas normal kernel sendiri. Legendanya menyebut yang ditampilkan, panelnya mendaftar hasil ukur tiap muka, dan langkahnya tidak mengubah body.', 'Zebra Stripes', { part: 'curv' })]]]],
   ['sim', 'Simulation · FEA', 'Simulasi · FEA', [
     ['Gearbox (solver)', [T('Gear Rating ISO 6336', 'gear', 'gb', 'Bending and contact safety of the gears.', 'Keamanan bending dan kontak gear.', 'KISSsoft, Romax', 'gbCheck', ALT_GB),
       T('Static Stress (FEA)', 'fea', 'on', 'Static stress of the open part (Part Stress, solver), or the gearbox housing check. The solver used is named in the result.', 'Tegangan statik part yang terbuka (Part Stress, solver), atau cek housing gearbox. Solver yang dipakai ditulis di hasil.', 'Static, Linear Stress', 'stressAny'),
