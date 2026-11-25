@@ -87,7 +87,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 
 | Tool | State | What the code has | What is missing | Batch |
 | --- | --- | --- | --- | --- |
-| Curvature / Zebra | `on` | every face's own surface is sampled with `BRep_Tool.Surface` + `Geom_Surface.D2` and the principal curvatures come from the first and second fundamental forms; the step records each face's largest \|κ\|, its radius and area, and the part is drawn with those values as colour on the kernel's own triangles | a reflection-line (zebra) shader: today the quantity is colour, not stripes. The curvature itself is measured, not shaded | 11 |
+| Curvature / Zebra | `on` | every face's own surface is sampled with `BRep_Tool.Surface` + `Geom_Surface.D2` and the principal curvatures come from the first and second fundamental forms; the step records each face's largest \|κ\|, its radius and area, and the part is drawn on the kernel's own triangles either as that value in colour or as zebra reflection lines on the kernel's own normals | — (both displays shipped) | 11 |
 | Edit Sizes on the Model | `gb` | the gearbox solver rebuilds and re-checks | nothing for a part: it is **by design** gearbox-only. A part is edited through its feature tree (edit the step, rebuild), which is the honest path; the grey button says "for gearbox designs" and offers the gearbox demo. Keep this restriction | — (keep) |
 
 ### Manage
@@ -318,9 +318,13 @@ surface (`BRep_Tool.Surface`) on its UV box with `D2` and takes the principal cu
 fundamental forms: `H = (E·N − 2F·M + G·L)/(2(EG − F²))`, `K = (L·N − M²)/(EG − F²)`, `κ1,2 = H ± √(H² − K)`. The
 samples sit at cell centres, never on the UV edge, because a sphere's pole is a degenerate point of the
 parametrisation and a curvature read there would describe the parameterisation, not the surface. The step records
-every face's type, area, largest |κ| and radius, and does not change the body. The part is then drawn with each
-face's largest |κ| as colour through the same field shader the stress plot uses, on the kernel's own triangulation of
-that face, and the legend names the quantity (`Max |κ| per face (1/mm)`) and counts the planar and curved faces.
+every face's type, area, largest |κ| and radius, and does not change the body. The part is then drawn through the
+same field shader the stress plot uses, on the kernel's own triangulation of that face, in one of two displays the
+step keeps: **colour** by that face's largest |κ| (legend `Max |κ| per face (1/mm)`, with the planar/curved counts),
+or **zebra** — a striped environment reflected off the kernel's own triangle normals, so a stripe that bends is a
+surface that bends (legend `Zebra · reflection lines`, `N stripes`, 2 to 60). The normals come back from view space
+with the view rotation's transpose, and the stripe is the longitude of the reflection vector, so the lines move with
+the camera the way a reflected environment does.
 
 Measured with kernel test `tests/s21m-curvature.test.mjs` (11 checks): a cylinder Ø20 × 20 reports exactly 0.1 1/mm
 (1/R) on its wall and 0 on both caps, with the kernel areas 1256.64 mm² and 628.32 mm²; a box is six planar faces and
@@ -329,10 +333,13 @@ tolerance there is 1e-6 rather than 1e-9); a tube's inner wall reports 1/6 which
 fillet leaves four cylindrical faces at exactly 1/5, the radius the kernel rolled; the colour mesh carries one value
 per vertex of the kernel's triangles with `hi` = the largest |κ|; the step leaves a 24 000 mm³ box unchanged; a step
 with no body, 1 sample, 99 samples or a non-number is refused with the value it read; and a rebuild gives the same
-numbers. Browser test `tests/s21m-curvature.spec.mjs` (6 checks) builds the cylinder, presses Measure & colour, reads
-3 faces (1 × CYLINDRE at 0.1000 1/mm, 2 × PLANE at 0.0000, radius 10.000 mm) from the step, the panel table and the
-legend, checks the colour field is on with the legend naming the quantity, and checks that suppressing the step and
-deleting it take the colours off while the body stays at 6 283.19 mm³ — with no page error.
+numbers. Browser test `tests/s21m-curvature.spec.mjs` (10 checks) builds the cylinder, presses Measure & colour,
+reads 3 faces (1 × CYLINDRE at 0.1000 1/mm, 2 × PLANE at 0.0000, radius 10.000 mm) from the step, the panel table and
+the legend, checks the colour field is on with the legend naming the quantity, switches Display to Zebra and checks
+the shader's `uZebra`/`uStripes`/`uEye`/`uViewR` uniforms, the 12-stripe legend, the mode kept on the step and that the
+canvas pixels changed (a Playwright screenshot of the canvas, compared before and after), switches back to Colour and
+checks the |κ| legend and different pixels again, then checks that suppressing the step and deleting it take the
+displays off while the body stays at 6 283.19 mm³ — with no page error.
 
 **One measured detail worth keeping:** `Geom_Surface.D2` takes its outputs in OCCT's order — `D2(U, V, P, D1U, D1V,
 D2U, D2V, D2UV)`. Reading the last two swapped is invisible on a cylinder (both cross terms are 0) and shows up as a

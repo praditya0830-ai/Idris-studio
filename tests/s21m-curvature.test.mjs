@@ -119,6 +119,13 @@ await check('the colour mesh carries one |\u03ba| per vertex of the kernel\u2019
   eq(cm.hi, 0.1, 1e-9, 'the colour scale ends at the largest |\u03ba|');
   const set = new Set(cm.vals.map((v) => Number(v.toFixed(6))));
   ok(set.has(0.1) && set.has(0), 'the colour mesh does not carry both the wall and the flat caps: ' + JSON.stringify([...set]));
+  /* the kernel's own vertex normals ride with the mesh: the zebra stripes are interpolated across a triangle, so a
+     flat per-triangle normal would paint each triangle one band */
+  ok(cm.normals.length === cm.positions.length, `one normal per vertex expected: ${cm.normals.length} for ${cm.positions.length / 3} vertices`);
+  for (let i = 0; i < cm.normals.length; i += 3) {
+    const l = Math.hypot(cm.normals[i], cm.normals[i + 1], cm.normals[i + 2]);
+    ok(Math.abs(l - 1) < 1e-3, 'a vertex normal is not unit length: ' + l);
+  }
   /* every vertex sits on the cylinder or on a cap: neither is invented geometry */
   for (let i = 0; i < cm.positions.length; i += 3) {
     const r = Math.hypot(cm.positions[i], cm.positions[i + 1]);

@@ -8,9 +8,12 @@
  *      with a radius of 10.000 mm — the kernel's numbers, on the step and in the panel's table;
  *   4. the part is drawn with that measurement: the field is on, the colour attribute exists, and the legend names
  *      the quantity (max |κ| per face, 1/mm) and says how many faces are planar and curved;
- *   5. suppressing the step takes the colours and the legend off without changing the body; turning it back on puts
+ *   5. switching the step's Display to Zebra puts the viewer in 12-stripe mode on the same measured mesh: the shader
+ *      has its uniforms, the legend says "Zebra" and "12 stripes", the step keeps the mode, and the canvas pixels
+ *      change; switching back to Colour brings the |κ| scale and different pixels again;
+ *   6. suppressing the step takes the colours and the legend off without changing the body; turning it back on puts
  *      them back; deleting it leaves the cylinder at 6 283.19 mm³ and no colours;
- *   6. no page error at any point.
+ *   7. no page error at any point.
  *
  *   BASE_URL=http://127.0.0.1:3051/index.html node tests/s21m-curvature.spec.mjs
  */
@@ -105,6 +108,48 @@ await checkAsync('the panel lists what each face measured', async () => {
   ok(t, 'the selected step shows no face table');
   ok(/CYLINDRE/.test(t) && (t.match(/PLANE/g) || []).length === 2, 'the table does not list the face types: ' + JSON.stringify(t));
   ok(/0\.1000/.test(t) && /10\.00 mm/.test(t), 'the table does not carry the radius or the curvature: ' + JSON.stringify(t));
+});
+
+console.log('\nZebra: reflection lines from the same measurement');
+await checkAsync('switching the step to Zebra draws stripes and the legend says so', async () => {
+  const before = await page.locator('#cv').screenshot();
+  await page.evaluate(() => { const s = document.querySelector('#cadProps select[data-k="view"]'); s.value = 'zebra'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForTimeout(300);
+  const hasStripes = await page.evaluate(() => !!document.querySelector('#cadProps input[data-k="stripes"]'));
+  ok(hasStripes, 'the zebra mode has no stripe count field');
+  await page.evaluate(() => { const i = document.querySelector('#cadProps input[data-k="stripes"]'); i.value = '12'; i.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.evaluate(() => document.querySelector('#cadProps [data-curv-update]').click());
+  await page.waitForFunction(() => window.__idris.viewer.zebra && window.__idris.viewer.zebra.on === true, null, { timeout: 120000 });
+  await page.waitForTimeout(2500);
+  const v = await view();
+  ok(v.fieldOn && v.hasScalar, 'zebra is on without the measured mesh behind it');
+  const z = await page.evaluate(() => ({ on: window.__idris.viewer.zebra.on, stripes: window.__idris.viewer.zebra.stripes,
+    uZebra: !!window.__idris.viewer.gl.getUniformLocation(window.__idris.viewer.pField, 'uZebra'),
+    uStripes: !!window.__idris.viewer.gl.getUniformLocation(window.__idris.viewer.pField, 'uStripes'),
+    uEye: !!window.__idris.viewer.gl.getUniformLocation(window.__idris.viewer.pField, 'uEye'),
+    uViewR: !!window.__idris.viewer.gl.getUniformLocation(window.__idris.viewer.pField, 'uViewR') }));
+  ok(z.on === true && z.stripes === 12, 'the viewer is not in 12-stripe zebra: ' + JSON.stringify(z));
+  ok(z.uZebra && z.uStripes && z.uEye && z.uViewR, 'a zebra uniform is missing from the shader: ' + JSON.stringify(z));
+  ok(/Zebra/.test(v.legend) && /12 stripes/.test(v.legend), 'the legend does not name the zebra mode: ' + JSON.stringify(v.legend));
+  const st = await stepAt(1);
+  ok(st.p.view === 'zebra' && Number(st.p.stripes) === 12, 'the step did not keep the display mode: ' + JSON.stringify(st.p));
+  const after = await page.locator('#cv').screenshot();
+  ok(Buffer.compare(before, after) !== 0, 'the picture did not change when zebra was switched on');
+});
+
+await checkAsync('switching back to colour draws the |\u03ba| scale again', async () => {
+  const zebraShot = await page.locator('#cv').screenshot();
+  await page.evaluate(() => { const s = document.querySelector('#cadProps select[data-k="view"]'); s.value = 'color'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => document.querySelector('#cadProps [data-curv-update]').click());
+  await page.waitForFunction(() => window.__idris.viewer.zebra && window.__idris.viewer.zebra.on === false, null, { timeout: 120000 });
+  await page.waitForTimeout(2500);
+  const v = await view();
+  ok(v.fieldOn, 'the field went off when the colour scale came back');
+  ok(/1\/mm/.test(v.legend), 'the colour legend did not come back: ' + JSON.stringify(v.legend));
+  const shot = await page.locator('#cv').screenshot();
+  ok(Buffer.compare(shot, zebraShot) !== 0, 'the picture did not change when the colour scale came back');
+  ok(v.legendHidden === false, 'the legend is hidden in colour mode');
 });
 
 console.log('\nThe colours follow the step');
