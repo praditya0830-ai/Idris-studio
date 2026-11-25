@@ -87,7 +87,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 
 | Tool | State | What the code has | What is missing | Batch |
 | --- | --- | --- | --- | --- |
-| Curvature / Zebra | `no` | face normals and areas; the viewer draws B-rep faces | per-face curvature (`BRepLProp_SLProps`) and a reflection-line shader. The measurement is a kernel job, the stripes are a render job | 11 |
+| Curvature / Zebra | `on` | every face's own surface is sampled with `BRep_Tool.Surface` + `Geom_Surface.D2` and the principal curvatures come from the first and second fundamental forms; the step records each face's largest \|κ\|, its radius and area, and the part is drawn with those values as colour on the kernel's own triangles | a reflection-line (zebra) shader: today the quantity is colour, not stripes. The curvature itself is measured, not shaded | 11 |
 | Edit Sizes on the Model | `gb` | the gearbox solver rebuilds and re-checks | nothing for a part: it is **by design** gearbox-only. A part is edited through its feature tree (edit the step, rebuild), which is the honest path; the grey button says "for gearbox designs" and offers the gearbox demo. Keep this restriction | — (keep) |
 
 ### Manage
@@ -263,8 +263,9 @@ free boundary loops), `BRep_Builder`, `TopExp` (only `TopExp_Explorer` is export
 
 That changes two things in this backlog: Boundary/Filled Surface (batch 6) and Variable Fillet (batch 7) can be
 written against `R.getOC()` without a new WASM build, and Curvature/Zebra (batch 11) has to measure curvature from
-`BRepAdaptor_Surface` (its `D2`/`DN` derivatives) instead of the missing `LProp` classes, or wait for a kernel
-rebuild. Every tool still has to pass the same five rules at the top of this document.
+`BRep_Tool.Surface` and the surface's own `D2` derivatives instead of the missing `LProp` classes, or wait for a
+kernel rebuild. That is what batch 11 does (shipped): no new WASM build was needed. Every tool still has to pass the
+same five rules at the top of this document.
 
 ### Batch 7 — Variable Fillet (shipped), Wrap/Emboss and Text (still blocked)
 
@@ -310,10 +311,32 @@ Model the joint as a cope on the member, not a boolean on the walls. Acceptance:
 at a corner gives **one** solid per member with the cope cut, not four separate solids, and the cut list keeps its
 two rows.
 
-### Batch 11 — Curvature / Zebra
+### Batch 11 — Curvature / Zebra (shipped)
 
-Measure curvature on each face (`BRepLProp_SLProps`) and draw it as colour or reflection lines. Acceptance: a
-cylinder reports 1/R everywhere within tolerance, a plane reports 0, and the view says which quantity it shows.
+**Shipped as colour, measured per face.** Evaluate → Analysis → Curvature / Zebra samples each B-rep face's own
+surface (`BRep_Tool.Surface`) on its UV box with `D2` and takes the principal curvatures from the first and second
+fundamental forms: `H = (E·N − 2F·M + G·L)/(2(EG − F²))`, `K = (L·N − M²)/(EG − F²)`, `κ1,2 = H ± √(H² − K)`. The
+samples sit at cell centres, never on the UV edge, because a sphere's pole is a degenerate point of the
+parametrisation and a curvature read there would describe the parameterisation, not the surface. The step records
+every face's type, area, largest |κ| and radius, and does not change the body. The part is then drawn with each
+face's largest |κ| as colour through the same field shader the stress plot uses, on the kernel's own triangulation of
+that face, and the legend names the quantity (`Max |κ| per face (1/mm)`) and counts the planar and curved faces.
+
+Measured with kernel test `tests/s21m-curvature.test.mjs` (11 checks): a cylinder Ø20 × 20 reports exactly 0.1 1/mm
+(1/R) on its wall and 0 on both caps, with the kernel areas 1256.64 mm² and 628.32 mm²; a box is six planar faces and
+0 everywhere; a sphere R5 reports 0.2 1/mm to 2e-8 (the kernel's spherical surface carries that round-off, so the
+tolerance there is 1e-6 rather than 1e-9); a tube's inner wall reports 1/6 whichever way its face is oriented; a 5 mm
+fillet leaves four cylindrical faces at exactly 1/5, the radius the kernel rolled; the colour mesh carries one value
+per vertex of the kernel's triangles with `hi` = the largest |κ|; the step leaves a 24 000 mm³ box unchanged; a step
+with no body, 1 sample, 99 samples or a non-number is refused with the value it read; and a rebuild gives the same
+numbers. Browser test `tests/s21m-curvature.spec.mjs` (6 checks) builds the cylinder, presses Measure & colour, reads
+3 faces (1 × CYLINDRE at 0.1000 1/mm, 2 × PLANE at 0.0000, radius 10.000 mm) from the step, the panel table and the
+legend, checks the colour field is on with the legend naming the quantity, and checks that suppressing the step and
+deleting it take the colours off while the body stays at 6 283.19 mm³ — with no page error.
+
+**One measured detail worth keeping:** `Geom_Surface.D2` takes its outputs in OCCT's order — `D2(U, V, P, D1U, D1V,
+D2U, D2V, D2UV)`. Reading the last two swapped is invisible on a cylinder (both cross terms are 0) and shows up as a
+wrong, negative Gaussian curvature on a sphere. The sphere in the test is there to catch exactly that.
 
 ### Not scheduled
 
@@ -331,7 +354,7 @@ cylinder reports 1/R everywhere within tolerance, a plane reports 0, and the vie
 | trim/split on shells | `BRepAlgoAPI_Splitter` on a face (used by Trim Surface); not on a shell with another shell | Split |
 | heal / remove face | no `ShapeFix_Shape` (the master healer) and no `BRepTools_ReShape`; `ShapeFix_Face`, `ShapeFix_Wire`, `ShapeFix_Solid`, `ShapeUpgrade_UnifySameDomain`, `TopExp_Explorer`, `BRepCheck_Analyzer` and `BRepTools.OuterWire` are exported, and Delete Face patches the opening with `BRepOffsetAPI_MakeFilling` + `BRepBuilderAPI_Sewing` instead of extending neighbours; `BRepOffsetAPI_MakeThickSolid` is exported but it will not thicken an open patch (it returns a single face of zero volume), which is why Boundary Boss/Base offsets the patch and lofts its own walls | — |
 | projection of a sketch onto a face | no | Wrap/Emboss, Text |
-| curvature at a point on a face | no `BRepLProp_SLProps` and no `GeomLProp_SLProps`, but `BRep_Tool.Surface` is exported and `Geom_Surface` carries `D0/D1/D2/D3/DN`, so curvature is measurable from the second derivatives without a kernel rebuild | Curvature / Zebra |
+| curvature at a point on a face | no `BRepLProp_SLProps` and no `GeomLProp_SLProps`, but `BRep_Tool.Surface` is exported and `Geom_Surface` carries `D0/D1/D2/D3/DN`, so the principal curvatures are measured from the second derivatives (used by Curvature / Zebra; `D2` returns `D2U, D2V, D2UV` in that order) | — |
 | cope on a hollow section | no | Weldments Trim/Extend |
 | fold model with material on one side | no (sector model) | Hem, Jog |
 | named plane / axis as a sketch host | no (strings + offset) | Reference Plane/Axis, Curve/Fill Pattern |
