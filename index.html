@@ -6555,7 +6555,7 @@ const S = (k, en, id, opts, def, extra = {}) => ({ k, en, id, opts, def, t: 'sel
 const TX = (k, en, id, def, extra = {}) => ({ k, en, id, def, t: 'txt', ...extra });
 const OPS = [['add', ['Add', 'Tambah']], ['cut', ['Cut', 'Potong']]];
 const PLANES = [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]];
-const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', gusset: 'gusset', weld: 'weld', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim' };
+const FEAT_ICON = { shape: 'box', sketch: 'rect', push: 'ext', hole: 'hole', edge: 'fillet', repeat: 'lpat', revolve: 'rev', sweep: 'sweep', loft: 'loft', rib: 'rib', thread: 'thread', member: 'ext', endcap: 'shell', gusset: 'gusset', weld: 'weld', mold: 'move', parting: 'split', shutoff: 'fill', shrink: 'scale', draft: 'draft', wall: 'shell', bodies: 'move', dim: 'dim', scale: 'scale' };
 /* ---- P1d: welded frames. Two numbers on every row come from its standard's table: A (mm²) and the mass
  * per metre (kg/m). The kernel builds a SIMPLIFIED section — sharp corners, no corner or root radius — so its
  * area and the table area differ; the difference is shown, never hidden. No table value is guessed: a size
@@ -6739,6 +6739,20 @@ function weldGussetSolid(R, k, prof, lg, lh, t, at) {
   const w = weldWidth(prof), f = weldFaceCorner(k, w);
   return weldTriSolid(R, [f.p, [f.p[0] + k.u[0] * lg, f.p[1] + k.u[1] * lg], [f.p[0] + k.v[0] * lh, f.p[1] + k.v[1] * lh]], at + w / 2, t);
 }
+/** the reference planes already defined above, as options for a sketch's Plane field */
+function refPlaneOptions() {
+  const fs = (typeof state !== 'undefined' && state.part && state.part.features) || [];
+  return fs.filter((f) => f && f.type === 'refplane').map((f) => [f.id, [FEAT.refplane.label(f.p), FEAT.refplane.label(f.p)]]);
+}
+/** the axes and coordinate systems already defined, as options for Revolve / Repeat */
+function refAxisOptions() {
+  const fs = (typeof state !== 'undefined' && state.part && state.part.features) || [];
+  return fs.filter((f) => f && f.type === 'refaxis').map((f) => [f.id, [FEAT.refaxis.label(f.p), FEAT.refaxis.label(f.p)]]);
+}
+function refCsysOptions() {
+  const fs = (typeof state !== 'undefined' && state.part && state.part.features) || [];
+  return [['', [L('The values below', 'Nilai di bawah')]]].concat(fs.filter((f) => f && f.type === 'csys').map((f) => [f.id, [FEAT.csys.label(f.p), FEAT.csys.label(f.p)]]));
+}
 const FEAT = {
   shape: { en: 'Shape', id: 'Shape', fields: [S('kind', 'Shape', 'Bentuk', [['box', ['Box', 'Balok']], ['cyl', ['Cylinder', 'Silinder']], ['tube', ['Tube', 'Tabung']], ['sphere', ['Sphere', 'Bola']]], 'box'),
       N('L', 'Length X', 'Panjang X', 'mm', 100, { show: (p) => p.kind === 'box' }), N('W', 'Width Y', 'Lebar Y', 'mm', 60, { show: (p) => p.kind === 'box' }),
@@ -6746,15 +6760,17 @@ const FEAT = {
       N('H', 'Height Z', 'Tinggi Z', 'mm', 20, { show: (p) => p.kind !== 'sphere' }),
       N('x', 'Centre X', 'Pusat X', 'mm', 0), N('y', 'Centre Y', 'Pusat Y', 'mm', 0), N('z', 'Base Z', 'Dasar Z', 'mm', 0), S('op', 'With the body', 'Terhadap body', OPS, 'add', { first: false })],
     label: (p) => ({ box: `${L('Box', 'Balok')} ${p.L}×${p.W}×${p.H}`, cyl: `${L('Cylinder', 'Silinder')} Ø${p.D}×${p.H}`, tube: `${L('Tube', 'Tabung')} Ø${p.D}/Ø${p.Di}×${p.H}`, sphere: `${L('Sphere', 'Bola')} Ø${p.D}` }[p.kind]) },
-  sketch: { en: 'Sketch', id: 'Sketch', fields: [S('prof', 'Profile', 'Profil', [['rect', ['Rectangle', 'Persegi panjang']], ['circle', ['Circle', 'Lingkaran']], ['slot', ['Slot', 'Slot']], ['poly', ['Polygon', 'Poligon']], ['ellipse', ['Ellipse', 'Elips']], ['spline', ['Closed spline through points', 'Spline tertutup melalui titik']], ['ents', ['Lines & arcs (interactive)', 'Garis & busur (interaktif)']]], 'rect'),
+  sketch: { en: 'Sketch', id: 'Sketch', get fields() {
+      const base = [S('prof', 'Profile', 'Profil', [['rect', ['Rectangle', 'Persegi panjang']], ['circle', ['Circle', 'Lingkaran']], ['slot', ['Slot', 'Slot']], ['poly', ['Polygon', 'Poligon']], ['ellipse', ['Ellipse', 'Elips']], ['spline', ['Closed spline through points', 'Spline tertutup melalui titik']], ['ents', ['Lines & arcs (interactive)', 'Garis & busur (interaktif)']]], 'rect'),
       N('W', 'Width', 'Lebar', 'mm', 30, { show: (p) => p.prof === 'rect' || p.prof === 'slot' }), N('Hh', 'Height', 'Tinggi', 'mm', 20, { show: (p) => p.prof === 'rect' || p.prof === 'slot' }),
       N('D', 'Diameter', 'Diameter', 'mm', 20, { show: (p) => p.prof === 'circle' || p.prof === 'poly' || p.prof === 'ellipse' }), N('n', 'Sides', 'Jumlah sisi', '', 6, { show: (p) => p.prof === 'poly', step: 1, min: 3 }),
       /* S21: the ellipse is the major (D) and minor (d) diameter the kernel draws; the spline is the closed curve
          through the points typed here, one point per `x,y`, separated by `;` or a new line. */
       N('d', 'Minor diameter', 'Diameter kecil', 'mm', 10, { show: (p) => p.prof === 'ellipse', min: 0.1 }),
       TX('pts', 'Points (x,y; x,y; …)', 'Titik (x,y; x,y; …)', '0,20; 20,0; 0,-20; -20,0', { show: (p) => p.prof === 'spline' }),
-      S('plane', 'Plane', 'Bidang', PLANES, 'XY'), S('at', 'Place on', 'Letakkan di', [['top', ['Top of the body', 'Atas body']], ['value', ['Offset value', 'Nilai offset']]], 'top', { show: (p) => p.plane === 'XY' }),
-      N('off', 'Offset along the normal', 'Offset searah normal', 'mm', 0, { show: (p) => p.plane !== 'XY' || p.at === 'value' }), N('u', 'Centre (1st axis)', 'Pusat (sumbu 1)', 'mm', 0), N('v', 'Centre (2nd axis)', 'Pusat (sumbu 2)', 'mm', 0)],
+      S('plane', 'Plane', 'Bidang', [...PLANES, ...refPlaneOptions()], 'XY'), S('at', 'Place on', 'Letakkan di', [['top', ['Top of the body', 'Atas body']], ['value', ['Offset value', 'Nilai offset']]], 'top', { show: (p) => p.plane === 'XY' }),
+      N('off', 'Offset along the normal', 'Offset searah normal', 'mm', 0, { show: (p) => p.plane !== 'XY' || p.at === 'value' }), N('u', 'Centre (1st axis)', 'Pusat (sumbu 1)', 'mm', 0), N('v', 'Centre (2nd axis)', 'Pusat (sumbu 2)', 'mm', 0)];
+      return base; },
     label: (p) => p.prof === 'ents' ? `${(p.ents || []).length} ${L('entities', 'entitas')} · ${p.plane}` : p.prof === 'spline' ? `${L('Spline', 'Spline')} ${s21SplinePts(p.pts).length} ${L('points', 'titik')} · ${p.plane}` : `${{ rect: `${L('Rectangle', 'Persegi')} ${p.W}×${p.Hh}`, circle: `${L('Circle', 'Lingkaran')} Ø${p.D}`, slot: `Slot ${p.W}×${p.Hh}`, poly: `${p.n}-${L('gon', 'gon')} Ø${p.D}`, ellipse: `${L('Ellipse', 'Elips')} Ø${p.D}×${p.d}` }[p.prof]} · ${p.plane}` },
   push: { en: 'Push/Pull', id: 'Push/Pull', fields: [N('dist', 'Distance (negative = other side)', 'Jarak (negatif = arah sebaliknya)', 'mm', 10, { min: -2000 }), S('op', 'Result', 'Hasil', OPS, 'add'), S('both', 'Direction', 'Arah', [['one', ['One side', 'Satu sisi']], ['both', ['Both sides (symmetric)', 'Dua sisi (simetris)']]], 'one')],
     label: (p) => `${p.op === 'cut' ? L('Cut', 'Potong') : L('Extrude', 'Tarik')} ${p.dist} mm${p.both === 'both' ? ' ⇅' : ''}` },
@@ -6773,7 +6789,8 @@ const FEAT = {
       N('count', 'Count (incl. the first)', 'Jumlah (termasuk yang pertama)', '', 4, { step: 1, min: 2, show: (p) => p.kind !== 'mirror' }),
       N('dx', 'Step X', 'Jarak X', 'mm', 20, { show: (p) => p.kind === 'line' }), N('dy', 'Step Y', 'Jarak Y', 'mm', 0, { show: (p) => p.kind === 'line' }),
       N('cx', 'Centre X', 'Pusat X', 'mm', 0, { show: (p) => p.kind === 'circle' }), N('cy', 'Centre Y', 'Pusat Y', 'mm', 0, { show: (p) => p.kind === 'circle' }),
-      S('plane', 'Mirror plane', 'Bidang cermin', [['YZ', ['YZ (left ↔ right)', 'YZ (kiri ↔ kanan)']], ['XZ', ['XZ (front ↔ back)', 'XZ (depan ↔ belakang)']]], 'YZ', { show: (p) => p.kind === 'mirror' })],
+      S('plane', 'Mirror plane', 'Bidang cermin', [['YZ', ['YZ (left ↔ right)', 'YZ (kiri ↔ kanan)']], ['XZ', ['XZ (front ↔ back)', 'XZ (depan ↔ belakang)']]], 'YZ', { show: (p) => p.kind === 'mirror' }),
+      S('ref', 'Centre from', 'Pusat dari', refCsysOptions(), '', { show: (p) => p.kind === 'circle' })],
     label: (p) => p.kind === 'mirror' ? `${L('Mirror', 'Cermin')} ${p.plane}` : p.kind === 'line' ? `${p.count}× ${L('line', 'garis')} ${p.dx}, ${p.dy}` : `${p.count}× ${L('circle', 'lingkaran')}` },
   wall: { en: 'Wall', id: 'Wall', fields: [N('t', 'Wall thickness', 'Tebal dinding', 'mm', 2, { min: 0.2 }), S('open', 'Open face', 'Sisi terbuka', [['top', ['Top', 'Atas']], ['bottom', ['Bottom', 'Bawah']]], 'top')],
     label: (p) => `Shell ${p.t} mm · ${L('open', 'buka')} ${p.open === 'top' ? L('top', 'atas') : L('bottom', 'bawah')}` },
@@ -6781,10 +6798,10 @@ const FEAT = {
       S('plane', 'Mirror plane', 'Bidang cermin', [['YZ', ['YZ', 'YZ']], ['XZ', ['XZ', 'XZ']], ['XY', ['XY', 'XY']]], 'YZ', { show: (p) => p.kind === 'mirror' }),
       N('dx', 'Move X', 'Geser X', 'mm', 0, { show: (p) => p.kind === 'move' }), N('dy', 'Move Y', 'Geser Y', 'mm', 0, { show: (p) => p.kind === 'move' }), N('dz', 'Move Z', 'Geser Z', 'mm', 0, { show: (p) => p.kind === 'move' })],
     label: (p) => p.kind === 'mirror' ? `${L('Mirror body', 'Cermin body')} ${p.plane}` : `${L('Move', 'Geser')} ${p.dx}, ${p.dy}, ${p.dz}` },
-  revolve: { en: 'Revolved Boss/Base', id: 'Revolved Boss/Base', fields: [
-      S('axis', 'Axis of revolution', 'Sumbu putar', [['Z', ['Z (vertical)', 'Z (tegak)']], ['X', ['X', 'X']], ['Y', ['Y', 'Y']]], 'Z'),
+  revolve: { en: 'Revolved Boss/Base', id: 'Revolved Boss/Base', get fields() {
+      return [S('axis', 'Axis of revolution', 'Sumbu putar', [['Z', ['Z (vertical)', 'Z (tegak)']], ['X', ['X', 'X']], ['Y', ['Y', 'Y']], ...refAxisOptions()], 'Z'),
       N('angle', 'Angle', 'Sudut', '\u00b0', 360, { min: 1, step: 1 }),
-      S('op', 'Result', 'Hasil', OPS, 'add')],
+      S('op', 'Result', 'Hasil', OPS, 'add')]; },
     label: (p) => `${L('Revolve', 'Putar')} ${p.angle}\u00b0 \u00b7 ${p.axis}${p.op === 'cut' ? ' \u00b7 ' + L('cut', 'potong') : ''}` },
   /* S18: the three mould steps. */
   parting: { en: 'Parting Line', id: 'Parting Line', fields: [N('z', 'Parting plane Z', 'Bidang pisah Z', 'mm', 10)],
@@ -6851,6 +6868,49 @@ const FEAT = {
       N('u', 'Position along the plane', 'Posisi sepanjang bidang', 'mm', 0), N('v', 'Position across the plane', 'Posisi melintang bidang', 'mm', 0),
       S('op', 'Result', 'Hasil', OPS, 'add')],
     label: (p) => `“${p.s}” ${p.h} mm · ${p.depth} mm ${p.op === 'cut' ? L('deboss', 'deboss') : L('emboss', 'emboss')}` },
+  /* S21c: Scale is the kernel's own scale about a point. It scales the whole body, so the step says that in its
+     note; it is not a feature-level scale and it is not offered as one. One factor, uniform, refused when ≤ 0. */
+  scale: { en: 'Scale', id: 'Skala', fields: [N('k', 'Factor', 'Faktor', '', 1.5, { min: 0.001 }),
+      S('about', 'Scale about', 'Skala terhadap', [['origin', ['The origin', 'Titik nol']], ['centre', ['The body centre', 'Pusat body']]], 'origin')],
+    label: (p) => `${L('Scale', 'Skala')} ×${p.k} · ${p.about === 'centre' ? L('centre', 'pusat') : L('origin', 'titik nol')}` },
+  /* ---- Batch B ---- */
+  refplane: { en: 'Reference Plane', id: 'Bidang Referensi', fields: [
+      S('mode', 'From', 'Dari', [['offset', ['Offset from a plane', 'Offset dari bidang']], ['angle', ['Angled from a plane', 'Dimiringkan dari bidang']], ['three', ['Three points', 'Tiga titik']]], 'offset'),
+      S('base', 'Base plane', 'Bidang dasar', [['XY', ['XY (top)', 'XY (atas)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]], 'XY', { show: (p) => p.mode !== 'three' }),
+      N('dist', 'Offset', 'Offset', 'mm', 50, { show: (p) => p.mode === 'offset' }), N('angle', 'Angle', 'Sudut', '\u00b0', 30, { show: (p) => p.mode === 'angle' }),
+      TX('p1', 'Point 1 (x,y,z)', 'Titik 1 (x,y,z)', '0,0,50', { show: (p) => p.mode === 'three' }),
+      TX('p2', 'Point 2 (x,y,z)', 'Titik 2 (x,y,z)', '100,0,50', { show: (p) => p.mode === 'three' }),
+      TX('p3', 'Point 3 (x,y,z)', 'Titik 3 (x,y,z)', '0,100,50', { show: (p) => p.mode === 'three' })],
+    label: (p) => p.mode === 'offset' ? `${L('Plane', 'Bidang')} ${p.base} + ${p.dist} mm` : p.mode === 'angle' ? `${L('Plane', 'Bidang')} ${p.base} ${p.angle}\u00b0` : L('Plane through three points', 'Bidang lewat tiga titik') },
+  refaxis: { en: 'Reference Axis', id: 'Sumbu Referensi', fields: [
+      S('mode', 'From', 'Dari', [['through', ['A point and a direction', 'Titik dan arah']], ['two', ['Two points', 'Dua titik']]], 'through'),
+      S('dir', 'Direction', 'Arah', [['X', ['X', 'X']], ['Y', ['Y', 'Y']], ['Z', ['Z', 'Z']]], 'Z', { show: (p) => p.mode === 'through' }),
+      N('x', 'Origin X', 'Titik X', 'mm', 50), N('y', 'Origin Y', 'Titik Y', 'mm', 0), N('z', 'Origin Z', 'Titik Z', 'mm', 0),
+      TX('p1', 'Point 1 (x,y,z)', 'Titik 1 (x,y,z)', '50,0,0', { show: (p) => p.mode === 'two' }),
+      TX('p2', 'Point 2 (x,y,z)', 'Titik 2 (x,y,z)', '50,0,100', { show: (p) => p.mode === 'two' })],
+    label: (p) => p.mode === 'two' ? L('Axis through two points', 'Sumbu lewat dua titik') : `${L('Axis along', 'Sumbu searah')} ${p.dir} @ ${p.x}, ${p.y}, ${p.z}` },
+  csys: { en: 'Coordinate System', id: 'Sistem Koordinat', fields: [
+      N('x', 'Origin X', 'Titik X', 'mm', 50), N('y', 'Origin Y', 'Titik Y', 'mm', 0), N('z', 'Origin Z', 'Titik Z', 'mm', 0),
+      N('rz', 'Turn about Z', 'Putar sumbu Z', '\u00b0', 0)],
+    label: (p) => `${L('CSYS at', 'CSYS di')} ${p.x}, ${p.y}, ${p.z}${+p.rz ? ` \u00b7 ${p.rz}\u00b0` : ''}` },
+  dome: { en: 'Dome', id: 'Dome', fields: [N('h', 'Dome height', 'Tinggi dome', 'mm', 5, { min: 0.1 })],
+    label: (p) => `${L('Dome', 'Dome')} ${p.h} mm ${L('on the top face', 'di muka atas')}` },
+  split: { en: 'Split', id: 'Split', fields: [
+      S('plane', 'Cutting plane', 'Bidang potong', [['XY', ['XY (horizontal)', 'XY (horizontal)']], ['XZ', ['XZ (front)', 'XZ (depan)']], ['YZ', ['YZ (side)', 'YZ (samping)']]], 'XY'),
+      N('at', 'Plane position', 'Posisi bidang', 'mm', 0)],
+    label: (p) => `${L('Split', 'Split')} ${p.plane} @ ${p.at} mm` },
+  curvepat: { en: 'Curve Pattern', id: 'Pola Kurva', get fields() {
+      const o = sketchOptions();
+      return [S('sketch', 'Path sketch (XY)', 'Sketch lintasan (XY)', o, o[0][0]), N('count', 'Instances', 'Jumlah instance', '', 5, { step: 1, min: 2 })]; },
+    label: (p) => `${p.count}\u00d7 ${L('along the path', 'sepanjang lintasan')}` },
+  fillpat: { en: 'Fill Pattern', id: 'Pola Isi', fields: [
+      N('cols', 'Columns', 'Kolom', '', 3, { step: 1, min: 1 }), N('rows', 'Rows', 'Baris', '', 2, { step: 1, min: 1 }),
+      N('sx', 'Spacing X', 'Jarak X', 'mm', 30, { min: 0.1 }), N('sy', 'Spacing Y', 'Jarak Y', 'mm', 30, { min: 0.1 })],
+    label: (p) => `${p.cols}\u00d7${p.rows} ${L('fill', 'isi')} @ ${p.sx} \u00d7 ${p.sy} mm` },
+  wrap: { en: 'Wrap / Emboss', id: 'Wrap / Emboss', get fields() {
+      const o = sketchOptions();
+      return [S('sketch', 'Sketch to emboss', 'Sketch yang ditimbulkan', o, o[0][0]), N('depth', 'Height', 'Tinggi', 'mm', 2, { min: 0.1 }), S('op', 'Result', 'Hasil', OPS, 'add')]; },
+    label: (p) => `${L('Emboss', 'Emboss')} ${p.depth} mm ${p.op === 'cut' ? L('(deboss)', '(deboss)') : ''}` },
   dim: { get en() { return 'Smart Dimension'; }, get id() { return 'Smart Dimension'; },
     /* the sketch steps are read when the form is drawn, so a new sketch shows up immediately */
     get fields() {
@@ -6883,6 +6943,14 @@ const FEAT = {
       const o = sketchOptions();
       return [S('profile', 'Profile sketch', 'Sketch profil', o, o[0][0]), S('path', 'Path sketch', 'Sketch lintasan', o, o.length > 1 ? o[1][0] : o[0][0])]; },
     label: () => L('Swept surface', 'Surface sapu') },
+  surffill: { en: 'Filled Surface', id: 'Filled Surface', fields: [N('order', 'Edge order (0–4)', 'Orde tepi (0–4)', '', 2, { min: 0, max: 4, step: 1 })],
+    label: (p) => `${L('Filled', 'Terisi')} ${(p.edges || []).length} ${L('edge(s)', 'tepi')}` },
+  surfbound: { en: 'Boundary Surface', id: 'Boundary Surface', fields: [],
+    label: (p) => `${L('Boundary', 'Batas')} ${(p.u || []).length} × ${(p.v || []).length}` },
+  boundboss: { en: 'Boundary Boss/Base', id: 'Boundary Boss/Base', fields: [N('t', 'Thickness', 'Tebal', 'mm', 3, { min: 0.1 })],
+    label: (p) => `${L('Boundary boss', 'Batas boss')} ${(p.u || []).length} × ${(p.v || []).length} · ${p.t} mm` },
+  vfillet: { en: 'Variable Fillet', id: 'Variable Fillet', fields: [N('r1', 'Radius at one end', 'Radius di ujung satu', 'mm', 2, { min: 0.1 }), N('r2', 'Radius at the other end', 'Radius di ujung lain', 'mm', 6, { min: 0.1 }), N('edge', 'Edge', 'Tepi', '', 0, { step: 1 })],
+    label: (p) => `${L('Variable fillet', 'Fillet variabel')} R${p.r1}→${p.r2} mm · ${L('edge', 'tepi')} ${(+p.edge || 0) + 1}` },
   surfplane: { en: 'Planar Surface', id: 'Planar Surface', get fields() {
       const o = sketchOptions();
       return [S('sketch', 'Closed loop sketch', 'Sketch loop tertutup', o, o[0][0])]; },
@@ -6929,7 +6997,7 @@ const FEAT = {
       S('material', 'Material', 'Material', [['steel', ['Steel', 'Baja']], ['stainless', ['Stainless', 'Stainless']], ['aluminium', ['Aluminium', 'Aluminium']], ['brass', ['Brass', 'Kuningan']]])],
     label: (p) => L('Convert to sheet metal', 'Ubah jadi sheet metal') },
 };
-const PART_TOOLS = ['shape', 'sketch', 'text', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'gusset', 'weld', 'mold', 'parting', 'shutoff', 'shrink', 'draft', 'dim', 'measure',
+const PART_TOOLS = ['shape', 'sketch', 'text', 'push', 'hole', 'edge', 'repeat', 'wall', 'bodies', 'revolve', 'sweep', 'loft', 'rib', 'thread', 'member', 'endcap', 'gusset', 'weld', 'mold', 'parting', 'shutoff', 'shrink', 'draft', 'dim', 'scale', 'refplane', 'refaxis', 'csys', 'dome', 'split', 'curvepat', 'fillpat', 'wrap', 'measure',
   'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick',
   'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert'];
 const featName = (f) => L(FEAT[f.type].en, FEAT[f.type].id);
@@ -7003,9 +7071,61 @@ function idrisTextRects(str, h) {
   }
   return { rects, width: Math.max(0, pen - 1) * cell };
 }
+/* ---- Batch B: datum planes, axes and coordinate systems, plus Dome / Split / Curve Pattern / Fill Pattern /
+   Wrap-Emboss. Every datum is computed from the numbers in its own step (and three points are read as points), and
+   every one that changes the part is measured by the kernel. ---- */
+const S22_BASE = { XY: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] }, XZ: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, -1, 0] }, YZ: { origin: [0, 0, 0], xDir: [0, 1, 0], normal: [1, 0, 0] } };
+const s22Add = (a, b) => a.map((v, i) => v + b[i]);
+const s22Sub = (a, b) => a.map((v, i) => v - b[i]);
+const s22Mul = (a, k) => a.map((v) => v * k);
+const s22Dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const s22Cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const s22Unit = (a) => { const n = Math.hypot(a[0], a[1], a[2]); if (!(n > 1e-12)) throw new Error(L('Those two points are the same point, so they give no direction.', 'Dua titik itu sama, jadi tidak memberi arah.')); return a.map((v) => v / n); };
+/** rotate v about the unit axis k by deg (Rodrigues) */
+const s22Rot = (v, deg, axis) => { const t = deg * Math.PI / 180, c = Math.cos(t), s2 = Math.sin(t), k = s22Unit(axis);
+  return s22Add(s22Add(s22Mul(v, c), s22Mul(s22Cross(k, v), s2)), s22Mul(k, s22Dot(k, v) * (1 - c))); };
+/** one "x,y,z" string as a point; a bad point is refused with what it read */
+function s22Point(t, what) {
+  const a = String(t == null ? '' : t).split(',').map((x) => Number(x.trim()));
+  if (a.length !== 3 || !a.every(Number.isFinite)) throw new Error(L(`${what} must be three numbers, x,y,z; it read ${JSON.stringify(String(t == null ? '' : t))}.`, `${what} harus tiga angka, x,y,z; yang terbaca ${JSON.stringify(String(t == null ? '' : t))}.`));
+  return a;
+}
+/** evenly spaced points along the lines and arcs of a sketch, in the sketch's own 2D coordinates */
+function s22PathPoints(ents, n) {
+  const pts = [];
+  for (const e of ents || []) {
+    if (e.t === 'line') { if (!pts.length) pts.push(e.a); pts.push(e.b); }
+    else if (e.t === 'arc') { if (!pts.length) pts.push(e.a); pts.push(e.m, e.e); }
+  }
+  if (pts.length < 2) throw new Error(L('The path sketch needs at least one line or arc: draw the path in a sketch first.', 'Sketch lintasan butuh minimal satu garis atau busur: gambar lintasannya di sketch dulu.'));
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const total = cum[cum.length - 1];
+  if (!(total > 1e-9)) throw new Error(L('The path has no length: its points are all in one place.', 'Lintasan tidak punya panjang: semua titiknya di satu tempat.'));
+  const out = [];
+  const k = Math.max(2, Math.round(n));
+  for (let i = 0; i < k; i++) {
+    const want = total * i / (k - 1); let j = 1; while (j < cum.length - 1 && cum[j] < want) j++;
+    const seg = cum[j] - cum[j - 1] || 1, t = (want - cum[j - 1]) / seg;
+    out.push([pts[j - 1][0] + (pts[j][0] - pts[j - 1][0]) * t, pts[j - 1][1] + (pts[j][1] - pts[j - 1][1]) * t]);
+  }
+  return { pts: out, length: total };
+}
+/** the face pointing +Z on this body, or null: Dome and Wrap sit on the top face and say so when there is none */
+function s22TopFace(body) {
+  const faces = (body && body.faces) || []; let best = null, bz = -Infinity;
+  for (const fc of faces) {
+    let n = null; try { n = fc.normalAt && fc.normalAt(); } catch (e) { n = null; }
+    const nn = n && (Array.isArray(n) ? n : typeof n.toTuple === 'function' ? n.toTuple() : [n.x, n.y, n.z]);
+    if (!nn || !(Number(nn[2]) > 0.999)) continue;
+    const c = fc.boundingBox && fc.boundingBox.center; const z = c ? Number(c[2]) : 0;
+    if (z > bz) { bz = z; best = fc; }
+  }
+  return best;
+}
 async function buildPart(pArg) {
   const R = await kernel(), p = pArg || state.part; if (!p) return null;
-  let body = null, lastTool = null, lastOp = 'add', sketch = null; const sketches = [];
+  let body = null, lastTool = null, lastOp = 'add', sketch = null; const sketches = []; const bodies = [];
   const bb = () => body ? body.boundingBox.bounds : [[0, 0, 0], [0, 0, 0]];
   const apply = (tool, op) => { if (!body) { if (op === 'cut') throw new Error(L('Nothing to cut yet: start with Shape.', 'Belum ada yang bisa dipotong: mulai dengan Shape.')); body = tool.clone(); }
     else body = op === 'cut' ? body.cut(tool.clone()) : body.fuse(tool.clone()); lastTool = tool; lastOp = op; };
@@ -7035,9 +7155,13 @@ async function buildPart(pArg) {
      Each piece keeps the sketch it was built from, so Thicken can offset that same profile by the wall thickness
      and cut the wall out of the two solids. The kernel measures the area and the volume written in the note. */
   const surfs = [];
+  /* Batch B: every datum this tree has built so far, and the one place a sketch plane becomes a kernel plane */
+  const planes = {}, axes = {}, cs = {};
+  const plArg = (name, at) => { const d = planes[name]; if (!d) return [name, at];
+    const pl = new (R.Plane)(d.origin, d.xDir, d.normal); if (+at) pl.translateZ(+at); return [pl]; };
   const OC3 = typeof R.getOC === 'function' ? R.getOC() : null;
   const v3 = (v) => [v.x, v.y, v.z];
-  const srfOn = (sk) => { const s2 = profile(sk.s).sketchOnPlane(sk.s.plane, sk.at); return { sk: s2, face: s2.face(), wire: s2.wire, dir: v3(s2.defaultDirection) }; };
+  const srfOn = (sk) => { const s2 = profile(sk.s).sketchOnPlane(...plArg(sk.s.plane, sk.at)); return { sk: s2, face: s2.face(), wire: s2.wire, dir: v3(s2.defaultDirection) }; };
   const srfInset = (sk, t) => profile(sk.s).offset(-Math.abs(t), { lineJoinType: 'intersection' }).sketchOnPlane(sk.s.plane, sk.at);
   const srfPrism = (wire, dir, len) => { const m = new OC3.BRepPrimAPI_MakePrism(wire.wrapped, new OC3.gp_Vec(dir[0] * len, dir[1] * len, dir[2] * len)); m.Build(); return R.cast(m.Shape()); };
   const srfThru = (wires, solid) => { const m = new OC3.BRepOffsetAPI_ThruSections(!!solid, false, 1e-6); wires.forEach((w) => m.AddWire(w.wrapped)); m.Build(); if (!m.IsDone() || !m.Shape) throw new Error('thru'); return R.cast(m.Shape()); };
@@ -7131,7 +7255,7 @@ async function buildPart(pArg) {
       } else if (ft.type === 'push') {
         if (!sketch) throw new Error(L('Push/Pull needs a Sketch before it.', 'Push/Pull butuh Sketch sebelumnya.'));
         const dist = +q.dist; if (!dist) throw new Error(L('Distance cannot be 0.', 'Jarak tidak boleh 0.'));
-        let t = profile(sketch.s).sketchOnPlane(sketch.s.plane, sketch.at).extrude(q.both === 'both' ? Math.abs(dist) : dist);
+        let t = profile(sketch.s).sketchOnPlane(...plArg(sketch.s.plane, sketch.at)).extrude(q.both === 'both' ? Math.abs(dist) : dist);
         if (q.both === 'both') t = t.translate(sketch.s.plane === 'XY' ? [0, 0, -Math.abs(dist) / 2] : sketch.s.plane === 'XZ' ? [0, Math.abs(dist) / 2, 0] : [-Math.abs(dist) / 2, 0, 0]);
         apply(t, q.op); sketch.used = true; sketch = null;
       } else if (ft.type === 'hole') {
@@ -7151,20 +7275,31 @@ async function buildPart(pArg) {
         if (!body) throw new Error(L('Edges need a body.', 'Tepi butuh body.'));
         const [mn, mx] = bb(), r = pos(q.r), fl = q.which === 'vertical' ? (e) => e.inDirection('Z') : q.which === 'top' ? (e) => e.inPlane('XY', mx[2]) : q.which === 'bottom' ? (e) => e.inPlane('XY', mn[2]) : undefined;
         body = q.mode === 'chamfer' ? body.chamfer(r, fl) : body.fillet(r, fl);
+      } else if (ft.type === 'vfillet') {
+        /* S21l: one edge, a radius at each end, built by the kernel's fillet builder and measured. */
+        if (!body) throw new Error(L('Variable Fillet rounds an edge of a body: build one first (a primitive or an Extrude).', 'Variable Fillet membulatkan tepi sebuah body: bangun dulu (primitive atau Extrude).'));
+        const res = s21lVariableFillet(R, body, q.edge, q.r1, q.r2);
+        body = res.shape; lastTool = res.shape; lastOp = 'add';
+        ft.vfil = { edge: res.edge, r1: res.r1, r2: res.r2, constant: res.constant, faces: res.faces, volBefore: res.volBefore, volAfter: res.volAfter, removed: res.removed };
+        ft.note = L(`Variable fillet on edge ${res.edge + 1}: ${f(res.r1, 1)} mm at one end and ${f(res.r2, 1)} mm at the other${res.constant ? ', equal at both ends so the kernel built the constant fillet' : ''}, ${res.faces} faces. The kernel removed ${f(res.removed / 1000, 3)} cm³: ${f(res.volAfter / 1000, 3)} cm³ from ${f(res.volBefore / 1000, 3)} cm³.`,
+          `Variable fillet di tepi ${res.edge + 1}: ${f(res.r1, 1)} mm di ujung satu dan ${f(res.r2, 1)} mm di ujung lain${res.constant ? ', sama di kedua ujung jadi kernel membangun fillet konstan' : ''}, ${res.faces} muka. Kernel membuang ${f(res.removed / 1000, 3)} cm³: ${f(res.volAfter / 1000, 3)} cm³ dari ${f(res.volBefore / 1000, 3)} cm³.`);
       } else if (ft.type === 'repeat') {
         if (!lastTool) throw new Error(L('Repeat copies the feature before it (Shape, Push/Pull or Hole).', 'Repeat menyalin fitur sebelumnya (Shape, Push/Pull, atau Hole).'));
         const base = lastTool, op = lastOp;
         if (q.kind === 'mirror') apply(base.clone().mirror(q.plane, [0, 0, 0]), op);
         else { const n = Math.round(+q.count); if (!(n >= 2 && n <= 200)) throw new Error(L('Count must be 2 to 200.', 'Jumlah harus 2 sampai 200.'));
-          for (let i = 1; i < n; i++) apply(q.kind === 'line' ? base.clone().translate([i * +q.dx, i * +q.dy, 0]) : base.clone().rotate(360 * i / n, [+q.cx, +q.cy, 0], [0, 0, 1]), op); }
+          const c0 = q.ref && cs[q.ref] ? cs[q.ref].origin : [+q.cx, +q.cy, 0];
+          for (let i = 1; i < n; i++) apply(q.kind === 'line' ? base.clone().translate([i * +q.dx, i * +q.dy, 0]) : base.clone().rotate(360 * i / n, c0, [0, 0, 1]), op); }
         lastTool = base;
       } else if (ft.type === 'revolve') {
         if (!sketch) throw new Error(L('Revolve needs a Sketch before it.', 'Revolve butuh Sketch sebelumnya.'));
         const ang = +q.angle; if (!(ang > 0 && ang <= 360)) throw new Error(L('The angle must be above 0\u00b0 and at most 360\u00b0.', 'Sudut harus di atas 0\u00b0 dan paling besar 360\u00b0.'));
-        const pl = sketch.s.plane, at = sketch.at, org = pl === 'XY' ? [0, 0, at] : pl === 'XZ' ? [0, at, 0] : [at, 0, 0];
-        const dir = q.axis === 'X' ? [1, 0, 0] : q.axis === 'Y' ? [0, 1, 0] : [0, 0, 1];
+        const ax = axes[q.axis];
+        const pl = sketch.s.plane, at = sketch.at;
+        const org = ax ? ax.origin.slice() : pl === 'XY' ? [0, 0, at] : pl === 'XZ' ? [0, at, 0] : [at, 0, 0];
+        const dir = ax ? ax.dir.slice() : q.axis === 'X' ? [1, 0, 0] : q.axis === 'Y' ? [0, 1, 0] : [0, 0, 1];
         let t;
-        try { t = profile(sketch.s).sketchOnPlane(pl, at).revolve(dir, { origin: org, angle: ang }); }
+        try { t = profile(sketch.s).sketchOnPlane(...plArg(pl, at)).revolve(dir, { origin: org, angle: ang }); }
         catch (e) { throw new Error(L(`The kernel could not revolve this profile around ${q.axis}. Keep the profile clear of the axis and every size above 0 mm.`, `Kernel tidak bisa memutar profil ini mengelilingi ${q.axis}. Jaga profil supaya tidak menyentuh sumbu dan semua ukuran di atas 0 mm.`)); }
         if (Array.isArray(t)) { if (!t.length) throw new Error(L('The profile produced no solid when revolved.', 'Profil tidak menghasilkan solid saat diputar.')); t = t.length === 1 ? t[0] : t.reduce((a, b) => a.fuse(b)); }
         apply(t, q.op || 'add'); sketch.used = true; sketch = null;
@@ -7336,6 +7471,142 @@ async function buildPart(pArg) {
         if (!(pitch > 0)) throw new Error(L('Pick a metric size from the table.', 'Pilih ukuran metrik dari tabel.'));
         pos(q.depth);
         ft.note = L(`${q.M}×${pitch} cosmetic thread over ${f(+q.depth, 1)} mm at ${f(+q.x, 1)}, ${f(+q.y, 1)}: ISO 261 pitch, ISO 2306 tap drill Ø${TAP[q.M]}. Not modelled, so the volume does not change.`, `Ulir kosmetik ${q.M}×${pitch} sepanjang ${f(+q.depth, 1)} mm di ${f(+q.x, 1)}, ${f(+q.y, 1)}: pitch ISO 261, bor tap ISO 2306 Ø${TAP[q.M]}. Tidak dimodelkan, jadi volume tidak berubah.`);
+      } else if (ft.type === 'scale') {
+        /* S21c: the kernel scales the body about a point; the note says it is the whole body, and that the volume
+           changes by the factor cubed, so nobody reads this as a feature-level scale. */
+        if (!body) throw new Error(L('Scale needs a body: build one first.', 'Skala butuh body: bangun dulu.'));
+        const k = +q.k;
+        if (!(k > 0)) throw new Error(L('The scale factor must be above 0. Negative factors mirror and split the body, which this step does not do.', 'Faktor skala harus di atas 0. Faktor negatif mencerminkan dan memecah body, yang tidak dilakukan langkah ini.'));
+        const [mn, mx] = bb();
+        const c = q.about === 'centre' ? [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2] : [0, 0, 0];
+        const before = R.measureVolume(body);
+        body = body.clone().scale(k, c);
+        const after = R.measureVolume(body);
+        if (!(after > 0)) throw new Error(L('The kernel returned an empty body at that factor: nothing was scaled.', 'Kernel mengembalikan body kosong pada faktor itu: tidak ada yang diskalakan.'));
+        ft.note = L(`The whole body scaled by ${f(k, 3)} about ${q.about === 'centre' ? 'its centre' : 'the origin'}: ${f(before, 1)} → ${f(after, 1)} mm³ (×${f(after / before, 4)}).`, `Seluruh body diskalakan ${f(k, 3)} kali terhadap ${q.about === 'centre' ? 'pusatnya' : 'titik nol'}: ${f(before, 1)} → ${f(after, 1)} mm³ (×${f(after / before, 4)}).`);
+      } else if (ft.type === 'refplane') {
+        /* Batch B: the plane is computed from the numbers in the step. Offset and angle come from the base plane's
+           own origin and normal; three points are read as points and give the normal of their triangle. */
+        const base = S22_BASE[q.base] || S22_BASE.XY;
+        let pl;
+        if (q.mode === 'three') {
+          const p1 = s22Point(q.p1, L('Point 1', 'Titik 1')), p2 = s22Point(q.p2, L('Point 2', 'Titik 2')), p3 = s22Point(q.p3, L('Point 3', 'Titik 3'));
+          const n = s22Cross(s22Sub(p2, p1), s22Sub(p3, p1));
+          if (Math.hypot(n[0], n[1], n[2]) < 1e-9) throw new Error(L('The three points are on one line, so they give no plane.', 'Tiga titik itu segaris, jadi tidak memberi bidang.'));
+          pl = { origin: p1, xDir: s22Unit(s22Sub(p2, p1)), normal: s22Unit(n) };
+        } else if (q.mode === 'angle') {
+          const ang = +q.angle;
+          if (!Number.isFinite(ang) || Math.abs(ang) < 1e-9 || Math.abs(ang) > 180) throw new Error(L('The angle must be above 0\u00b0 and at most 180\u00b0.', 'Sudut harus di atas 0\u00b0 dan paling besar 180\u00b0.'));
+          pl = { origin: base.origin.slice(), xDir: base.xDir.slice(), normal: s22Unit(s22Rot(base.normal, ang, base.xDir)) };
+        } else {
+          const d = +q.dist; if (!Number.isFinite(d)) throw new Error(L('The offset must be a number in mm.', 'Offset harus angka dalam mm.'));
+          pl = { origin: s22Add(base.origin, s22Mul(base.normal, d)), xDir: base.xDir.slice(), normal: base.normal.slice() };
+        }
+        planes[ft.id] = pl;
+        ft.datum = { origin: pl.origin, xDir: pl.xDir, normal: pl.normal };
+        ft.note = L(`Reference plane at (${pl.origin.map((v) => f(v, 2)).join(', ')}) with normal (${pl.normal.map((v) => f(v, 3)).join(', ')}): choose it in a Sketch's Plane field and Extrude or Revolve builds on it.`,
+          `Bidang referensi di (${pl.origin.map((v) => f(v, 2)).join(', ')}) dengan normal (${pl.normal.map((v) => f(v, 3)).join(', ')}): pilih di kolom Plane sebuah Sketch dan Extrude atau Revolve membangun di atasnya.`);
+      } else if (ft.type === 'refaxis') {
+        /* Batch B: a point and a direction, or two points; Revolve (and a circular Repeat through a CSYS) can use it. */
+        let origin, dir;
+        if (q.mode === 'two') {
+          const p1 = s22Point(q.p1, L('Point 1', 'Titik 1')), p2 = s22Point(q.p2, L('Point 2', 'Titik 2'));
+          origin = p1; dir = s22Unit(s22Sub(p2, p1));
+        } else {
+          if (![q.x, q.y, q.z].every((v) => Number.isFinite(+v))) throw new Error(L('The axis origin must be three numbers.', 'Titik asal sumbu harus tiga angka.'));
+          origin = [+q.x, +q.y, +q.z]; dir = q.dir === 'X' ? [1, 0, 0] : q.dir === 'Y' ? [0, 1, 0] : [0, 0, 1];
+        }
+        axes[ft.id] = { origin, dir };
+        ft.datum = { origin, dir };
+        ft.note = L(`Reference axis through (${origin.map((v) => f(v, 2)).join(', ')}) along (${dir.map((v) => f(v, 3)).join(', ')}): Revolve lists it in its Axis field.`,
+          `Sumbu referensi lewat (${origin.map((v) => f(v, 2)).join(', ')}) searah (${dir.map((v) => f(v, 3)).join(', ')}): Revolve mendaftarkannya di kolom Axis.`);
+      } else if (ft.type === 'csys') {
+        /* Batch B: an origin and a turn about Z. A circular Repeat can turn about it, so the datum has a consumer. */
+        if (![q.x, q.y, q.z, q.rz].every((v) => Number.isFinite(+v))) throw new Error(L('A coordinate system needs its three origin numbers and its turn.', 'Sistem koordinat butuh tiga angka titik asal dan putarannya.'));
+        const o = [+q.x, +q.y, +q.z], rz = +q.rz || 0, t = rz * Math.PI / 180;
+        const e = { origin: o, xDir: [Math.cos(t), Math.sin(t), 0], normal: [0, 0, 1] };
+        cs[ft.id] = e;
+        ft.datum = e;
+        ft.note = L(`Coordinate system at (${o.map((v) => f(v, 2)).join(', ')}), turned ${f(rz, 2)}\u00b0 about Z. A circular Repeat can turn about it.`,
+          `Sistem koordinat di (${o.map((v) => f(v, 2)).join(', ')}), diputar ${f(rz, 2)}\u00b0 terhadap Z. Repeat melingkar bisa berputar mengelilinginya.`);
+      } else if (ft.type === 'dome') {
+        /* Batch B: a spherical cap on the +Z face, clipped to that face's own outline by the kernel, so a round top
+           gives the cap the sphere really has and a square top gives the cap clipped to the square. */
+        if (!body) throw new Error(L('Dome needs a body: build one first (a primitive or an Extrude).', 'Dome butuh body: bangun dulu (primitive atau Extrude).'));
+        const h = +q.h; if (!(h > 0)) throw new Error(L('The dome height must be above 0 mm.', 'Tinggi dome harus di atas 0 mm.'));
+        const face = s22TopFace(body);
+        if (!face) throw new Error(L('Dome sits on the flat face that points +Z (the top of the part): this body has none.', 'Dome duduk di muka datar yang menghadap +Z (atas part): body ini tidak punya.'));
+        const area = R.measureArea(face);
+        if (!(area > 0)) throw new Error(L('The top face has no area, so there is nothing to dome.', 'Muka atas tidak punya luas, jadi tidak ada yang bisa di-dome.'));
+        const a = Math.sqrt(area / Math.PI), Rs = (a * a + h * h) / (2 * h);
+        const c = face.boundingBox.center, z0 = Number(c[2]);
+        const cap = R.makeSphere(Rs).translate([Number(c[0]), Number(c[1]), z0 - (Rs - h)]);
+        /* the face's own wire becomes a face, and the kernel prisms it: a prism from a bare wire is a shell with
+           negative volume, which made the intersection empty */
+        const OC = R.getOC();
+        const mf = new OC.BRepBuilderAPI_MakeFace(face.outerWire().wrapped, true); mf.Build();
+        const pm = new OC.BRepPrimAPI_MakePrism(R.cast(mf.Face()).wrapped, new OC.gp_Vec(0, 0, h + 1)); pm.Build();
+        const clip = R.cast(pm.Shape());
+        const piece = cap.intersect(clip);
+        const before = R.measureVolume(body), added = R.measureVolume(piece);
+        if (!(added > 0)) throw new Error(L('The cap came out empty: the height is too small for the kernel tolerance.', 'Tudungnya kosong: tingginya terlalu kecil untuk toleransi kernel.'));
+        apply(piece, 'add');
+        const after = R.measureVolume(body);
+        ft.note = L(`Dome ${f(h, 2)} mm on the +Z face (${f(area, 1)} mm², equivalent radius ${f(a, 2)} mm): sphere radius ${f(Rs, 2)} mm, cap ${f(added, 1)} mm³ added, body ${f(before, 1)} → ${f(after, 1)} mm³ (kernel).`,
+          `Dome ${f(h, 2)} mm di muka +Z (${f(area, 1)} mm², radius setara ${f(a, 2)} mm): radius bola ${f(Rs, 2)} mm, tudung ${f(added, 1)} mm³ ditambahkan, body ${f(before, 1)} → ${f(after, 1)} mm³ (kernel).`);
+      } else if (ft.type === 'split') {
+        /* Batch B: the kernel's own boolean on a big box on each side of the plane. Both halves are kept as bodies,
+           and the step refuses a plane that does not actually cut the part into two. */
+        if (!body) throw new Error(L('Split needs a body: build one first.', 'Split butuh body: bangun dulu.'));
+        const at = +q.at; if (!Number.isFinite(at)) throw new Error(L('The plane position must be a number in mm.', 'Posisi bidang harus angka dalam mm.'));
+        const BIG = 1e5, lo = [-BIG, -BIG, -BIG], hi = [BIG, BIG, BIG];
+        const box = (a2, b2) => R.makeBox(a2, b2);
+        let pos, neg;
+        if ((q.plane || 'XY') === 'XZ') { const cut = box([lo[0], at, lo[2]], [hi[0], hi[1], hi[2]]); pos = body.intersect(cut); neg = body.cut(cut); }
+        else if ((q.plane || 'XY') === 'YZ') { const cut = box([at, lo[1], lo[2]], [hi[0], hi[1], hi[2]]); pos = body.intersect(cut); neg = body.cut(cut); }
+        else { const cut = box([lo[0], lo[1], at], [hi[0], hi[1], hi[2]]); pos = body.intersect(cut); neg = body.cut(cut); }
+        const vp = R.measureVolume(pos), vn = R.measureVolume(neg);
+        if (!(vp > 0 && vn > 0)) throw new Error(L('That plane does not cut the part into two pieces: move it inside the body.', 'Bidang itu tidak membelah part jadi dua: geser ke dalam body.'));
+        body = pos; bodies.push(neg);
+        ft.note = L(`Split by ${q.plane || 'XY'} at ${f(at, 2)} mm: two bodies of ${f(vp, 1)} and ${f(vn, 1)} mm³ (kernel), both drawn.`,
+          `Dibelah ${q.plane || 'XY'} di ${f(at, 2)} mm: dua body ${f(vp, 1)} dan ${f(vn, 1)} mm³ (kernel), keduanya digambar.`);
+      } else if (ft.type === 'curvepat') {
+        /* Batch B: the instances are placed at points spaced evenly along the path sketch's own lines and arcs,
+           every offset taken from the measured path length. The path has to be an XY sketch, and that is said. */
+        if (!lastTool) throw new Error(L('Curve Pattern copies the step before it (Shape, Push/Pull or Hole).', 'Pola Kurva menyalin langkah sebelumnya (Shape, Push/Pull, atau Hole).'));
+        const A = pickSketch(q.sketch);
+        if (A.s.plane !== 'XY') throw new Error(L('The path sketch has to be on XY: the pattern offsets are X and Y. Put the path on XY, or use Repeat.', 'Sketch lintasan harus di XY: offset polanya X dan Y. Taruh lintasan di XY, atau pakai Repeat.'));
+        const { pts, length } = s22PathPoints(A.s.ents || [], +q.count);
+        const base = lastTool, op = lastOp, p0 = pts[0];
+        for (let i = 1; i < pts.length; i++) apply(base.clone().translate([pts[i][0] - p0[0], pts[i][1] - p0[1], 0]), op);
+        lastTool = base;
+        ft.note = L(`${pts.length} instances along ${f(length, 1)} mm of path, ${f(length / (pts.length - 1), 1)} mm apart (kernel length).`,
+          `${pts.length} instance sepanjang ${f(length, 1)} mm lintasan, jarak ${f(length / (pts.length - 1), 1)} mm (panjang dari kernel).`);
+      } else if (ft.type === 'fillpat') {
+        /* Batch B: a rectangular fill. The grid is the count and spacing typed here, and every instance is measured
+           by the body it makes, so nothing is reported that the kernel did not build. */
+        if (!lastTool) throw new Error(L('Fill Pattern copies the step before it (Shape, Push/Pull or Hole).', 'Pola Isi menyalin langkah sebelumnya (Shape, Push/Pull, atau Hole).'));
+        const cols = Math.round(+q.cols), rows = Math.round(+q.rows), sx = +q.sx, sy = +q.sy;
+        if (!(cols >= 1 && rows >= 1 && sx > 0 && sy > 0)) throw new Error(L('Columns and rows must be 1 or more and the spacings above 0 mm.', 'Kolom dan baris minimal 1 dan jaraknya di atas 0 mm.'));
+        if (cols * rows > 400) throw new Error(L('At most 400 instances in one fill: that is already 400 kernel copies.', 'Paling banyak 400 instance dalam satu isi: itu sudah 400 salinan kernel.'));
+        const base = lastTool, op = lastOp;
+        for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) { if (!i && !j) continue; apply(base.clone().translate([i * sx, j * sy, 0]), op); }
+        lastTool = base;
+        ft.note = L(`${cols} \u00d7 ${rows} = ${cols * rows} instances, ${f(sx, 1)} mm apart in X and ${f(sy, 1)} mm in Y (rectangular fill).`,
+          `${cols} \u00d7 ${rows} = ${cols * rows} instance, jarak ${f(sx, 1)} mm di X dan ${f(sy, 1)} mm di Y (isi persegi).`);
+      } else if (ft.type === 'wrap') {
+        /* Batch B: the sketch is placed on the body's +Z face and extruded along that face's normal, so a boss
+           stands on a flat face and a cut debosses it. A curved face is refused by name, not wrapped approximately. */
+        if (!body) throw new Error(L('Wrap / Emboss needs a body: build it first, then emboss on its top face.', 'Wrap / Emboss butuh body: bangun dulu, lalu timbulkan di muka atasnya.'));
+        const A = pickSketch(q.sketch);
+        const face = s22TopFace(body);
+        if (!face) throw new Error(L('Wrap / Emboss works on the flat +Z face of the body. This body has no flat top face, and a curved face is not approximated here.', 'Wrap / Emboss bekerja di muka +Z yang datar dari body. Body ini tidak punya muka atas datar, dan muka lengkung tidak didekati di sini.'));
+        const depth = pos(q.depth), z0 = Number(face.boundingBox.center[2]);
+        const t = profile(A.s).translate(+A.s.u || 0, +A.s.v || 0).sketchOnPlane('XY', z0).extrude(q.op === 'cut' ? -depth : depth);
+        const area = R.measureArea(face), vol = R.measureVolume(t);
+        apply(t, q.op || 'add');
+        ft.note = L(`Emboss ${f(depth, 2)} mm on the +Z face (${f(area, 1)} mm\u00b2): ${f(vol, 1)} mm\u00b3 ${q.op === 'cut' ? 'removed' : 'added'} by the kernel.`,
+          `Emboss ${f(depth, 2)} mm di muka +Z (${f(area, 1)} mm\u00b2): ${f(vol, 1)} mm\u00b3 ${q.op === 'cut' ? 'dihilangkan' : 'ditambahkan'} oleh kernel.`);
       } else if (ft.type === 'draft') {
         if (!body) throw new Error(L('Draft needs a body.', 'Draft butuh body.'));
         const ang = +q.angle; if (!(ang > 0 && ang <= 45)) throw new Error(L('The draft angle must be above 0\u00b0 and at most 45\u00b0.', 'Sudut draft harus di atas 0\u00b0 dan paling besar 45\u00b0.'));
@@ -7368,6 +7639,51 @@ async function buildPart(pArg) {
         ft.note = L(`Extruded surface ${f(len, 2)} mm: area ${f(area, 1)} mm² (kernel). Thicken turns it into a wall.`, `Surface tarik ${f(len, 2)} mm: luas ${f(area, 1)} mm² (kernel). Thicken mengubahnya jadi dinding.`);
         A.f.note = L(`Surface for step ${p.features.indexOf(ft) + 1}.`, `Surface untuk langkah ${p.features.indexOf(ft) + 1}.`);
         if (sketch && sketch.s === A.s) { sketch.used = true; sketch = null; }
+      } else if (ft.type === 'surffill') {
+        /* S21g: the patch is built from the edges of the body as it stands at this step, by the kernel's own filling
+           builder; the area in the note is measured on the face it returns. */
+        if (!body) throw new Error(L('A filled surface takes its boundary edges from a body: build one first.', 'Filled surface mengambil tepi batasnya dari body: bangun body dulu.'));
+        const es = body.edges || [], sel = (q.edges || []).map((i) => es[i]).filter(Boolean);
+        if (sel.length < 2) throw new Error(L(`Pick at least two boundary edges of the body: ${sel.length} selected.`, `Pilih paling sedikit dua tepi batas body: ${sel.length} terpilih.`));
+        const sh = s21gFill(R, sel, { order: q.order });
+        const area = R.measureArea(sh);
+        if (!(area > 1e-6)) throw new Error(L('The filling came back with no area.', 'Hasil filling tidak punya luas.'));
+        surfs.push({ sh, wall: null });
+        ft.surf = { kind: 'fill', area };
+        ft.note = L(`Filled surface from ${sel.length} boundary edges: area ${f(area, 1)} mm² (kernel). It has no profile of its own, so Thicken cannot use it.`, `Filled surface dari ${sel.length} tepi batas: luas ${f(area, 1)} mm² (kernel). Tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.`);
+      } else if (ft.type === 'surfbound') {
+        /* S21i: the curves come from the body as it stands at this step; the first direction is lofted by the kernel
+           and the second has to land on it, with both lofts measured. */
+        if (!body) throw new Error(L('A boundary surface takes its curves from a body: build one first.', 'Boundary surface mengambil kurvanya dari body: bangun body dulu.'));
+        const be = body.edges || [];
+        const uSel = (q.u || []).map((i) => be[i]).filter(Boolean);
+        const vSel = (q.v || []).map((i) => be[i]).filter(Boolean);
+        const res = s21iBoundary(R, uSel, vSel);
+        surfs.push({ sh: res.shape, wall: null });
+        ft.surf = { kind: 'bound', area: res.uArea, u: res.u, v: res.v };
+        ft.note = L(`Boundary surface from ${res.u} curve(s) in one direction and ${res.v} in the other: area ${f(res.uArea, 1)} mm²${res.vArea != null ? `, and the second direction lofts to ${f(res.vArea, 1)} mm² too` : ''} (kernel). It has no profile of its own, so Thicken cannot use it.`,
+          `Boundary surface dari ${res.u} kurva di satu arah dan ${res.v} di arah lain: luas ${f(res.uArea, 1)} mm²${res.vArea != null ? `, dan loft arah kedua juga ${f(res.vArea, 1)} mm²` : ''} (kernel). Tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.`);
+      } else if (ft.type === 'boundboss') {
+        /* S21k: the two-direction patch is offset, walled, sewn and made a solid by the kernel, and the side that adds
+           material to the body is the one fused in. */
+        if (!body) throw new Error(L('Boundary Boss/Base takes its curves from a body: build one first.', 'Boundary Boss/Base mengambil kurvanya dari body: bangun body dulu.'));
+        const be = body.edges || [];
+        const uSel = (q.u || []).map((i) => be[i]).filter(Boolean);
+        const vSel = (q.v || []).map((i) => be[i]).filter(Boolean);
+        const res = s21kBoundarySolid(R, uSel, vSel, q.t, body);
+        body = res.shape; lastTool = res.shape; lastOp = 'add';
+        ft.bound = { u: res.u, v: res.v, uArea: res.uArea, vArea: res.vArea, t: res.t, added: res.added, volBefore: res.volBefore, volAfter: res.volAfter, faces: res.faces, walls: res.walls };
+        ft.note = L(`Boundary boss: ${res.u} curve(s) in one direction and ${res.v} in the other bound ${f(res.uArea, 1)} mm²${res.vArea != null ? ` (the second direction lofts to ${f(res.vArea, 1)} mm² too)` : ''}, thickened ${f(res.t, 1)} mm by the kernel and fused into the body: ${f(res.added / 1000, 3)} cm³ added, ${f(res.volAfter / 1000, 3)} cm³ from ${f(res.volBefore / 1000, 3)} cm³.`,
+          `Boundary boss: ${res.u} kurva di satu arah dan ${res.v} di arah lain membatasi ${f(res.uArea, 1)} mm²${res.vArea != null ? ` (loft arah kedua juga ${f(res.vArea, 1)} mm²)` : ''}, ditebalkan ${f(res.t, 1)} mm oleh kernel dan digabung ke body: bertambah ${f(res.added / 1000, 3)} cm³, jadi ${f(res.volAfter / 1000, 3)} cm³ dari ${f(res.volBefore / 1000, 3)} cm³.`);
+      } else if (ft.type === 'delface') {
+        /* S21j: the picked face leaves the body and the opening it leaves is patched, sewn and made a solid again by
+           the kernel; the step only exists when that result passes the kernel's validity check. */
+        if (!body) throw new Error(L('Delete Face needs a solid body: build one first (a primitive or an Extrude).', 'Delete Face butuh body solid: bangun dulu (primitive atau Extrude).'));
+        const res = s21jDelete(R, body, q.face);
+        body = res.shape; lastTool = res.shape; lastOp = 'add';
+        ft.del = { face: res.face, faces: res.faces, loops: res.loops, areaRemoved: res.areaRemoved, areaPatch: res.areaPatch, volBefore: res.volBefore, volAfter: res.volAfter };
+        ft.note = L(`Face ${res.face + 1} deleted (${f(res.areaRemoved, 1)} mm\u00b2): the opening was closed with a kernel patch of ${f(res.areaPatch, 1)} mm\u00b2, sewn back into a ${res.faces}-face solid${Number.isFinite(res.volBefore) ? ` of ${f(res.volAfter / 1000, 3)} cm\u00b3 against ${f(res.volBefore / 1000, 3)} cm\u00b3 before` : ` of ${f(res.volAfter / 1000, 3)} cm\u00b3`}, and the kernel\u2019s validity check passes.`,
+          `Muka ${res.face + 1} dihapus (${f(res.areaRemoved, 1)} mm\u00b2): celahnya ditutup tambalan kernel ${f(res.areaPatch, 1)} mm\u00b2, dijahit kembali jadi solid ${res.faces} muka${Number.isFinite(res.volBefore) ? ` bervolume ${f(res.volAfter / 1000, 3)} cm\u00b3 dari ${f(res.volBefore / 1000, 3)} cm\u00b3 sebelumnya` : ` bervolume ${f(res.volAfter / 1000, 3)} cm\u00b3`}, dan lolos pemeriksaan validitas kernel.`);
       } else if (ft.type === 'surfplane') {
         const A = pickSketch(q.sketch), P = srfOn(A);
         const area = R.measureArea(P.face);
@@ -7568,7 +7884,7 @@ async function buildPart(pArg) {
   }
   const open = sketches.filter((x) => !x.used);
   const sheet = sm.t > 0 ? { t: sm.t, R: sm.R, k: sm.k, mat: sm.mat, L: sm.L, W: sm.W, flat: sm.flat, folds: sm.folds.slice() } : null;
-  return { R, body, open, profile, surfs: surfs.map((x) => x.sh), sheet };
+  return { R, body, bodies, open, profile, surfs: surfs.map((x) => x.sh), sheet };
 }
 /* triangles → binary STL, so the viewer shows the kernel's shape exactly like the solver's parts */
 function meshToSTL(m) {
@@ -7589,6 +7905,8 @@ async function rebuildPart(fit) {
     const out = await buildPart(); if (seq !== partSeq || !state.part) return;
     partShape = out.body; const parts = [];
     if (out.body) parts.push({ buf: meshToSTL(zUp(out.body.mesh({ tolerance: 0.05, angularTolerance: 0.2 }))), kind: 'part', name: state.part.name });
+    /* Batch B: a split part holds more than one body, and every one of them is drawn and measured */
+    (out.bodies || []).forEach((b, i) => { try { parts.push({ buf: meshToSTL(zUp(b.mesh({ tolerance: 0.05, angularTolerance: 0.2 }))), kind: 'part', name: `${state.part.name} · ${L('body', 'body')} ${i + 2}` }); } catch (e) { /* preview only */ } });
     /* S15: a surface body is drawn too: an engineer must see the shell before it becomes a wall */
     (out.surfs || []).forEach((sh, i) => { try { parts.push({ buf: meshToSTL(zUp(sh.mesh({ tolerance: 0.05, angularTolerance: 0.2 }))), kind: 'surface', name: `Surface ${i + 1}` }); } catch (e) { /* preview only */ } });
     out.open.forEach((s, i) => { try { const f = out.profile(s.s).sketchOnPlane(s.s.plane, s.at).extrude(0.2); parts.push({ buf: meshToSTL(zUp(f.mesh({ tolerance: 0.05, angularTolerance: 0.2 }))), kind: 'sketch', name: `Sketch ${i + 1}` }); } catch (e) { /* preview only */ } });
@@ -7598,7 +7916,7 @@ async function rebuildPart(fit) {
       if (cam) { [viewer.yaw, viewer.pitch, viewer.dist, viewer.target] = cam; viewer.dirty = true; }
       $('#vempty').classList.add('hide'); }
     else { viewer.clear(); $('#vempty').classList.remove('hide'); }
-    partInfo = out.body ? (() => { const R = out.R, vol = R.measureVolume(out.body), area = R.measureArea(out.body), b = out.body.boundingBox.bounds, mat = PMAT[state.part.material] || PMAT.aluminium;
+    partInfo = out.body ? (() => { const R = out.R, more = out.bodies || [], vol = R.measureVolume(out.body) + more.reduce((a, x) => a + R.measureVolume(x), 0), area = R.measureArea(out.body) + more.reduce((a, x) => a + R.measureArea(x), 0), bl = [out.body, ...more].map((x) => x.boundingBox.bounds), b = [bl[0][0].map((v, i) => Math.min(v, ...bl.map((q2) => q2[0][i]))), bl[0][1].map((v, i) => Math.max(v, ...bl.map((q2) => q2[1][i])))], mat = PMAT[state.part.material] || PMAT.aluminium;
       /* P1d: a welded frame is steel, so its kernel mass uses 7.85 kg/dm³ and carries the simplified-section label */
       const weld = weldSectionSummary(state.part.features), rho = weld ? 7.85 : mat[1];
       return { vol, area, size: [0, 1, 2].map((k) => b[1][k] - b[0][k]), mass: vol / 1000 * rho, rho, weld, mat, sheet: out.sheet || null }; })()
@@ -7632,7 +7950,7 @@ function partTool(k, preset, label) {
   if (k === 'measure') { partArm = null; partSel = 'measure'; cadTab = 'design'; renderCad(); return; }
   const first = !state.part.features.some((f) => f.type === 'shape' || f.type === 'push');
   /* Push/Pull, Revolve and Smart Dimension all work on a sketch before there is a body */
-  if (first && !['shape', 'sketch', 'text', 'push', 'revolve', 'sweep', 'loft', 'rib', 'dim', 'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick', 'member', 'gusset', 'weld',
+  if (first && !['shape', 'sketch', 'text', 'push', 'revolve', 'refplane', 'refaxis', 'csys', 'sweep', 'loft', 'rib', 'dim', 'surfext', 'surfrev', 'surfloft', 'surfsweep', 'surfplane', 'surfoffset', 'surfknit', 'surfthick', 'member', 'gusset', 'weld',
     'smbase', 'smedge', 'smmiter', 'smbend', 'smunfold', 'smflatten', 'smrelief', 'smconvert'].includes(k)) { say(para(L(`${FEAT[k].en} needs a body first. Start with a primitive (Box, Cylinder…) or Sketch → Extruded Boss.`, `${FEAT[k].id} butuh body dulu. Mulai dengan primitive (Box, Cylinder…) atau Sketch → Extruded Boss.`), 'm')); k = 'shape'; preset = null; label = null; }
   if (k === 'push' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Extrude needs a sketch: draw one first.', 'Extrude butuh sketch: buat sketch dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
   if (k === 'revolve' && !state.part.features.some((f) => f.type === 'sketch')) { say(para(L('Revolve needs a sketch: draw the profile first.', 'Revolve butuh sketch: buat profilnya dulu.'), 'm')); k = 'sketch'; preset = null; label = null; }
@@ -8113,6 +8431,365 @@ function s21cConvert(dw, idf) {
   return { ents, refused: [...new Set(refused)], lines, circles, skipped };
 }
 /* ---- end S21c helpers ---- */
+/* ---- S21e: named parameters. A size field may hold a number or the name of a parameter, so one number drives
+ * several steps. Values are resolved once per build, before any step runs; a field that names a parameter the part
+ * does not define is refused by the step that uses it, with the name — never read as 0 or as NaN. A configuration is
+ * a named set of parameter overrides, so the same tree builds at two sizes. Pure data maths: tests/s21e-params.test.mjs
+ * lifts this block and runs it in Node against the real kernel. ---- */
+const s21eNum = (v) => typeof v === 'number' ? Number.isFinite(v) : (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)));
+/** the parameter values the active configuration builds with (a configuration overrides single names) */
+function s21eTable(p) {
+  const t = {}, cfgs = (p && p.configs) || [], cfg = cfgs.find((c) => c && c.name === ((p && p.config) || 'Default'));
+  for (const [k, v] of Object.entries((p && p.params) || {})) {
+    const over = cfg && cfg.params && Object.prototype.hasOwnProperty.call(cfg.params, k) ? cfg.params[k] : null;
+    t[k] = s21eNum(over) ? Number(over) : Number(v);
+  }
+  return t;
+}
+/** resolve every numeric field of every feature in place; a name that is not defined comes back in `bad` */
+function s21eResolve(p) {
+  const table = s21eTable(p), bad = [], used = new Set();
+  for (const ft of (p && p.features) || []) {
+    const spec = (typeof FEAT !== 'undefined' && FEAT[ft.type] && FEAT[ft.type].fields) || [];
+    for (const f of spec) {
+      if (f.t !== 'num') continue;
+      const shadow = ft.e && ft.e[f.k] !== undefined ? ft.e[f.k] : undefined;
+      const v = shadow !== undefined ? shadow : ft.p[f.k];
+      if (s21eNum(v)) { ft.p[f.k] = Number(v); continue; }
+      const name = String(v == null ? '' : v).trim();
+      if (!name) continue;
+      ft.e = ft.e || {}; ft.e[f.k] = name;
+      if (!Object.prototype.hasOwnProperty.call(table, name) || !Number.isFinite(table[name])) { bad.push({ ft, k: f.k, name }); continue; }
+      ft.p[f.k] = table[name]; used.add(name);
+    }
+  }
+  return { bad, used, table };
+}
+/* ---- end S21e helpers ---- */
+/* ---- S21g: Filled Surface. The kernel's own filling builder (BRepOffsetAPI_MakeFilling, reached through
+ * R.getOC()) patches a surface between boundary edges of the body. The patch is a real face measured by the kernel,
+ * and the edges are picked on the model: by clicking near them in the viewport or by ticking them in the panel.
+ * tests/s21g-fill.test.mjs lifts this block and runs it against the real kernel. ---- */
+const s21gPt = (v) => v && (typeof v.toTuple === 'function' ? v.toTuple() : [v.x, v.y, v.z]);
+/** the two end points of an edge, for the screen-space pick and for the panel's label */
+function s21gEdgePts(e) { const a = s21gPt(e && e.startPoint), b = s21gPt(e && e.endPoint); return a && b ? [a, b] : []; }
+function s21gFill(R, edges, opts = {}) {
+  const list = (edges || []).filter(Boolean);
+  if (list.length < 2) throw new Error('A filled surface needs at least two boundary edges.');
+  const oc = R.getOC();
+  if (!oc || !oc.BRepOffsetAPI_MakeFilling) throw new Error('This kernel has no filling builder.');
+  const order = Math.max(0, Math.min(4, Math.round(+opts.order) || 0));
+  const mk = new oc.BRepOffsetAPI_MakeFilling();
+  for (const e of list) mk.Add(e.wrapped, order, true);
+  mk.Build();
+  if (!mk.IsDone()) throw new Error('The kernel could not fill between those edges: they do not form one boundary.');
+  const sh = R.cast(mk.Shape());
+  if (!sh) throw new Error('The filling came back empty.');
+  return sh;
+}
+/* ---- end S21g helpers ---- */
+/* ---- S21h: Trim Surface. A surface body is split by the plane of a face you pick on the model
+ * (BRepAlgoAPI_Splitter with a face made on that plane, both reached through R.getOC()), and the pieces on the side
+ * you choose are kept; their area is measured by the kernel. Which side is which is the picked face's own normal, so
+ * the same pick always keeps the same half. tests/s21h-trim.test.mjs lifts this block and runs it on the kernel. ---- */
+function s21hPt(v) {
+  if (!v) return null;
+  if (Array.isArray(v)) return [+v[0], +v[1], +v[2]];
+  if (typeof v.toTuple === 'function') return v.toTuple().map(Number);
+  if (v.x != null || v.y != null || v.z != null) return [+v.x, +v.y, +v.z];
+  return null;
+}
+function s21hPlaneOf(face) {
+  const n = s21hPt(face.normalAt && face.normalAt()), o = s21hPt(face.boundingBox && face.boundingBox.center);
+  if (!n || !o || !n.every(Number.isFinite) || !o.every(Number.isFinite)) return null;
+  if (Math.hypot(n[0], n[1], n[2]) < 1e-9) return null;
+  return { o, n };
+}
+function s21hTrim(R, shapes, plane, keep, radius = 1000) {
+  const list = (shapes || []).filter(Boolean);
+  if (!list.length) throw new Error('Trim needs a surface to cut.');
+  const oc = R.getOC();
+  if (!oc || !oc.BRepAlgoAPI_Splitter) throw new Error('This kernel has no splitter.');
+  const pln = new oc.gp_Pln(new oc.gp_Pnt(plane.o[0], plane.o[1], plane.o[2]), new oc.gp_Dir(plane.n[0], plane.n[1], plane.n[2]));
+  const mf = new oc.BRepBuilderAPI_MakeFace(pln, -radius, radius, -radius, radius);
+  if (!mf.IsDone()) throw new Error('Could not build the trimming face on that plane.');
+  const cutter = R.cast(mf.Face());
+  const out = [];
+  for (const sh of list) {
+    const args = new oc.NCollection_List_TopoDS_Shape(); args.Append(sh.wrapped);
+    const tools = new oc.NCollection_List_TopoDS_Shape(); tools.Append(cutter.wrapped);
+    const sp = new oc.BRepAlgoAPI_Splitter(); sp.SetArguments(args); sp.SetTools(tools); sp.Build();
+    if (!sp.IsDone() || (sp.HasErrors && sp.HasErrors())) throw new Error('The kernel could not split that surface with the picked face plane.');
+    const res = R.cast(sp.Shape()), pieces = (res && res.faces) || [];
+    if (!pieces.length) throw new Error('The split left no face.');
+    for (const f of pieces) {
+      const c = s21hPt(f.boundingBox && f.boundingBox.center);
+      if (!c) throw new Error('A split piece has no centre to place it on a side.');
+      const d = (c[0] - plane.o[0]) * plane.n[0] + (c[1] - plane.o[1]) * plane.n[1] + (c[2] - plane.o[2]) * plane.n[2];
+      if (Math.abs(d) < 1e-9) { out.push(f); continue; }
+      if (keep === 'negative' ? d < 0 : d > 0) out.push(f);
+    }
+  }
+  if (!out.length) throw new Error('Every piece ended on the side that was cut away: nothing is left to keep.');
+  return out;
+}
+/* ---- end S21h helpers ---- */
+/* ---- S21i: Boundary Surface. Two directions of curves taken from the body. The first direction is lofted by the
+ * kernel itself (BRepOffsetAPI_ThruSections through each curve as a wire), and the second direction has to land on
+ * that loft — the gap is measured with BRepExtrema_DistShapeShape — and, when it holds two curves or more, its own
+ * loft must come to the same patch, both areas measured by the kernel. So the step is a real two-direction boundary,
+ * not one loft with the other set ignored. tests/s21i-bound.test.mjs lifts this block and runs it on the kernel. ---- */
+const s21iPtF = (v) => v && (typeof v.toTuple === 'function' ? v.toTuple() : [v.x, v.y, v.z]);
+const s21iMm = (n) => Number(n).toFixed(1);
+function s21iLoft(R, curves) {
+  const oc = R.getOC();
+  if (!oc || !oc.BRepOffsetAPI_ThruSections || !oc.BRepBuilderAPI_MakeWire) throw new Error('This kernel has no loft through curves.');
+  const mk = new oc.BRepOffsetAPI_ThruSections(false, false, 1e-6);
+  for (const c of curves) {
+    const mw = new oc.BRepBuilderAPI_MakeWire(); mw.Add(c.wrapped);
+    if (!mw.IsDone()) throw new Error('One of those curves could not be turned into a wire.');
+    mk.AddWire(mw.Wire());
+  }
+  mk.Build();
+  if (!mk.IsDone()) throw new Error('The kernel could not loft those curves into one surface.');
+  const sh = R.cast(mk.Shape());
+  if (!sh) throw new Error('The loft came back empty.');
+  return sh;
+}
+/** how far a point is from a shape, measured by the kernel (not estimated from bounding boxes) */
+function s21iGap(R, shape, p) {
+  const oc = R.getOC();
+  if (!oc || !oc.BRepExtrema_DistShapeShape) return NaN;
+  const mk = new oc.BRepBuilderAPI_MakeVertex(new oc.gp_Pnt(p[0], p[1], p[2]));
+  const d = new oc.BRepExtrema_DistShapeShape();
+  d.LoadS1(shape.wrapped); d.LoadS2(mk.Vertex()); d.Perform();
+  return d.IsDone() ? d.Value() : NaN;
+}
+function s21iBoundary(R, uCurves, vCurves, opts = {}) {
+  const u = (uCurves || []).filter(Boolean), v = (vCurves || []).filter(Boolean);
+  if (u.length < 2) throw new Error(`A boundary surface needs at least two curves in the first direction; this has ${u.length}.`);
+  if (v.length < 1) throw new Error(`A boundary surface needs at least one curve in the second direction; this has ${v.length}.`);
+  const tol = opts.tol == null ? 0.5 : +opts.tol;
+  let su;
+  try { su = s21iLoft(R, u); } catch (e) { throw new Error('The kernel could not loft the first direction: keep those curves apart and not twisted.'); }
+  const uArea = R.measureArea(su);
+  if (!(uArea > 1e-6)) throw new Error('The first direction lofted to a surface with no area.');
+  for (let i = 0; i < v.length; i++) {
+    for (const p of [s21iPtF(v[i].startPoint), s21iPtF(v[i].endPoint)]) {
+      if (!p || !p.every(Number.isFinite)) continue;
+      const gap = s21iGap(R, su, p);
+      if (!(gap <= tol)) throw new Error(`Curve ${i + 1} of the second direction does not meet the lofted surface: its end is ${Number.isFinite(gap) ? s21iMm(gap) + ' mm' : 'not measurable'} away.`);
+    }
+  }
+  let vArea = null;
+  if (v.length >= 2) {
+    try { vArea = R.measureArea(s21iLoft(R, v)); } catch (e) { throw new Error('The kernel could not loft the second direction: those guides do not make one surface.'); }
+    if (Math.abs(vArea - uArea) > Math.max(1, uArea * 0.01)) {
+      throw new Error(`The two directions do not bound the same patch: ${s21iMm(uArea)} mm² in the first against ${s21iMm(vArea)} mm² in the second.`);
+    }
+  }
+  return { shape: su, uArea, vArea, u: u.length, v: v.length };
+}
+/* ---- end S21i helpers ---- */
+/* ---- S21j: Delete Face. The picked face is taken out of the solid's shell, the opening it leaves is closed by a
+ * patch the kernel builds from the opening's own boundary (BRepOffsetAPI_MakeFilling), the remaining faces and the
+ * patch are sewn into one shell (BRepBuilderAPI_Sewing) and that shell is made a solid again
+ * (BRepBuilderAPI_MakeSolid). The step only exists if the result passes the kernel's own validity check
+ * (BRepCheck_Analyzer) and has a volume, and the numbers written into the step are the kernel's measurements of the
+ * body before and after. A face with an opening inside it, or a boundary the kernel cannot fill, is refused and
+ * nothing is deleted. tests/s21j-delface.test.mjs lifts this block and runs it on the kernel. ---- */
+const s21jMm = (n) => Number(n).toFixed(1);
+function s21jValid(R, shape) {
+  const oc = R.getOC();
+  const a = new oc.BRepCheck_Analyzer(shape.wrapped, true, false);
+  const ok = !!(a.IsValid_2 ? a.IsValid_2() : a.IsValid_1 ? a.IsValid_1() : a.IsValid());
+  if (a.delete) a.delete();
+  return ok;
+}
+function s21jDelete(R, body, faceIndex) {
+  if (!body) throw new Error('Delete Face needs a body: build a Shape first.');
+  const oc = R.getOC();
+  if (!oc || !oc.BRepOffsetAPI_MakeFilling || !oc.BRepBuilderAPI_Sewing || !oc.BRepBuilderAPI_MakeSolid || !oc.BRepTools) throw new Error('This kernel has no patching, sewing and solid builders.');
+  const faces = (body.faces || []).filter(Boolean);
+  const k = Math.round(+faceIndex);
+  if (!(Number.isFinite(k) && k >= 0 && k < faces.length)) throw new Error(`Face ${Number.isFinite(k) ? k + 1 : faceIndex} is not on this body: it has ${faces.length} faces.`);
+  const removed = faces[k];
+  const loops = removed.wires.length;
+  if (loops > 1) throw new Error(`Face ${k + 1} has ${loops} boundary loops, and patching only the outer one would cover the opening inside it. That face is refused.`);
+  const areaRemoved = R.measureArea(removed);
+  let volBefore = NaN;
+  try { volBefore = R.measureVolume(body); } catch (e) { volBefore = NaN; }
+  const edges = R.cast(oc.BRepTools.OuterWire(removed.wrapped)).edges.map((e) => e.wrapped);
+  if (!edges.length) throw new Error(`Face ${k + 1} has no boundary to patch.`);
+  const fill = new oc.BRepOffsetAPI_MakeFilling();
+  let patched = false;
+  try { for (const e of edges) fill.Add(e, 0, true); fill.Build(); patched = !!fill.IsDone(); } catch (e) { patched = false; }
+  if (!patched) throw new Error(`The kernel could not patch the opening left by face ${k + 1}: that boundary is not one it can fill, so nothing was deleted.`);
+  const patch = R.cast(fill.Shape());
+  if (!patch) throw new Error('The patch came back empty, so nothing was deleted.');
+  const areaPatch = R.measureArea(patch);
+  const sew = new oc.BRepBuilderAPI_Sewing(1e-4);
+  faces.forEach((fc, i) => { if (i !== k) sew.Add(fc.wrapped); });
+  for (const pf of patch.faces) sew.Add(pf.wrapped);
+  sew.Perform();
+  const sewn = R.cast(sew.SewedShape());
+  const mk = new oc.BRepBuilderAPI_MakeSolid(oc.TopoDS.Shell(sewn.wrapped));
+  mk.Build();
+  const solid = R.cast(mk.Solid());
+  if (!solid) throw new Error('The sewn shell did not become a solid, so nothing was deleted.');
+  let volAfter = NaN;
+  try { volAfter = R.measureVolume(solid); } catch (e) { volAfter = NaN; }
+  if (!(volAfter > 0)) throw new Error(`The healed body has no volume (${Number.isFinite(volAfter) ? s21jMm(volAfter) + ' mm\u00b3' : 'not measurable'}): the patch did not close it, so nothing was deleted.`);
+  if (!s21jValid(R, solid)) throw new Error('The healed body does not pass the kernel\u2019s validity check, so nothing was deleted.');
+  return { shape: solid, face: k, loops, faces: solid.faces.length, areaRemoved, areaPatch, volBefore, volAfter };
+}
+/* ---- end S21j helpers ---- */
+/* ---- S21k: Boundary Boss/Base. The same two-direction boundary as Boundary Surface (s21iBoundary: the first
+ * direction is lofted by the kernel and the second has to land on that loft, both measured), then made into a solid:
+ * the kernel offsets that patch by the thickness (BRepOffsetAPI_MakeOffsetShape), a wall is lofted from every
+ * boundary curve of the patch to the matching curve of the offset (BRepOffsetAPI_ThruSections), and the patch, the
+ * offset and the walls are sewn into one shell (BRepBuilderAPI_Sewing) and made a solid
+ * (BRepBuilderAPI_MakeSolid). Both thickness directions are built; the one that adds material to the body — decided
+ * by the kernel's own volumes, not by a guess at a normal — is the one kept, and the step records the two patch
+ * areas, the volume added and the body before and after. A closed patch (a tube: the barrel of a cylinder) carries a
+ * seam curve that sits on the face twice, so a wall there would be sewn onto an interior edge and the shell would
+ * not close; that wall is dropped, and only if the kernel then accepts the solid. tests/s21k-boundboss.test.mjs
+ * lifts this block and runs it on the kernel. ---- */
+const s21kPt = (v) => (Array.isArray(v) ? v.map(Number) : v && typeof v.toTuple === 'function' ? v.toTuple() : v ? [v.x, v.y, v.z] : null);
+function s21kEdgeMid(e) {
+  const a = s21kPt(e && e.startPoint), b = s21kPt(e && e.endPoint);
+  if (!a || !b) return null;
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+}
+/** the kernel's own validity check, kept in this block so it can be lifted on its own */
+function s21kValid(R, shape) {
+  const oc = R.getOC();
+  const a = new oc.BRepCheck_Analyzer(shape.wrapped, true, false);
+  const good = !!(a.IsValid_2 ? a.IsValid_2() : a.IsValid_1 ? a.IsValid_1() : a.IsValid());
+  if (a.delete) a.delete();
+  return good;
+}
+/** every curve of every wire of every face: the curves a patch can be walled along */
+function s21kBoundary(sh) {
+  const out = [];
+  for (const fc of (sh && sh.faces) || []) for (const w of fc.wires || []) for (const e of w.edges || []) if (e) out.push(e);
+  return out;
+}
+/** one thickness direction: offset the patch, wall it, sew it, make it a solid — or null when the kernel refuses */
+function s21kSolid(R, patch, t, sign) {
+  const oc = R.getOC();
+  const mk = new oc.BRepOffsetAPI_MakeOffsetShape();
+  mk.PerformByJoin(patch.wrapped, sign * t, 1e-3, oc.BRepOffset_Mode.BRepOffset_Skin, true, false, oc.GeomAbs_JoinType.GeomAbs_Arc);
+  if (!mk.IsDone()) return null;
+  const off = R.cast(mk.Shape());
+  if (!off || !off.faces || !off.faces.length) return null;
+  const pe = s21kBoundary(patch), oe = s21kBoundary(off);
+  if (!pe.length || pe.length > oe.length) return null;
+  const used = new Set(), walls = [];
+  for (const e of pe) {
+    const m = s21kEdgeMid(e);
+    let best = -1, bd = Infinity;
+    oe.forEach((o, i) => {
+      if (used.has(i)) return;
+      const q = s21kEdgeMid(o); if (!m || !q) return;
+      const d = Math.hypot(q[0] - m[0], q[1] - m[1], q[2] - m[2]);
+      if (d < bd) { bd = d; best = i; }
+    });
+    if (best < 0) return null;
+    used.add(best);
+    const w = new oc.BRepOffsetAPI_ThruSections(false, false, 1e-6);
+    let okw = true;
+    for (const x of [e, oe[best]]) {
+      const mw = new oc.BRepBuilderAPI_MakeWire(); mw.Add(x.wrapped);
+      if (!mw.IsDone()) { okw = false; break; }
+      w.AddWire(mw.Wire());
+    }
+    if (!okw) return null;
+    w.Build();
+    if (!w.IsDone()) return null;
+    walls.push(R.cast(w.Shape()));
+  }
+  /* the whole wall set first, then one wall left out: only the kernel's own sewing and validity decide */
+  for (let drop = -1; drop < walls.length; drop++) {
+    try {
+      const sew = new oc.BRepBuilderAPI_Sewing(1e-4);
+      sew.Add(patch.wrapped); sew.Add(off.wrapped);
+      walls.forEach((w, i) => { if (i !== drop) sew.Add(w.wrapped); });
+      sew.Perform();
+      const sewn = R.cast(sew.SewedShape());
+      if (!sewn || !sewn.faces || !sewn.faces.length) continue;
+      const mkS = new oc.BRepBuilderAPI_MakeSolid(oc.TopoDS.Shell(sewn.wrapped));
+      mkS.Build();
+      let solid = R.cast(mkS.Solid());
+      if (!solid) continue;
+      let vol = R.measureVolume(solid);
+      if (vol < 0) { solid = R.cast(oc.TopoDS.Solid(solid.wrapped.Reversed())); vol = R.measureVolume(solid); }
+      if (!(vol > 0) || !s21kValid(R, solid)) continue;
+      return { solid, vol, faces: solid.faces.length, walls: walls.length - (drop >= 0 ? 1 : 0), droppedSeam: drop >= 0 };
+    } catch (e) { /* the next wall set may close */ }
+  }
+  return null;
+}
+function s21kBoundarySolid(R, uCurves, vCurves, thickness, body) {
+  if (!body) throw new Error('Boundary Boss/Base takes its curves from a body: build one first.');
+  const res = s21iBoundary(R, uCurves, vCurves);
+  const t = +thickness;
+  if (!(t > 0)) throw new Error(`Thickness must be above 0 mm; this is ${Number.isFinite(t) ? s21iMm(t) + ' mm' : String(thickness)}.`);
+  const oc = R.getOC();
+  if (!oc || !oc.BRepOffsetAPI_MakeOffsetShape || !oc.BRepBuilderAPI_Sewing || !oc.BRepBuilderAPI_MakeSolid || !oc.BRepOffsetAPI_ThruSections) throw new Error('This kernel has no offset, sewing and solid builders.');
+  const volBefore = R.measureVolume(body);
+  const made = [];
+  for (const sign of [1, -1]) { const s2 = s21kSolid(R, res.shape, t, sign); if (s2) made.push({ ...s2, sign }); }
+  if (!made.length) throw new Error(`The kernel could not close a ${s21iMm(t)} mm thick boundary patch into a solid: use a smaller thickness.`);
+  const tries = [];
+  for (const c of made) {
+    try { const fused = body.fuse(c.solid); tries.push({ ...c, shape: fused, volAfter: R.measureVolume(fused), added: R.measureVolume(fused) - volBefore }); }
+    catch (e) { /* the fuse failed on this side: the other one may still add material */ }
+  }
+  if (!tries.length) throw new Error('The thickened patch could not be joined to the body.');
+  tries.sort((a, b) => b.added - a.added);
+  const good = tries.find((x) => x.added > 1e-6 && s21kValid(R, x.shape));
+  if (!good) throw new Error('Both thickness directions add no material to the body: the patch lies inside it, so no boss was made.');
+  return { shape: good.shape, u: res.u, v: res.v, uArea: res.uArea, vArea: res.vArea, t, volBefore, volAfter: good.volAfter, added: good.added, faces: good.shape.faces.length, walls: good.walls };
+}
+/* ---- end S21k helpers ---- */
+/* ---- S21l: Variable Fillet. One edge, a radius at each end, built by the kernel's own fillet builder
+ * (BRepFilletAPI_MakeFillet with a radius law) — never a loft of hand-made sections. The step records the volume the
+ * kernel removed and the body before and after; two equal radii give exactly the volume of the constant fillet, which
+ * is what the test measures. A radius the edge cannot carry is refused by the kernel's own failure, with both radii
+ * named, and nothing is changed. tests/s21l-varfillet.test.mjs lifts this block and runs it on the kernel. ---- */
+const s21lMm = (v) => (Number.isFinite(+v) ? (+v).toFixed(1) + ' mm' : String(v));
+/** the kernel's own validity check, kept in this block so it can be lifted on its own */
+function s21lValid(R, shape) {
+  const oc = R.getOC();
+  const a = new oc.BRepCheck_Analyzer(shape.wrapped, true, false);
+  const good = !!(a.IsValid_2 ? a.IsValid_2() : a.IsValid_1 ? a.IsValid_1() : a.IsValid());
+  if (a.delete) a.delete();
+  return good;
+}
+function s21lVariableFillet(R, body, edgeIndex, r1, r2) {
+  if (!body) throw new Error('Variable Fillet rounds an edge of a body: build one first.');
+  const oc = R.getOC();
+  if (!oc || !oc.BRepFilletAPI_MakeFillet) throw new Error('This kernel has no fillet builder.');
+  const edges = (body.edges || []).filter(Boolean);
+  const k = Math.round(+edgeIndex);
+  if (!(Number.isFinite(k) && k >= 0 && k < edges.length)) throw new Error(`Edge ${Number.isFinite(k) ? k + 1 : edgeIndex} is not on this body: it has ${edges.length} edges.`);
+  const a = +r1, b = +r2;
+  if (!(a > 0) || !(b > 0)) throw new Error(`Both radii must be above 0 mm; these are ${s21lMm(r1)} and ${s21lMm(r2)}.`);
+  const volBefore = R.measureVolume(body);
+  const mk = new oc.BRepFilletAPI_MakeFillet(body.wrapped, oc.ChFi3d_FilletShape.ChFi3d_Rational);
+  let done = false;
+  try { mk.Add(a, b, edges[k].wrapped); mk.Build(); done = mk.IsDone ? !!mk.IsDone() : !!mk.HasResult(); } catch (e) { done = false; }
+  const faulty = mk.NbFaultyContours ? mk.NbFaultyContours() : 0;
+  if (!done || faulty > 0) throw new Error(`The kernel cannot round edge ${k + 1} from ${s21lMm(a)} to ${s21lMm(b)}: those radii do not fit that edge. Use smaller ones.`);
+  const shape = R.cast(mk.Shape());
+  if (!shape) throw new Error(`The fillet on edge ${k + 1} came back empty, so nothing was changed.`);
+  const volAfter = R.measureVolume(shape), removed = volBefore - volAfter;
+  if (!(removed > 1e-9)) throw new Error(`Rounding edge ${k + 1} from ${s21lMm(a)} to ${s21lMm(b)} removed no material, so nothing was changed.`);
+  if (!s21lValid(R, shape)) throw new Error(`The kernel built a fillet on edge ${k + 1} from ${s21lMm(a)} to ${s21lMm(b)} but it does not pass its validity check, so nothing was changed. Use smaller radii.`);
+  return { shape, edge: k, r1: a, r2: b, constant: !!(mk.IsConstant ? mk.IsConstant(1) : Math.abs(a - b) < 1e-9), faces: shape.faces.length, volBefore, volAfter, removed };
+}
+/* ---- end S21l helpers ---- */
 
 /* ---- S21: the sketch curves the kernel draws (ellipse, a closed spline through typed points) -------------------
  * Both are real OpenCascade geometry, never a polygon stand-in: the ellipse is two ellipse arcs, the closed spline is
@@ -8441,6 +9118,308 @@ function openSketchSession(tool, editId) {
     /* the tool list starts at the top: no focus scroll, and the pane is reset after the render */
     const pane = document.querySelector('#cadProps'); if (pane) pane.scrollTop = 0;
     const i = document.querySelector('#cadProps .skform input'); if (i && narrow()) i.focus({ preventScroll: true }); });
+}
+/* S21e: Manage → Parameters / Configurations, one panel. The table holds the named sizes; a step field that holds a
+ * name instead of a number uses that size at build time. A configuration is a named set of overrides, and
+ * switching it rebuilds the part through the kernel, so both configurations are real builds, not labels. */
+function openParamsPanel() {
+  if (!state.part) startPart();
+  cadPanel = 'params'; partArm = null; partSel = null; cadTab = 'design';
+  renderCad(); setLpTab('edit');
+}
+function prRebuild() { clearTimeout(prRebuild.t); prRebuild.t = setTimeout(() => { if (state.part) rebuildPart(); }, 300); }
+function renderParamsPanel(pr) {
+  const p = state.part; if (!p) return;
+  p.params = p.params || {};
+  p.configs = (p.configs && p.configs.length) ? p.configs : [{ name: 'Default', params: {} }];
+  if (!p.configs.some((c) => c.name === p.config)) p.config = p.configs[0].name;
+  const cfg = p.configs.find((c) => c.name === p.config) || p.configs[0];
+  cfg.params = cfg.params || {};
+  const names = Object.keys(p.params);
+  const store = (e, k) => { const raw = e.target.value.trim(); p.params[k] = s21eNum(raw) ? Number(raw) : raw; };
+  const rename = (e, k) => {
+    const v = e.target.value.trim();
+    if (!v || v === k || Object.prototype.hasOwnProperty.call(p.params, v)) return false;
+    const val = p.params[k]; delete p.params[k]; p.params[v] = val;
+    for (const c of p.configs) if (c.params && Object.prototype.hasOwnProperty.call(c.params, k)) { c.params[v] = c.params[k]; delete c.params[k]; }
+    return true;
+  };
+  const rowIn = (kind, k, val, onchange) => h('input', { type: 'text', inputmode: 'decimal', 'data-pr': kind, 'data-pn': k, value: val == null ? '' : String(val), spellcheck: 'false',
+    oninput: (e) => { if (kind === 'val') store(e, k); else if (kind === 'over') { cfg.params[k] = e.target.value.trim() === '' ? undefined : (s21eNum(e.target.value) ? Number(e.target.value) : e.target.value); if (cfg.params[k] === undefined) delete cfg.params[k]; } },
+    onchange: (e) => { if (kind === 'name') { if (!rename(e, k)) return; } onchange && onchange(); rebuildPart(); } });
+  pr.append(h('h2', null, h('span', null, L('Parameters', 'Parameter')), h('span', { class: 'phd' }, h('small', null, 'S21e'))));
+  pr.append(h('p', { class: 'hint' }, L('A parameter is a named size. Type its name into any number field of a step (Box L, Extrude distance, Scale ×k, hole Ø) and that step builds with the value here; change the value and every step that names it is rebuilt. A name that is not defined here is refused by that step, with the name — it is never read as 0.', 'Parameter adalah ukuran bernama. Ketik namanya di field angka mana pun pada sebuah langkah (Box L, jarak Extrude, Scale ×k, Ø lubang) dan langkah itu dibangun dengan nilai di sini; ubah nilainya dan semua langkah yang menyebutnya dibangun ulang. Nama yang tidak didefinisikan di sini ditolak oleh langkah itu, dengan namanya — tidak pernah dibaca sebagai 0.')));
+  if (!names.length) pr.append(h('p', { class: 'hint' }, L('No parameter yet. Add one, then type its name into a step.', 'Belum ada parameter. Tambahkan satu, lalu ketik namanya di sebuah langkah.')));
+  else pr.append(h('table', { class: 'cutlist' }, h('tr', null, h('th', null, L('Name', 'Nama')), h('th', null, L('Value (mm)', 'Nilai (mm)')),
+    cfg.name !== 'Default' ? h('th', { title: L('Override for this configuration; empty = use the value', 'Nilai khusus konfigurasi ini; kosong = pakai nilai utama') }, cfg.name) : null, h('th', null, '')),
+  ...names.map((k) => h('tr', null, h('td', null, rowIn('name', k, k, () => renderCad())),
+    h('td', null, rowIn('val', k, p.params[k], null)),
+    cfg.name !== 'Default' ? h('td', null, rowIn('over', k, cfg.params[k], null)) : null,
+    h('td', null, h('button', { class: 'pfx', 'data-pr': 'del', 'data-pn': k, title: L('Delete this parameter', 'Hapus parameter ini'), onclick: () => { delete p.params[k]; for (const c of p.configs) if (c.params) delete c.params[k]; rebuildPart(); } }, '×'))))));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip', 'data-pr': 'add', onclick: () => {
+    let n = 1; while (Object.prototype.hasOwnProperty.call(p.params, 'P' + n)) n++;
+    p.params['P' + n] = 10; renderCad(); } }, L('Add parameter', 'Tambah parameter'))));
+  pr.append(h('h3', null, L('Configurations', 'Konfigurasi')));
+  pr.append(h('p', { class: 'hint' }, L('A configuration is a named set of parameter values for this same feature tree. Switch it and the part is rebuilt by the kernel at that size.', 'Konfigurasi adalah kumpulan nilai parameter bernama untuk pohon fitur yang sama. Ganti konfigurasinya dan part dibangun ulang oleh kernel pada ukuran itu.')));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Active configuration', 'Konfigurasi aktif')),
+    h('select', { 'data-pr': 'cfg', onchange: (e) => { p.config = e.target.value; rebuildPart(); } },
+      p.configs.map((c) => h('option', { value: c.name, selected: c.name === p.config }, c.name)))));
+  pr.append(h('div', { class: 'sktools' },
+    h('button', { class: 'chip', 'data-pr': 'cfg-add', onclick: () => {
+      let n = 1; while (p.configs.some((c) => c.name === 'Config ' + n)) n++;
+      p.configs.push({ name: 'Config ' + n, params: {} }); p.config = 'Config ' + n; renderCad(); } }, L('Add configuration', 'Tambah konfigurasi')),
+    p.config !== 'Default' ? h('button', { class: 'chip', 'data-pr': 'cfg-del', onclick: () => {
+      p.configs = p.configs.filter((c) => c.name !== p.config); if (!p.configs.length) p.configs = [{ name: 'Default', params: {} }];
+      p.config = p.configs[0].name; rebuildPart(); } }, L('Delete this configuration', 'Hapus konfigurasi ini')) : null));
+}
+/* S21g: the Filled Surface panel and its viewport pick. The list is the body's own B-rep edges with their end
+ * points, so what you tick is exactly what the kernel will fill; a click in the viewport picks the edge nearest the
+ * pointer in screen space. Nothing is added until you press Build. */
+function s21gSegDist(x, y, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+  if (!l2) return Math.hypot(x - a[0], y - a[1]);
+  let t = ((x - a[0]) * dx + (y - a[1]) * dy) / l2; t = Math.max(0, Math.min(1, t));
+  return Math.hypot(x - (a[0] + dx * t), y - (a[1] + dy * t));
+}
+function fillPickIndex(cx, cy) {
+  if (!partShape || !partShape.edges) return null;
+  const r = $('#viewport').getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
+  let best = null, bestD = 14;
+  partShape.edges.forEach((e, i) => {
+    const pts = s21gEdgePts(e).map((w) => viewer.project(w)).filter(Boolean);
+    for (let k = 0; k + 1 < pts.length; k++) { const d = s21gSegDist(x, y, pts[k], pts[k + 1]); if (d < bestD) { bestD = d; best = i; } }
+  });
+  return best;
+}
+function renderFillPanel(pr) {
+  const a = partArm, p = a.p, sel = p.edges || (p.edges = []), edges = (partShape && partShape.edges) || [];
+  const mm = (v) => f(v, 1);
+  /* read the selection at click time: the panel re-renders between clicks, and a stale copy would drop earlier ticks */
+  const toggle = (i) => { const cur = partArm.p.edges || []; partArm.p.edges = cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i]; renderCad(); };
+  pr.append(h('h2', null, h('span', null, L('Filled Surface', 'Filled Surface')), h('span', { class: 'phd' }, h('small', null, 'S21g'))));
+  pr.append(h('p', { class: 'hint' }, L('Click the boundary edges in the viewport, or tick them below, then press Build. The kernel fills the patch between them and the step records the area it measured. A viewport click picks the edge nearest the pointer; a round edge is easier to tick in this list.', 'Klik tepi batasnya di viewport, atau centang di daftar bawah, lalu tekan Bangun. Kernel mengisi tambalan di antara tepi itu dan langkahnya mencatat luas yang diukur. Klik di viewport memilih tepi terdekat dari penunjuk; tepi bulat lebih mudah dicentang di daftar ini.')));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Edge order (0–4)', 'Orde tepi (0–4)')),
+    h('input', { type: 'text', inputmode: 'decimal', 'data-k': 'order', value: p.order ?? 2, oninput: (e) => { p.order = e.target.value; } })));
+  pr.append(h('h3', null, L('Boundary edges', 'Tepi batas') + ` (${sel.length})`));
+  pr.append(edges.length ? h('ol', { class: 'sklist' }, edges.map((e, i) => {
+    const ends = s21gEdgePts(e);
+    const txt = ends.length === 2 ? `(${mm(ends[0][0])}, ${mm(ends[0][1])}, ${mm(ends[0][2])}) → (${mm(ends[1][0])}, ${mm(ends[1][1])}, ${mm(ends[1][2])})` : '—';
+    return h('li', { class: sel.includes(i) ? 'on' : '', 'data-fill': String(i), onclick: () => toggle(i) }, h('b', null, `${i + 1}. ${e.geomType}`), h('span', null, txt));
+  })) : h('p', { class: 'hint' }, L('No body yet: build one first (a primitive or an Extrude), then this panel lists its edges.', 'Belum ada body: bangun dulu (primitive atau Extrude), lalu panel ini mendaftar tepinya.')));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-fill-go': '1', onclick: () => {
+    const now = partArm.p.edges || [];
+    if (now.length < 2) { a.note = L(`Tick at least two boundary edges first: ${now.length} selected.`, `Centang dulu paling sedikit dua tepi batas: ${now.length} terpilih.`); return renderCad(); }
+    state.part.features.push({ id: Date.now().toString(36), type: 'surffill', p: { order: +partArm.p.order || 0, edges: [...now] } });
+    partSel = state.part.features.length - 1; partArm = null; rebuildPart();
+  } }, L('Build', 'Bangun')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
+  if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
+}
+{ const cv = $('#cv');
+  cv.addEventListener('pointerdown', (e) => {
+    if (!partArm || partArm.type !== 'surffill' || partBusy || e.button > 0) return;
+    const i = fillPickIndex(e.clientX, e.clientY);
+    if (i == null) return;
+    e.preventDefault(); e.stopPropagation();
+    const sel = partArm.p.edges || (partArm.p.edges = []);
+    partArm.p.edges = sel.includes(i) ? sel.filter((x) => x !== i) : [...sel, i];
+    renderCad();
+  });
+}
+/* S21h: the Trim Surface panel. It lists the body's planar faces with the area and centre the kernel reports; the
+ * picked face supplies the cutting plane and its normal decides which half is kept. A viewport click picks the face
+ * whose centre projects nearest the pointer, and the list stays there for the faces that overlap on screen. */
+function trimPickIndex(cx, cy) {
+  if (!partShape || !partShape.faces) return null;
+  const r = $('#viewport').getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
+  let best = null, bestD = 60;
+  partShape.faces.forEach((f, i) => {
+    if (f.geomType !== 'PLANE') return;
+    const p = viewer.project(f.boundingBox.center); if (!p) return;
+    const d = Math.hypot(p[0] - x, p[1] - y);
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return best;
+}
+function renderTrimPanel(pr) {
+  const a = partArm, p = a.p;
+  if (p.face == null) p.face = 0;
+  const faces = (partShape && partShape.faces) || [];
+  const planar = faces.map((f, i) => ({ f, i })).filter((x) => x.f.geomType === 'PLANE');
+  pr.append(h('h2', null, h('span', null, L('Trim Surface', 'Trim Surface')), h('span', { class: 'phd' }, h('small', null, 'S21h'))));
+  pr.append(h('p', { class: 'hint' }, L('The surface body is cut by the plane of the face you pick, and only the side you choose is kept. Click a face in the viewport, or pick it below; the area before and after is measured by the kernel and written into the step.', 'Body surface dipotong oleh bidang muka yang kamu pilih, dan hanya sisi yang kamu pilih yang disimpan. Klik muka di viewport, atau pilih di daftar; luas sebelum dan sesudah diukur kernel dan dicatat di langkahnya.')));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Keep the side', 'Sisi yang disimpan')),
+    h('select', { 'data-k': 'keep', onchange: (e) => { p.keep = e.target.value; } },
+      [['positive', L('Along the picked face normal', 'Searah normal muka yang dipilih')], ['negative', L('Against the picked face normal', 'Berlawanan normal muka yang dipilih')]]
+        .map(([v, t]) => h('option', { value: v, selected: (p.keep || 'positive') === v }, t)))));
+  pr.append(h('h3', null, L('Planar faces of the body', 'Muka datar body') + ` (${planar.length})`));
+  pr.append(planar.length ? h('ol', { class: 'sklist' }, planar.map(({ f: fc, i }) => {
+    const c = fc.boundingBox.center;
+    return h('li', { class: (+p.face === i ? 'on' : ''), 'data-trim': String(i), onclick: () => { partArm.p.face = i; renderCad(); } },
+      h('b', null, `${i + 1}. PLANE`), h('span', null, `(${f(c[0], 1)}, ${f(c[1], 1)}, ${f(c[2], 1)})`));
+  })) : h('p', { class: 'hint' }, L('No body with planar faces yet: build one first (a primitive or an Extrude).', 'Belum ada body dengan muka datar: bangun dulu (primitive atau Extrude).')));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-trim-go': '1', onclick: () => {
+    if (!planar.length) { a.note = L('Pick a face of the body first: the cut plane comes from it.', 'Pilih dulu muka body: bidang potongnya berasal dari situ.'); return renderCad(); }
+    state.part.features.push({ id: Date.now().toString(36), type: 'surftrim', p: { keep: partArm.p.keep === 'negative' ? 'negative' : 'positive', face: +partArm.p.face || 0 } });
+    partSel = state.part.features.length - 1; partArm = null; rebuildPart();
+  } }, L('Trim', 'Potong')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
+  if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
+}
+/* S21j: the Delete Face panel. It lists every face of the body with the type and centre the kernel reports; the
+ * picked face is deleted and its opening patched. A viewport click picks the face whose centre projects nearest the
+ * pointer, and the list stays there for the faces that overlap on screen. */
+function delPickIndex(cx, cy) {
+  if (!partShape || !partShape.faces) return null;
+  const r = $('#viewport').getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
+  let best = null, bestD = 60;
+  partShape.faces.forEach((f, i) => {
+    const p = viewer.project(f.boundingBox.center); if (!p) return;
+    const d = Math.hypot(p[0] - x, p[1] - y);
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return best;
+}
+function renderDelPanel(pr) {
+  const a = partArm, p = a.p;
+  if (p.face == null) p.face = 0;
+  const faces = (partShape && partShape.faces) || [];
+  pr.append(h('h2', null, h('span', null, L('Delete Face', 'Delete Face')), h('span', { class: 'phd' }, h('small', null, 'S21j'))));
+  pr.append(h('p', { class: 'hint' }, L('Pick the face to remove. The kernel patches the opening it leaves, sews the body back into one shell and makes it a solid again, and the step records the removed area, the patch area and the volume before and after, all measured. A face with an opening inside it, or a boundary the kernel cannot fill, is refused and nothing is deleted. Click a face in the viewport or pick it below.', 'Pilih muka yang dihapus. Kernel menambal celah yang ditinggalkannya, menjahit body jadi satu shell dan menjadikannya solid lagi, lalu langkahnya mencatat luas yang dihapus, luas tambalan, dan volume sebelum dan sesudah, semuanya hasil ukur. Muka yang punya bukaan di dalamnya, atau batas yang tidak bisa ditambal kernel, ditolak dan tidak ada yang dihapus. Klik muka di viewport atau pilih di daftar bawah.')));
+  pr.append(h('h3', null, L('Faces of the body', 'Muka body') + ` (${faces.length})`));
+  pr.append(faces.length ? h('ol', { class: 'sklist' }, faces.map((fc, i) => {
+    const c = fc.boundingBox.center;
+    return h('li', { class: (+p.face === i ? 'on' : ''), 'data-del': String(i), onclick: () => { partArm.p.face = i; renderCad(); } },
+      h('b', null, `${i + 1}. ${fc.geomType}`), h('span', null, `(${f(c[0], 1)}, ${f(c[1], 1)}, ${f(c[2], 1)})`));
+  })) : h('p', { class: 'hint' }, L('No body yet: build one first (a primitive or an Extrude), then this panel lists its faces.', 'Belum ada body: bangun dulu (primitive atau Extrude), lalu panel ini mendaftar mukanya.')));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-del-go': '1', onclick: () => {
+    if (!faces.length) { a.note = L('Pick a face of the body first.', 'Pilih dulu muka body.'); return renderCad(); }
+    state.part.features.push({ id: Date.now().toString(36), type: 'delface', p: { face: +partArm.p.face || 0 } });
+    partSel = state.part.features.length - 1; partArm = null; rebuildPart();
+  } }, L('Delete', 'Hapus')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
+  if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
+}
+/* S21i: the Boundary Surface panel. One list of the body's edges and a switch for the direction a click adds to, so
+ * the two sets are built by pointing at the model; a curve belongs to one direction at a time. */
+function boundPickIndex(cx, cy) {
+  if (!partShape || !partShape.edges) return null;
+  const r = $('#viewport').getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
+  let best = null, bestD = 14;
+  partShape.edges.forEach((e, i) => {
+    const pts = s21gEdgePts(e).map((w) => viewer.project(w)).filter(Boolean);
+    for (let k = 0; k + 1 < pts.length; k++) { const d = s21gSegDist(x, y, pts[k], pts[k + 1]); if (d < bestD) { bestD = d; best = i; } }
+  });
+  return best;
+}
+/* read the direction and both sets at click time: the panel re-renders between clicks, and a stale copy drops ticks */
+function boundToggle(i) {
+  if (!partArm) return;
+  const p = partArm.p, dir = p.dir === 'v' ? 'v' : 'u', other = dir === 'v' ? 'u' : 'v';
+  p[other] = (p[other] || []).filter((x) => x !== i);
+  const cur = p[dir] || [];
+  p[dir] = cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i];
+}
+function renderBoundPanel(pr) {
+  const a = partArm, p = a.p, boss = a.type === 'boundboss';
+  if (p.dir !== 'v') p.dir = 'u';
+  p.u = p.u || []; p.v = p.v || [];
+  const edges = (partShape && partShape.edges) || [], mm = (v) => f(v, 1);
+  pr.append(h('h2', null, h('span', null, boss ? L('Boundary Boss/Base', 'Boundary Boss/Base') : L('Boundary Surface', 'Boundary Surface')), h('span', { class: 'phd' }, h('small', null, boss ? 'S21k' : 'S21i'))));
+  pr.append(h('p', { class: 'hint' }, boss
+    ? L('A solid from curves in two directions. Choose the direction you are adding to, then click curves in the viewport or tick them below: the first direction is lofted by the kernel and the second must land on that loft, then the patch is thickened, walled and sewn into a solid that is fused into the body. Press Build and the step records both areas and the volume the kernel added.', 'Solid dari kurva dua arah. Pilih arah yang sedang kamu isi, lalu klik kurvanya di viewport atau centang di bawah: arah pertama di-loft kernel dan arah kedua harus jatuh di loft itu, lalu tambalannya ditebalkan, diberi dinding dan dijahit jadi solid yang digabung ke body. Tekan Bangun dan langkahnya mencatat kedua luas dan volume yang ditambahkan kernel.')
+    : L('A surface bounded by curves in two directions. Choose the direction you are adding to, then click curves in the viewport or tick them below: the first direction is lofted by the kernel, and the second has to land on that loft (its own loft is measured too). Press Build and the step keeps the area the kernel measured.', 'Surface yang dibatasi kurva pada dua arah. Pilih arah yang sedang kamu isi, lalu klik kurvanya di viewport atau centang di bawah: arah pertama di-loft kernel, dan arah kedua harus jatuh di loft itu (loft arah kedua juga diukur). Tekan Bangun dan langkahnya menyimpan luas hasil ukur kernel.')));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Adding to', 'Menambah ke')),
+    h('select', { 'data-k': 'dir', onchange: (e) => { partArm.p.dir = e.target.value === 'v' ? 'v' : 'u'; renderCad(); } },
+      [['u', L('Direction 1 (lofted)', 'Arah 1 (di-loft)')], ['v', L('Direction 2 (guides)', 'Arah 2 (pemandu)')]]
+        .map(([v2, t]) => h('option', { value: v2, selected: p.dir === v2 }, t)))));
+  if (boss) pr.append(h('label', { class: 'skrow' }, h('span', null, L('Thickness', 'Tebal')),
+    h('span', { class: 'pnum' }, h('input', { type: 'number', min: 0.1, step: 'any', 'data-k': 't', value: p.t == null ? 3 : p.t, oninput: (e) => { partArm.p.t = e.target.value; } }), h('em', null, 'mm'))));
+  pr.append(h('h3', null, L('Direction 1', 'Arah 1') + ` (${p.u.length})`,
+    h('span', { class: 'phd' }, h('small', null, L('direction 2', 'arah 2') + ` (${p.v.length})`))));
+  pr.append(edges.length ? h('ol', { class: 'sklist' }, edges.map((e, i) => {
+    const ends = s21gEdgePts(e);
+    const txt = ends.length === 2 ? `(${mm(ends[0][0])}, ${mm(ends[0][1])}, ${mm(ends[0][2])}) → (${mm(ends[1][0])}, ${mm(ends[1][1])}, ${mm(ends[1][2])})` : '—';
+    const d1 = p.u.includes(i), d2 = p.v.includes(i);
+    return h('li', { class: d1 || d2 ? 'on' : '', 'data-bound': String(i), onclick: () => { boundToggle(i); renderCad(); } },
+      h('b', null, `${i + 1}. ${e.geomType}${d1 ? ' · 1' : ''}${d2 ? ' · 2' : ''}`), h('span', null, txt));
+  })) : h('p', { class: 'hint' }, L('No body yet: build one first (a primitive or an Extrude), then this panel lists its edges.', 'Belum ada body: bangun dulu (primitive atau Extrude), lalu panel ini mendaftar tepinya.')));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-bound-go': '1', onclick: () => {
+    const now = partArm.p, u = now.u || [], v = now.v || [];
+    if (u.length < 2) { a.note = L(`Pick at least two curves in the first direction: ${u.length} selected.`, `Pilih dulu paling sedikit dua kurva di arah pertama: ${u.length} terpilih.`); return renderCad(); }
+    if (v.length < 1) { a.note = L(`Pick at least one curve in the second direction: ${v.length} selected.`, `Pilih dulu paling sedikit satu kurva di arah kedua: ${v.length} terpilih.`); return renderCad(); }
+    state.part.features.push(boss
+      ? { id: Date.now().toString(36), type: 'boundboss', p: { u: [...u], v: [...v], t: +(now.t || 3) } }
+      : { id: Date.now().toString(36), type: 'surfbound', p: { u: [...u], v: [...v] } });
+    partSel = state.part.features.length - 1; partArm = null; rebuildPart();
+  } }, boss ? L('Build boss', 'Bangun boss') : L('Build', 'Bangun')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
+  if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
+}
+/* S21l: the Variable Fillet panel. It lists the body's edges with the ends the kernel reports; the picked edge is
+ * filleted from the first radius at one end to the second at the other. A viewport click picks the edge nearest the
+ * pointer (the same picker Boundary Surface uses), and the list stays for edges that overlap on screen. */
+function renderVarPanel(pr) {
+  const a = partArm, p = a.p;
+  if (p.edge == null) p.edge = 0;
+  if (p.r1 == null) p.r1 = 2;
+  if (p.r2 == null) p.r2 = 6;
+  const edges = (partShape && partShape.edges) || [], mm = (v) => f(v, 1);
+  pr.append(h('h2', null, h('span', null, L('Variable Fillet', 'Variable Fillet')), h('span', { class: 'phd' }, h('small', null, 'S21l'))));
+  pr.append(h('p', { class: 'hint' }, L('Pick one edge and give a radius at each end. The kernel builds the fillet with that radius law and the step records the material it removed and the volume before and after, all measured. Two equal radii build the constant fillet. A radius the edge cannot carry is refused with both radii named, and nothing is changed. Click an edge in the viewport or pick it below.', 'Pilih satu tepi lalu beri radius di masing-masing ujung. Kernel membangun fillet dengan hukum radius itu dan langkahnya mencatat material yang dibuang serta volume sebelum dan sesudah, semuanya hasil ukur. Dua radius yang sama membangun fillet konstan. Radius yang tidak muat di tepi itu ditolak dengan kedua radiusnya disebut, dan tidak ada yang berubah. Klik tepi di viewport atau pilih di daftar bawah.')));
+  pr.append(h('label', { class: 'skrow' }, h('span', null, L('Radius at the first end', 'Radius di ujung pertama')),
+    h('span', { class: 'pnum' }, h('input', { type: 'number', min: 0.1, step: 'any', 'data-k': 'r1', value: p.r1, oninput: (e) => { partArm.p.r1 = e.target.value; } }), h('em', null, 'mm'))),
+  h('label', { class: 'skrow' }, h('span', null, L('Radius at the second end', 'Radius di ujung kedua')),
+    h('span', { class: 'pnum' }, h('input', { type: 'number', min: 0.1, step: 'any', 'data-k': 'r2', value: p.r2, oninput: (e) => { partArm.p.r2 = e.target.value; } }), h('em', null, 'mm'))));
+  pr.append(h('h3', null, L('Edges of the body', 'Tepi body') + ` (${edges.length})`));
+  pr.append(edges.length ? h('ol', { class: 'sklist' }, edges.map((e, i) => {
+    const ends = s21gEdgePts(e);
+    const txt = ends.length === 2 ? `(${mm(ends[0][0])}, ${mm(ends[0][1])}, ${mm(ends[0][2])}) → (${mm(ends[1][0])}, ${mm(ends[1][1])}, ${mm(ends[1][2])})` : '—';
+    return h('li', { class: (+p.edge === i ? 'on' : ''), 'data-var': String(i), onclick: () => { partArm.p.edge = i; renderCad(); } },
+      h('b', null, `${i + 1}. ${e.geomType}`), h('span', null, txt));
+  })) : h('p', { class: 'hint' }, L('No body yet: build one first (a primitive or an Extrude), then this panel lists its edges.', 'Belum ada body: bangun dulu (primitive atau Extrude), lalu panel ini mendaftar tepinya.')));
+  pr.append(h('div', { class: 'sktools' }, h('button', { class: 'chip primary', 'data-var-go': '1', onclick: () => {
+    if (!edges.length) { a.note = L('Pick an edge of the body first.', 'Pilih dulu tepi body.'); return renderCad(); }
+    state.part.features.push({ id: Date.now().toString(36), type: 'vfillet', p: { edge: +partArm.p.edge || 0, r1: +(partArm.p.r1 || 2), r2: +(partArm.p.r2 || 6) } });
+    partSel = state.part.features.length - 1; partArm = null; rebuildPart();
+  } }, L('Build fillet', 'Bangun fillet')), h('button', { class: 'chip', onclick: () => { partArm = null; renderCad(); } }, L('Cancel', 'Batal'))));
+  if (a.note) pr.append(h('div', { class: 'warnbox' }, a.note));
+}
+{ const cv = $('#cv');
+  cv.addEventListener('pointerdown', (e) => {
+    if (!partArm || partBusy || e.button > 0) return;
+    if (partArm.type === 'surffill') {
+      const i = fillPickIndex(e.clientX, e.clientY);
+      if (i == null) return;
+      e.preventDefault(); e.stopPropagation();
+      const sel = partArm.p.edges || (partArm.p.edges = []);
+      partArm.p.edges = sel.includes(i) ? sel.filter((x) => x !== i) : [...sel, i];
+      return renderCad();
+    }
+    if (partArm.type === 'surftrim') {
+      const i = trimPickIndex(e.clientX, e.clientY);
+      if (i == null) return;
+      e.preventDefault(); e.stopPropagation();
+      partArm.p.face = i; renderCad();
+      return;
+    }
+    if (partArm.type === 'delface') {
+      const i = delPickIndex(e.clientX, e.clientY);
+      if (i == null) return;
+      e.preventDefault(); e.stopPropagation();
+      partArm.p.face = i; renderCad();
+      return;
+    }
+    if (partArm.type === 'vfillet') {
+      const i = boundPickIndex(e.clientX, e.clientY);
+      if (i == null) return;
+      e.preventDefault(); e.stopPropagation();
+      partArm.p.edge = i; renderCad();
+      return;
+    }
+    if (partArm.type === 'surfbound' || partArm.type === 'boundboss') {
+      const i = boundPickIndex(e.clientX, e.clientY);
+      if (i == null) return;
+      e.preventDefault(); e.stopPropagation();
+      boundToggle(i); renderCad();
+    }
+  }, true);
 }
 function skCommit(list, note) {
   const a = skSession(); if (!a) return; a.p.ents = list; a.pend = []; a.pen = [];
@@ -8844,6 +9823,11 @@ function renderPartCad() {
   /* right: properties */
   const pr = propsEl(); pr.innerHTML = '';
   if (partArm && partArm.p && partArm.p.prof === 'ents') { renderSketchPanel(pr); }
+  else if (partArm && partArm.type === 'surffill') { renderFillPanel(pr); }
+  else if (partArm && partArm.type === 'surftrim') { renderTrimPanel(pr); }
+  else if (partArm && partArm.type === 'delface') { renderDelPanel(pr); }
+  else if (partArm && (partArm.type === 'surfbound' || partArm.type === 'boundboss')) { renderBoundPanel(pr); }
+  else if (partArm && partArm.type === 'vfillet') { renderVarPanel(pr); }
   else if (partArm) {
     pr.append(h('h2', null, h('span', null, partArm.n || L(`New ${FEAT[partArm.type].en}`, `${FEAT[partArm.type].id} baru`)), h('span', { class: 'phd' }, h('small', null, 'OpenCascade'))),
       h('p', { class: 'hint' }, partArm.d && partArm.d.en ? L(partArm.d.en, partArm.d.id) : (TOOL_GROUPS.find((g) => g[0] === partArm.type) || [null, null, ''])[2]),
@@ -9107,7 +10091,7 @@ const RIBBON = [
       T('Revolved Boss/Base', 'rev', 'on', 'Turn the last sketch around X, Y or Z, up to 360\u00b0.', 'Putar sketch terakhir mengelilingi X, Y, atau Z, sampai 360\u00b0.', 'Revolve, Shaft', P('revolve')),
       T('Swept Boss/Base', 'sweep', 'on', 'Sweep the last sketch along another sketch drawn as one open line or arc chain. The kernel builds it; the step stays in the tree.', 'Sapukan sketch terakhir sepanjang sketch lain yang digambar sebagai satu rangkaian garis atau busur terbuka. Kernel yang membangun; langkahnya tetap di pohon.', 'Sweep', P('sweep')),
       T('Lofted Boss/Base', 'loft', 'on', 'Blend between two sketches on their own planes. Pick both in the form; the kernel lofts them.', 'Gabungkan dua sketch di bidangnya masing-masing. Pilih keduanya di form; kernel yang me-loft.', 'Loft, Multi-section Solid', P('loft')),
-      T('Boundary Boss/Base', 'bound', 'no', 'Solid from boundary curves in two directions.', 'Solid dari kurva batas dua arah.', '')]],
+      T('Boundary Boss/Base', 'bound', 'on', 'A solid from curves in two directions: pick both sets on the body and give a thickness. The kernel lofts the first direction, checks the second against that loft, offsets the patch, walls it, sews it and makes it a solid, and the side that adds material is fused into the body. The step records both patch areas and the volume it added. Two curves in the first direction and one in the second is the minimum.', 'Solid dari kurva dua arah: pilih kedua set di body dan beri tebal. Kernel me-loft arah pertama, memeriksa arah kedua terhadap loft itu, meng-offset tambalan, membuat dindingnya, menjahitnya dan menjadikannya solid, lalu sisi yang menambah material digabung ke body. Langkahnya mencatat kedua luas tambalan dan volume yang ditambahkan. Minimal dua kurva di arah pertama dan satu di arah kedua.', 'Boundary, Boundary Boss', { part: 'boundboss' })]],
     ['Cut', [T('Extruded Cut', 'cut', 'on', 'Extrude the last sketch and remove it from the body.', 'Tarik sketch terakhir dan buang dari body.', 'Pocket, Extrude Cut', P('push', { op: 'cut', dist: -5 })),
       T('Revolved Cut', 'rev', 'on', 'Cut by turning the last sketch around X, Y or Z, up to 360°. The kernel removes the volume it sweeps.', 'Potong dengan memutar sketch terakhir mengelilingi X, Y, atau Z, sampai 360°. Kernel membuang volume yang disapu.', 'Groove', P('revolve', { op: 'cut' })),
       T('Swept Cut', 'sweep', 'on', 'Cut by sweeping the last sketch along another sketch. Same kernel sweep as the boss, removed from the body.', 'Potong dengan menyapu sketch terakhir sepanjang sketch lain. Sapuan kernel yang sama, dibuang dari body.', 'Slot (CATIA)', P('sweep', { op: 'cut' })),
@@ -9119,36 +10103,36 @@ const RIBBON = [
       T('Sphere', 'sphere', 'on', 'Sphere by diameter.', 'Bola dengan diameter.', 'Primitive Sphere', P('shape', { kind: 'sphere' }))]],
     ['Dress-up', [T('Fillet', 'fillet', 'on', 'Round vertical, top, bottom or all edges.', 'Bulatkan tepi tegak, atas, bawah, atau semua.', 'Edge Fillet, Round', P('edge', { mode: 'fillet' })),
       T('Chamfer', 'chamfer', 'on', 'Bevel vertical, top, bottom or all edges.', 'Miringkan tepi tegak, atas, bawah, atau semua.', 'Bevel', P('edge', { mode: 'chamfer' })),
-      T('Variable Fillet', 'fillet', 'no', 'Fillet whose radius changes along the edge.', 'Fillet dengan radius berubah sepanjang tepi.', 'Face Fillet, Full Round'),
+      T('Variable Fillet', 'fillet', 'on', 'Round one edge with a radius that changes from one end to the other: pick the edge in the list or in the viewport and give the two radii. The kernel builds the fillet with a radius law (BRepFilletAPI_MakeFillet), two equal radii give exactly the constant fillet, and the step records the material removed and the volume before and after, all measured. A radius that edge cannot carry is refused with both radii named.', 'Bulatkan satu tepi dengan radius yang berubah dari satu ujung ke ujung lain: pilih tepinya di daftar atau di viewport dan beri dua radius. Kernel membangun fillet dengan hukum radius (BRepFilletAPI_MakeFillet), dua radius yang sama persis menghasilkan fillet konstan, dan langkahnya mencatat material yang dibuang serta volume sebelum dan sesudah, semuanya hasil ukur. Radius yang tidak muat di tepi itu ditolak dengan kedua radiusnya disebut.', 'Face Fillet, Full Round', { part: 'vfillet' }),
       T('Shell', 'shell', 'on', 'Hollow the body with an open top or bottom.', 'Kosongkan body dengan sisi atas atau bawah terbuka.', 'Shell', P('wall')),
       T('Draft', 'draft', 'on', 'Taper the \u00b1X or \u00b1Y faces about a neutral plane, so the part leaves the mould.', 'Miringkan muka \u00b1X atau \u00b1Y terhadap bidang netral, supaya part bisa lepas dari cetakan.', 'Draft Angle', P('draft')),
       T('Rib', 'rib', 'on', 'Thin stiffening wall from one open sketch line: thickness across the line, height up from its plane.', 'Dinding tipis penguat dari satu garis sketch terbuka: tebal melintang garis, tinggi naik dari bidangnya.', 'Stiffener, Web', P('rib')),
       T('Thread', 'thread', 'on', 'Cosmetic metric thread: size, pitch (ISO 261) and tap drill (ISO 2306) recorded on the step. The thread is not modelled, so the volume does not change.', 'Ulir metrik kosmetik: ukuran, pitch (ISO 261), dan bor tap (ISO 2306) dicatat di langkahnya. Ulir tidak dimodelkan, jadi volume tidak berubah.', 'Cosmetic Thread', P('thread')),
-      T('Dome', 'dome', 'no', 'Curved cap on a face.', 'Tudung melengkung di sebuah muka.', ''),
-      T('Wrap / Emboss', 'wrap', 'no', 'Wrap or emboss a sketch onto a face.', 'Bungkus atau timbulkan sketch di muka.', 'Emboss')]],
-    ['Reference', [T('Reference Plane', 'rplane', 'no', 'A plane you pick as a sketch plane (offset, angle or three points). Sketches sit on XY, XZ or YZ only in this build, so a reference plane cannot host one yet.', 'Bidang yang bisa dipakai sebagai bidang sketch (offset, sudut, atau tiga titik). Sketch hanya bisa di XY, XZ, atau YZ pada build ini, jadi bidang rujukan belum bisa menampung sketch.', 'Plane, Datum Plane'),
-      T('Reference Axis', 'raxis', 'no', 'A named axis for patterns and mates. Patterns turn around a field value, not a named axis, so there is nothing to point a datum axis at yet.', 'Sumbu bernama untuk pola dan mate. Pola berputar mengelilingi nilai di form, bukan sumbu bernama, jadi belum ada yang bisa ditunjuk datum axis.', 'Axis, Datum Axis')]],
+      T('Dome', 'dome', 'on', 'A spherical cap on the top face: the sphere radius is (a² + h²) / 2h from the face area and the height you type, the cap is clipped to that face outline by the kernel, and the volume added is measured. A body with no flat +Z face is refused by name.', 'Tudung bola di muka atas: radius bola (a² + h²) / 2h dari luas muka dan tinggi yang kamu ketik, tudungnya dipotong sesuai garis luar muka oleh kernel, dan volume yang ditambahkan diukur. Body tanpa muka +Z datar ditolak dengan namanya.', 'Dome', P('dome')),
+      T('Wrap / Emboss', 'wrap', 'on', 'A sketch placed on the body’s flat +Z face and extruded along that face’s normal: a boss stands on it, a cut debosses it, and the volume added or removed is measured by the kernel. A curved face is refused by name instead of being approximated.', 'Sketch yang diletakkan di muka +Z datar dan ditarik sepanjang normal muka itu: boss berdiri di atasnya, potongan membuat deboss, dan volume yang ditambah atau dihilangkan diukur kernel. Muka lengkung ditolak dengan namanya, bukan didekati.', 'Emboss, Deboss', P('wrap'))]],
+    ['Reference', [T('Reference Plane', 'rplane', 'on', 'A real datum plane from an offset, an angle about the base plane’s own axis, or three points. It lists in every Sketch’s Plane field, and Extrude or Revolve builds on it with the same kernel plane.', 'Bidang datum sungguhan dari offset, sudut terhadap sumbu bidang dasarnya, atau tiga titik. Ia muncul di kolom Plane setiap Sketch, dan Extrude atau Revolve membangun di atasnya dengan bidang kernel yang sama.', 'Plane, Datum Plane', P('refplane')),
+      T('Reference Axis', 'raxis', 'on', 'A datum axis from a point and a direction or from two points; Revolve lists it in its Axis field and turns the profile about exactly that line.', 'Sumbu datum dari titik dan arah atau dari dua titik; Revolve mendaftarkannya di kolom Axis dan memutar profil tepat mengelilingi garis itu.', 'Axis, Datum Axis', P('refaxis'))]],
     ['Pattern', [T('Linear Pattern', 'lpat', 'on', 'Repeat the step before along X/Y.', 'Ulangi langkah sebelumnya sepanjang X/Y.', 'Rectangular Pattern', P('repeat', { kind: 'line' })),
       T('Circular Pattern', 'cpat', 'on', 'Repeat the step before around a centre.', 'Ulangi langkah sebelumnya mengelilingi pusat.', 'Polar Pattern', P('repeat', { kind: 'circle' })),
       T('Mirror', 'mirror', 'on', 'Mirror the step before about YZ or XZ.', 'Cerminkan langkah sebelumnya terhadap YZ atau XZ.', 'Symmetry', P('repeat', { kind: 'mirror' })),
-      T('Curve Pattern', 'spline', 'no', 'Repeat along a curve.', 'Ulangi sepanjang kurva.', 'Pattern on Path'),
-      T('Fill Pattern', 'spat', 'no', 'Fill a region with a pattern.', 'Isi sebuah area dengan pola.', '')]],
+      T('Curve Pattern', 'spline', 'on', 'Repeats the step before it at points spaced evenly along a path sketch’s own lines and arcs, with the spacing taken from the measured path length. The path has to be on XY, and that is said when it is not.', 'Mengulang langkah sebelumnya di titik yang berjarak sama sepanjang garis dan busur sketch lintasan, jaraknya dari panjang lintasan yang diukur. Lintasan harus di XY, dan itu disebutkan bila bukan.', 'Pattern on Path', P('curvepat')),
+      T('Fill Pattern', 'spat', 'on', 'A rectangular fill of the step before it: columns, rows and a spacing in X and Y, up to 400 kernel copies.', 'Isi persegi dari langkah sebelumnya: kolom, baris, dan jarak di X dan Y, sampai 400 salinan kernel.', 'Fill Pattern', P('fillpat'))]],
     ['Body', [T('Combine', 'comb', 'on', 'Add or cut a primitive into the body (choose “With the body”). Common/intersect later.', 'Tambah atau potong primitive ke body (pilih “Terhadap body”). Common/irisan menyusul.', 'Boolean, Union, Subtract', P('shape', { op: 'cut' })),
       T('Mirror Body', 'mirror', 'on', 'Mirror the whole body and join it.', 'Cerminkan seluruh body lalu gabungkan.', 'Symmetry (body)', P('bodies', { kind: 'mirror' })),
       T('Move/Copy Body', 'move', 'on', 'Move the body by X, Y, Z.', 'Geser body sejauh X, Y, Z.', 'Translate, Move', P('bodies', { kind: 'move' })),
-      T('Split', 'split', 'no', 'Split a body with a plane.', 'Belah body dengan bidang.', 'Split Body'),
-      T('Scale', 'scale', 'no', 'Scale the body.', 'Skala body.', ''),
-      T('Thicken', 'thick', 'no', 'Turn a surface into a solid. It is one tool with one name: the working copy is Surface → Thicken, and the button below opens exactly that tool. This grey copy is not a second implementation.', 'Ubah surface menjadi solid. Ini satu alat dengan satu nama: yang berjalan adalah Surface → Thicken, dan tombol di bawah membuka alat itu. Salinan abu-abu ini bukan implementasi kedua.', '', null, ['Open Surface → Thicken', 'Buka Surface → Thicken', { part: 'surfthick' }])]],
-    ['Reference', [T('Plane', 'plane', 'mk1', 'Reference plane by offset, angle or three points. Today: sketch on XY, XZ, YZ with an offset.', 'Bidang referensi dengan offset, sudut, atau tiga titik. Saat ini: sketch di XY, XZ, YZ dengan offset.', 'Construction Plane, Datum Plane', null, ALT_SK),
-      T('Axis', 'axis', 'mk1', 'Reference axis for revolves and patterns.', 'Sumbu referensi untuk revolve dan pola.', 'Datum Axis'),
-      T('Coordinate System', 'csys', 'no', 'Extra coordinate system.', 'Sistem koordinat tambahan.', 'Datum CSYS')]]]],
+      T('Split', 'split', 'on', 'Splits a body with a plane into two real bodies, both kept and both drawn, each measured by the kernel; a plane that does not cut the part in two is refused.', 'Membelah body dengan bidang jadi dua body sungguhan, keduanya disimpan dan digambar, masing-masing diukur kernel; bidang yang tidak membelah part jadi dua ditolak.', 'Split Body', P('split')),
+      T('Scale', 'scale', 'on', 'Scale the whole body by one factor about the origin or its centre, with the kernel doing the scaling and the step reporting the volume before and after (×k³). Negative factors are refused: this step does not mirror or split the body.', 'Skala seluruh body dengan satu faktor terhadap titik nol atau pusatnya, kernel yang melakukan skalanya dan langkahnya melaporkan volume sebelum dan sesudah (×k³). Faktor negatif ditolak: langkah ini tidak mencerminkan atau memecah body.', 'Body Scale', P('scale')),
+      T('Thicken', 'thick', 'on', 'Turn a surface into a solid. It is one tool with one name: clicking this opens Surface → Thicken, the one implementation, and that is the only Thicken in the app.', 'Ubah surface menjadi solid. Ini satu alat dengan satu nama: klik di sini membuka Surface → Thicken, satu-satunya implementasi, dan itu satu-satunya Thicken di aplikasi.', '', P('surfthick'), ['Open Surface → Thicken', 'Buka Surface → Thicken', { part: 'surfthick' }])]],
+    ['Reference', [T('Plane', 'plane', 'on', 'Reference plane by offset, angle or three points; a sketch can name it.', 'Bidang referensi dengan offset, sudut, atau tiga titik; sketch bisa memakainya.', 'Construction Plane, Datum Plane', P('refplane')),
+      T('Axis', 'axis', 'on', 'Reference axis for revolves.', 'Sumbu referensi untuk revolve.', 'Datum Axis', P('refaxis')),
+      T('Coordinate System', 'csys', 'on', 'A named origin and a turn about Z; a circular Repeat can turn about it.', 'Titik asal bernama dan putaran terhadap Z; Repeat melingkar bisa berputar mengelilinginya.', 'Datum CSYS', P('csys'))]]]],
   ['surf', 'Surface', 'Surface', [
     ['Create', [T('Extruded Surface', 'surf', 'on', 'Push a closed sketch along its normal: the kernel builds the shell, its area is measured, and Thicken turns it into a wall.', 'Tarik sketch tertutup sepanjang normalnya: kernel membangun shell, luasnya diukur, dan Thicken mengubahnya jadi dinding.', 'Extrude Surface', { part: 'surfext' }),
       T('Revolved Surface', 'rev', 'on', 'Turn a sketch around X, Y or Z by the angle you give; the kernel builds the shell.', 'Putar sketch mengelilingi X, Y, atau Z sebesar sudut yang kamu beri; kernel membangun shell-nya.', 'Revolve Surface', { part: 'surfrev' }),
       T('Swept Surface', 'sweep', 'on', 'Sweep a profile sketch along a path sketch with the kernel.', 'Sapu sketch profil sepanjang sketch lintasan dengan kernel.', 'Sweep Surface', { part: 'surfsweep' }),
       T('Lofted Surface', 'loft', 'on', 'Blend two or three closed sketches on their own planes into one surface.', 'Gabungkan dua atau tiga sketch tertutup di bidangnya menjadi satu surface.', 'Loft Surface', { part: 'surfloft' }),
       T('Boundary Surface', 'bound', 'no', 'Surface from boundary curves in two directions. The kernel wrapper here has no boundary-surface builder yet (Batch 5).', 'Surface dari kurva batas dua arah. Wrapper kernel di sini belum punya pembangun boundary surface (Batch 5).', ''),
-      T('Filled Surface', 'fill', 'no', 'Patch a hole with a surface. Not built yet (Batch 5); Planar Surface covers a flat patch today.', 'Tambal lubang dengan surface. Belum dibangun (Batch 5); Planar Surface menangani tambalan datar sekarang.', 'Patch'),
+      T('Filled Surface', 'fill', 'on', 'Patch a surface between boundary edges of the body: click the edges in the viewport (or tick them in the panel), press Build, and the kernel\u2019s filling builder makes the face and measures its area. A patch needs at least two edges; the edges are the body\u2019s own, so the step rebuilds with the body.', 'Tambal surface di antara tepi batas body: klik tepinya di viewport (atau centang di panel), tekan Bangun, dan pembangun filling kernel membuat mukanya lalu mengukur luasnya. Tambalan perlu paling sedikit dua tepi; tepinya milik body sendiri, jadi langkah itu ikut dibangun ulang bersama body.', 'Patch', { part: 'surffill' }),
       T('Planar Surface', 'plane', 'on', 'A flat face from one closed sketch loop, built by the kernel.', 'Muka datar dari satu loop sketch tertutup, dibangun kernel.', 'Planar Face', { part: 'surfplane' })]],
     ['Edit', [T('Offset Surface', 'offset', 'on', 'Copy the surface body at a distance with the kernel. The copy has no profile of its own, so Thicken cannot use it.', 'Salin body surface pada jarak tertentu dengan kernel. Salinan tidak punya profil sendiri, jadi Thicken tidak bisa memakainya.', 'Offset Face', { part: 'surfoffset' }),
       T('Knit Surface', 'knit', 'on', 'Sew the surface pieces into one body, or into a solid when they close.', 'Jahit potongan surface jadi satu body, atau jadi solid bila menutup.', 'Stitch', { part: 'surfknit' }),
