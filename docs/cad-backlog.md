@@ -35,7 +35,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 | Convert Entities | `on` (shipped) | `s21cConvert`: the kernel's HLR projection of the model, converted curve by curve — a projected line stays a line, a projected circle becomes two three-point arcs, so the sketch stays lines and arcs and builds exactly. A projected ellipse or spline is refused by name, never flattened | — (a projected B-spline stays out until the sketch can hold splines proper) | 2b |
 | Mirror Entities | `on` (shipped) | `p1Mirror`: an exact 2D reflection of the selected entities about a centre line; a mirrored arc is still an arc | — (copies carry no relations of their own, and the note says so) | 2 |
 | Sketch Pattern | `on` (shipped) | `p1Pattern`: linear (dx, dy) and circular (angle about a centre) copies, 2–200 instances, inside the same sketch step | — (same note about relations) | 2 |
-| Text | `no` | the kernel bundle has `drawText`, no font file is shipped | a licensed font asset (opentype), then the emboss/cut path (see Wrap/Emboss) | 8 |
+| Text | `on` (this batch) | `idrisTextRects`: a 5×7 block font bundled in the page as a cell table, fused cell by cell into one closed profile and extruded as a boss or cut as a deboss, with the profile area and the measured volume in the note | proportional letterforms and multi-line text: the bundled font is a single 5×7 cell grid, and a character it does not carry is refused by name | A |
 
 ### Features
 

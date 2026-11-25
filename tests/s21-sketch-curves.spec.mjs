@@ -55,7 +55,8 @@ await openTab('Sketch');
   check('Ellipse runs now', () => ok(s['Ellipse'] === false, 'still grey: ' + JSON.stringify(s)));
   check('Spline runs now', () => ok(s['Spline'] === false, 'still grey: ' + JSON.stringify(s)));
   check('Sketch Correction runs now', () => ok(s['Sketch Correction'] === false, 'still grey: ' + JSON.stringify(s)));
-  check('the tools that are not built stay grey', () => ok(s['Text'] === true && s['Convert Entities'] === true, JSON.stringify(s)));
+  /* Batch A now builds Text too (bundled 5×7 block font), so only the tools still unbuilt stay grey. */
+  check('the tools that are not built stay grey', () => ok(s['Text'] === false && s['Convert Entities'] === false, JSON.stringify(s)));
 }
 await openTab('Features');
 await checkAsync('Features → Thicken opens Surface → Thicken instead of a second build', async () => {
