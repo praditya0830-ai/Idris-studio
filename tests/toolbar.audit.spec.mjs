@@ -20,7 +20,7 @@ import { writeFileSync } from 'node:fs';
 
 const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:3000/index.html';
 const { chromium } = await import('playwright');
-const browser = await chromium.launch();
+const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.setDefaultTimeout(8000);
 

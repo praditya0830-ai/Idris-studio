@@ -60,8 +60,8 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 | --- | --- | --- | --- | --- |
 | Boundary Surface | `on` (shipped) | `s21iBoundary`: the curves of the body are split into two directions by the panel's switch; the first direction is lofted by the kernel (`BRepOffsetAPI_ThruSections` through each curve as a wire), every curve of the second direction must land on that loft (the gap is `BRepExtrema_DistShapeShape`), and when the second direction holds two curves or more its own loft is measured too and must come to the same patch | — (a true network surface — a Gordon build through crossing curves, which OCCT has no public builder for — is not what this is: the second direction is constrained to the first direction's loft) | 6 |
 | Filled Surface | `on` (shipped) | `s21gFill`: the kernel's `BRepOffsetAPI_MakeFilling` over the boundary edges you pick on the body (viewport click picks the edge nearest the pointer, or tick the list), with the measured patch area in the note | — (continuity/support faces and patches between non-connected edges stay out: the kernel refuses what is not one boundary) | 6 |
-| Trim Surface | `on` (shipped) | `s21hTrim`: the surface body is split by the plane of a face you pick on the model (`BRepAlgoAPI_Splitter` with a face made on that plane; a viewport click picks the face whose centre is under the pointer, or pick it in the list), and the pieces on the chosen side of that face's normal are kept, with the kept area and the area before measured | — (a cutting plane that misses the surface leaves it whole, and a curved face cannot supply a cutting plane) | 6 |
-| Delete Face | `on` (shipped) | `s21jDelete`: the picked face leaves the body, the kernel patches the opening from the opening's own boundary (`BRepOffsetAPI_MakeFilling`), sews the remaining faces and the patch back into one shell (`BRepBuilderAPI_Sewing`) and makes it a solid again (`BRepBuilderAPI_MakeSolid`); the step is accepted only when `BRepCheck_Analyzer` passes and the volume is positive, and it records the removed area, the patch area and the volume before and after | delete **and patch**, not a redefinition of the solid: neighbour faces are not extended (no `ShapeFix_Shape`, no `BRepTools_ReShape` in this build), so an opening whose patch coincides with the removed face — every planar face — comes back at the same volume; a face with more than one boundary loop is refused (patching only the outer loop would cover the opening inside it), and so is a boundary `MakeFilling` cannot build (a cylinder's seam-bounded barrel) | 6 |
+| Trim Surface | `on` (Batch C) | The build step is `buildPart`'s `surftrim` branch: it needs a surface body in the part and takes the plane from the face picked on the model, so the step does nothing to a bare solid and says so. `s21hTrim`: the surface body is split by the plane of a face you pick on the model (`BRepAlgoAPI_Splitter` with a face made on that plane; a viewport click picks the face whose centre is under the pointer, or pick it in the list), and the pieces on the chosen side of that face's normal are kept, with the kept area and the area before measured | — (a cutting plane that misses the surface leaves it whole, and a curved face cannot supply a cutting plane) | 6 |
+| Delete Face | `on` (Batch C) | `s21jDelete`: the picked face leaves the body, the kernel patches the opening from the opening's own boundary (`BRepOffsetAPI_MakeFilling`), sews the remaining faces and the patch back into one shell (`BRepBuilderAPI_Sewing`) and makes it a solid again (`BRepBuilderAPI_MakeSolid`); the step is accepted only when `BRepCheck_Analyzer` passes and the volume is positive, and it records the removed area, the patch area and the volume before and after | delete **and patch**, not a redefinition of the solid: neighbour faces are not extended (no `ShapeFix_Shape`, no `BRepTools_ReShape` in this build), so an opening whose patch coincides with the removed face — every planar face — comes back at the same volume; a face with more than one boundary loop is refused (patching only the outer loop would cover the opening inside it), and so is a boundary `MakeFilling` cannot build (a cylinder's seam-bounded barrel) | 6 |
 
 ### Sheet Metal
 
@@ -338,3 +338,24 @@ cylinder reports 1/R everywhere within tolerance, a plane reports 0, and the vie
 | multi-body part | no (one `body`) | Split, Delete Face on one body |
 | parameter table + expressions | no | Parameters, Configurations |
 | kinematic solver with time | no (mates are measured) | Motion Study |
+
+## Batch C — what is on, and what is still grey
+
+Surface → Trim Surface and Delete Face are **on**: both have a `buildPart` branch (`surftrim`, `delface`), a panel that
+lists the faces the kernel reports, and measured steps. `tests/bC-surface.test.mjs` holds the geometry (a 200 × 200
+surface cut into two 20 000 mm² halves; the +Z face of a 100 mm box deleted, patched at 10 000 mm² and the solid back
+at 1 000 000 mm³ with BRepCheck passing), and `tests/bC-surface.spec.mjs` drives both panels in the page
+(90 000 mm² → 60 000 mm² on the box's +X face, and the delete note at 1 000 000 mm³).
+
+Still grey in this batch, for the reasons the buttons themselves give:
+
+* **Hem** and **Jog** need a fold model that carries the sheet on one side of the neutral line; the sector model in
+  this build puts the outer surface of a 180° fold back through the plate, and the kernel merges the sheet with
+  itself (measured, in the tooltip). Modelling that is batch 9's work, not a switch.
+* **Forming Tool** is a punch library (louvre, dimple, lance), not a bend; the profile table and the deformed sheet
+  are not in this build.
+* **Weldments Trim/Extend** on a hollow section breaks the frame into four separate solids at one corner (measured:
+  2 706 mm³ of crossing SHS 40 × 40 × 3 walls), so the joint has to be a cope on the member, not a boolean on the
+  walls.
+* **Boundary Surface** has its two-direction builder and panel, but no test in this branch, so it stays grey until it
+  has one.
