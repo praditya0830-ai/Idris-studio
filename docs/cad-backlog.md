@@ -81,7 +81,7 @@ means it is not scheduled in this backlog because the gap is bigger than a batch
 
 | Tool | State | Why it is grey | What it needs | Batch |
 | --- | --- | --- | --- | --- |
-| Motion Study | `no` | the kernel builds static solids; the app's mates are **measured**, not solved. An animation needs a driving constraint, a time step and a kinematic solve | a constraint solver and a time-domain integrator, in the engine, with the assembly rebuilt each step. Until that runs, the closest real answer is Collision Detection along a travel, which is `on` | — (blocked) |
+| Motion Study | `on` | one driven joint (rotate about an axis through the component's centre or the origin, or slide along an axis) at a speed, a duration and a frame count you type; at every frame the kernel moves the solid and measures the common volume with the other components, the shortest distance to them and its own volume, and the animation replays exactly those frames | multi-joint motion: a joint that drives other joints through mates needs a constraint solver in the engine. Collision Detection still answers the single-travel question without a time step | 12 |
 
 ### Evaluate
 
@@ -345,10 +345,45 @@ displays off while the body stays at 6 283.19 mm³ — with no page error.
 D2U, D2V, D2UV)`. Reading the last two swapped is invisible on a cylinder (both cross terms are 0) and shows up as a
 wrong, negative Gaussian curvature on a sphere. The sphere in the test is there to catch exactly that.
 
+### Batch 12 — Motion Study (shipped)
+
+**Shipped as one driven joint, measured at every frame.** Assembly → Review → Motion Study drives the selected
+component through a single joint — a rotation about an axis through its own centre (the kernel's bounding-box centre)
+or through the origin, or a slide along X, Y or Z — at a speed, a duration and a frame count the engineer types (2 to
+120 frames). At every frame the kernel itself moves the solid (`rotate` / `translate`) and the kernel measures the
+result: the common volume with every other component, the shortest distance between the two solids
+(`BRepExtrema_DistShapeShape`), and the volume of the moved solid, which a rigid motion must not change. The panel
+reports the first frame where the common volume passes 0.01 mm³ (frame, angle or travel, time, volume) or, when
+nothing is hit, the closest the solids come and at which frame. The animation replays exactly those frames through a
+per-part display matrix — the same transform the kernel applied, conjugated by `zUp` — and stops at the contact
+frame; the components' own positions never change.
+
+Its limit is stated in the panel and here: **one** driven joint per run. A mate-driven solve — a joint that drives
+other joints through mates, with a solver closing the remaining degrees of freedom — still needs a constraint solver
+in the engine, and that is what keeps the multi-joint case out.
+
+Measured with kernel test `tests/s21n-motion.test.mjs` (7 checks): the animation transform lands a box's corners on
+exactly the box the kernel's own `rotate` gives, on x, y and z (1e-9); the display transform is the CAD transform
+conjugated by `zUp`; a speed of 0, a duration of 0, 1 frame or 200 frames is refused with the value it read; a slide
+that closes a 20 mm gap in 1 mm frames meets at frame 21 with exactly 400.00 mm³ of common volume at 2.10 s, and
+frame 20 touches at 0.000 mm with no volume; the moved solid keeps its volume at every frame (largest change below
+1e-6 mm³); a bar turning about z meets a post in the first quadrant with every earlier frame clear; and the same bar
+with nothing near it reports no contact at all. Browser test `tests/s21n-motion.spec.mjs` (13 checks, 1366×768 and
+1280×800) builds two plates, puts the top plate 10 mm off the base's side face, runs a 40-frame slide and reads the
+report (first contact at frame 11/40, 11.00 mm, 1.10 s, 200.00 mm³) and the rigid volume 5,497.345 mm³ from the chat,
+the stored run (40 rows) and the left panel, checks that the animation hands the viewer a non-identity display matrix
+and that "Back to position" clears it, and that a 1-frame run is refused without replacing the stored one — with no
+page error. `tests/s19-assembly.spec.mjs` now lists Motion Study among the twelve runnable Assembly tools (21 checks).
+
+**One measured detail worth keeping:** the animation matrix has to be built from the kernel's convention, not from
+the viewer's own rotation helper. The first version had the x rotation's off-diagonal terms transposed — invisible on
+a turn about z, and it would have turned a part the wrong way about x while the numbers said otherwise. The kernel
+comparison in the test is what caught it.
+
 ### Not scheduled
 
-* **Motion Study** — needs a kinematic solver and a time step in the engine. Until that exists the button stays
-  grey with that reason; Collision Detection answers the static question today.
+* **Multi-joint motion (mates driving mates)** — one driven joint shipped in batch 12; the rest needs a constraint
+  solver in the engine, because the app's mates are measured, not solved.
 * **Coordinate System** — nothing in the app consumes a named CSYS. Revisit when mates or exports need one.
 * **Edit Sizes on the Model** — gearbox-only by design; a part is edited through its feature tree.
 
@@ -367,4 +402,4 @@ wrong, negative Gaussian curvature on a sphere. The sphere in the test is there 
 | named plane / axis as a sketch host | no (strings + offset) | Reference Plane/Axis, Curve/Fill Pattern |
 | multi-body part | no (one `body`) | Split, Delete Face on one body |
 | parameter table + expressions | no | Parameters, Configurations |
-| kinematic solver with time | no (mates are measured) | Motion Study |
+| kinematic solver with time | one driven joint per run: `rotate` / `translate` plus `BRepExtrema_DistShapeShape` and the common volume at every frame (used by Motion Study); no multi-body constraint solve | multi-joint motion |
