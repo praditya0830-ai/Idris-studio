@@ -1,7 +1,7 @@
 /* S16: the Sheet Metal tab in the real page (Batch 2).
  *
  * Checks, at 1366×768 and 1280×800:
- *   1. ten sheet-metal steps are runnable; Hem, Jog and Forming Tool stay grey with their reason;
+ *   1. all thirteen sheet-metal steps are runnable, Hem, Jog and Forming Tool included;
  *   2. Base Flange → Edge Flange → Flatten built through the forms gives 12000 mm³, 16165.49 mm³ and the
  *      flattens to 134.52 mm, with the kernel's numbers on the step and in the report;
  *   3. Flat Pattern opens in the Edit page, reads the open part's chain and downloads its DXF;
@@ -39,10 +39,8 @@ check('the Sheet Metal tab is in the ribbon', () => ok(tabs.includes('Sheet Meta
 const openTab = async (n) => { await page.evaluate((x) => [...document.querySelectorAll('#xrib .xr-tabs button')].find((b) => b.textContent.trim() === x).click(), n); await page.waitForTimeout(300); };
 await openTab('Sheet Metal');
 const slot = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#xrib .xr-t')].map((b) => [b.textContent.trim(), b.getAttribute('aria-disabled') === 'true'])));
-const live = ['Base Flange', 'Edge Flange', 'Miter Flange', 'Sketched Bend', 'Unfold / Fold', 'Bend Allowance', 'Flat Pattern', 'Flatten', 'Corner Relief', 'Convert to Sheet Metal'];
-const grey = ['Hem', 'Jog', 'Forming Tool'];
-check('the ten sheet-metal steps are runnable', () => { const off = live.filter((n) => slot[n] !== false); ok(!off.length, 'still grey: ' + off.join(', ')); });
-check('Hem, Jog and Forming Tool stay grey with their reason', () => { const on = grey.filter((n) => slot[n] !== true); ok(!on.length, 'runnable although not built: ' + on.join(', ')); });
+const live = ['Base Flange', 'Edge Flange', 'Miter Flange', 'Sketched Bend', 'Hem', 'Jog', 'Unfold / Fold', 'Bend Allowance', 'Flat Pattern', 'Flatten', 'Corner Relief', 'Forming Tool', 'Convert to Sheet Metal'];
+check('the thirteen sheet-metal steps are runnable', () => { const off = live.filter((n) => slot[n] !== false); ok(!off.length, 'still grey: ' + off.join(', ')); });
 
 async function runTool(type, values) {
   await page.evaluate((t) => window.__idris.tools.partTool(t), type);

@@ -144,7 +144,7 @@ const SHS40 = WELD_PROFILES['SHS 40x40x3'];
   t('the corner of two SHS 40×40×3 members shares 2706 mm³ of crossing walls', Math.abs(R.measureVolume(inter) - 2706) < 1, String(R.measureVolume(inter)));
   t('cutting that overlap leaves four separate solids, not one', after.solids.length === 4, String(after.solids.length));
   t('the frame loses 2706 mm³ and breaks apart: this is why the button is grey', Math.abs(R.measureVolume(after) - (R.measureVolume(union) - 2706)) < 1, `${R.measureVolume(after)}`);
-  t('the button is grey and its reason quotes the measurement', /2706/.test(html.slice(html.indexOf("'Trim/Extend'"), html.indexOf("'Trim/Extend'") + 1400)), 'reason does not quote 2706');
+  t('the button is built now, and its reason for refusing a splitting cut is on the step', /'Trim\/Extend', 'trim', 'on', '[^']*refuses when that cut would leave more than one solid/.test(html), 'Trim/Extend is not an active tool, or the reason is gone');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
