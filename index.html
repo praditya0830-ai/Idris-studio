@@ -6753,6 +6753,45 @@ function refCsysOptions() {
   const fs = (typeof state !== 'undefined' && state.part && state.part.features) || [];
   return [['', [L('The values below', 'Nilai di bawah')]]].concat(fs.filter((f) => f && f.type === 'csys').map((f) => [f.id, [FEAT.csys.label(f.p), FEAT.csys.label(f.p)]]));
 }
+/* ---- Parameters (Batch A): named sizes that drive feature fields ----------------
+ * A feature field may hold a number or a short expression over parameter names ("t", "t*2", "L-10").
+ * resolveParams() is the one place that reads them, so the kernel build, the DFM/STEP export and the tests all
+ * see the same numbers. A name that is not declared is an error on that step: the step reports it and the rest of
+ * the model still builds, so a typo never silently becomes 0 mm. */
+const PARAM_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const PARAM_EXPR = /^[0-9A-Za-z_+\-*/(). ]+$/;
+const paramScope = (p) => { const s = {}; ((p && p.params) || []).forEach((x) => { if (x && PARAM_NAME.test(String(x.name || '')) && isFinite(+x.value)) s[x.name] = +x.value; }); return s; };
+function paramEval(expr, scope) {
+  const t = String(expr).trim();
+  if (!t) throw new Error(L('An empty field is not a size.', 'Kolom kosong bukan ukuran.'));
+  if (!PARAM_EXPR.test(t)) throw new Error(L(`“${t}” is not a size or a simple expression (numbers, + − × ÷, brackets, parameter names).`, `“${t}” bukan ukuran atau ekspresi sederhana (angka, + − × ÷, kurung, nama parameter).`));
+  const names = Object.keys(scope || {});
+  let v;
+  try { v = Function(...names, `"use strict"; return (${t});`)(...names.map((n) => scope[n])); }
+  catch (e) {
+    const unknown = (t.match(/[A-Za-z_][A-Za-z0-9_]*/g) || []).filter((n) => !names.includes(n));
+    throw new Error(unknown.length
+      ? L(`Parameter not declared: ${unknown.join(', ')}. Add it in Parameters first.`, `Parameter belum dideklarasikan: ${unknown.join(', ')}. Tambahkan di Parameter dulu.`)
+      : L(`“${t}” cannot be evaluated as a size.`, `“${t}” tidak bisa dihitung sebagai ukuran.`));
+  }
+  if (typeof v !== 'number' || !isFinite(v)) throw new Error(L(`“${t}” does not give a number.`, `“${t}” tidak menghasilkan angka.`));
+  return v;
+}
+const paramField = (v) => typeof v === 'string' && v.trim() !== '' && !isFinite(+v);
+/* Only the numeric fields of a step are resolved: a select value such as "box" or "thru" is a word, not a size,
+ * and must never be read as a parameter name. */
+function resolveParams(p, scope, type) {
+  const out = { ...p };
+  const defs = type && typeof FEAT !== 'undefined' && FEAT[type] && FEAT[type].fields ? FEAT[type].fields : null;
+  /* Without the field table there is no way to tell a size from a word, so nothing is resolved. */
+  if (!defs) return out;
+  const sc = scope || paramScope(state.part);
+  for (const k of Object.keys(out)) {
+    if (!defs.some((x) => x.k === k && x.t === 'num')) continue;
+    if (paramField(out[k])) out[k] = +paramEval(out[k], sc).toFixed(6);
+  }
+  return out;
+}
 const FEAT = {
   shape: { en: 'Shape', id: 'Shape', fields: [S('kind', 'Shape', 'Bentuk', [['box', ['Box', 'Balok']], ['cyl', ['Cylinder', 'Silinder']], ['tube', ['Tube', 'Tabung']], ['sphere', ['Sphere', 'Bola']]], 'box'),
       N('L', 'Length X', 'Panjang X', 'mm', 100, { show: (p) => p.kind === 'box' }), N('W', 'Width Y', 'Lebar Y', 'mm', 60, { show: (p) => p.kind === 'box' }),
@@ -7166,6 +7205,13 @@ function s22TopFace(body) {
 }
 async function buildPart(pArg) {
   const R = await kernel(), p = pArg || state.part; if (!p) return null;
+  /* Import STEP (Batch B): the body is the imported B-rep read by the kernel. There is no feature tree to replay,
+     so the part opens with the measured shape and the STEP kept (base64) so it survives a save and a reload. */
+  if (p.step && p.step.b64) {
+    const shape = await R.importSTEP(new Blob([stepBytes(p.step.b64)]));
+    return { R, body: shape, open: [], surfs: [], sheet: null, imported: { vol: R.measureVolume(shape), area: R.measureArea(shape), name: p.step.name || '' },
+      profile: () => { throw new Error(L('An imported STEP has no sketch profile.', 'STEP impor tidak punya profil sketch.')); } };
+  }
   let body = null, lastTool = null, lastOp = 'add', sketch = null; const sketches = []; const bodies = [];
   const bb = () => body ? body.boundingBox.bounds : [[0, 0, 0], [0, 0, 0]];
   const apply = (tool, op) => { if (!body) { if (op === 'cut') throw new Error(L('Nothing to cut yet: start with Shape.', 'Belum ada yang bisa dipotong: mulai dengan Shape.')); body = tool.clone(); }
@@ -7261,6 +7307,9 @@ async function buildPart(pArg) {
       sizeErr[d.id] = L(`That step has no size '${k}'. Its sizes are: ${have}.`, `Langkah itu tidak punya ukuran '${k}'. Ukurannya: ${have}.`); continue; }
     const was = tgt.p[k]; tgt.p[k] = v; sizeLog[d.id] = { step: tgt.id, param: k, from: was, to: v };
   }
+  /* Batch A: a field may hold an expression over the part's parameters. Resolved once per build, in one place.
+     The guards keep buildPart runnable on its own: the part tests lift this function without the panel helpers. */
+  const pscope = typeof paramScope === 'function' ? paramScope(p) : {};
   for (const d of p.features) {
     if (d.type !== 'dim' || d.off) continue;
     const tgt = p.features.find((x) => x.id === d.p.step);
@@ -7273,7 +7322,10 @@ async function buildPart(pArg) {
     (dims[tgt.id] = dims[tgt.id] || {})[d.p.param] = v;
   }
   for (const ft of p.features) {
-    ft.err = null; ft.note = null; if (ft.off) continue; const q = ft.p;
+    ft.err = null; ft.note = null; if (ft.off) continue;
+    let q;
+    try { q = typeof resolveParams === 'function' ? resolveParams(ft.p, pscope, ft.type) : ft.p; }
+    catch (e) { ft.err = String((e && e.message) || e).slice(0, 220); continue; }
     try {
       const pos = (v) => { if (!(+v > 0)) throw new Error(L('Sizes must be above 0 mm.', 'Ukuran harus di atas 0 mm.')); return +v; };
       if (ft.type === 'shape') {
@@ -8229,10 +8281,9 @@ function pform(type, p, onOk, okLabel, onCancel) {
   const draw = () => { box.innerHTML = '';
     FEAT[type].fields.forEach((x) => { if (x.show && !x.show(p)) return; if (x.first === false && !state.part.features.some((f) => f.type === 'shape' || f.type === 'push') && !partSel) return;
       const lab = h('label', null, h('span', null, L(x.en, x.id)));
-      if (x.t === 'num') lab.append(h('span', { class: 'pnum' }, h('input', { type: 'number', inputmode: 'decimal', value: p[x.k], step: x.step || 'any', min: x.min ?? 0, 'data-k': x.k,
-        oninput: (e) => { p[x.k] = e.target.value === '' ? '' : Number(e.target.value); ghost(); } }), x.unit ? h('em', null, x.unit) : null));
-      else if (x.t === 'txt') lab.append(h('span', { class: 'pnum' }, h('input', { type: 'text', value: p[x.k] ?? x.def ?? '', 'data-k': x.k, spellcheck: 'false',
-        oninput: (e) => { p[x.k] = e.target.value; ghost(); } })));
+      if (x.t === 'num') lab.append(h('span', { class: 'pnum' }, h('input', { type: 'text', inputmode: 'decimal', value: p[x.k], step: x.step || 'any', 'data-k': x.k,
+        title: L('A number, or a parameter name / expression (t, t*2, L-10)', 'Angka, atau nama parameter / ekspresi (t, t*2, L-10)'),
+        oninput: (e) => { const v = e.target.value; p[x.k] = v === '' ? '' : (isFinite(+v) || !/[A-Za-z_]/.test(v) ? Number(v) : v); ghost(); } }), x.unit ? h('em', null, x.unit) : null));
       else lab.append(h('select', { 'data-k': x.k, onchange: (e) => { p[x.k] = e.target.value; draw(); ghost(); } }, x.opts.map(([v, t]) => h('option', { value: v, selected: v === p[x.k] }, L(...t)))));
       box.append(lab); });
     box.append(h('div', { class: 'pact' }, h('span', { class: 'skp', id: 'skPrev', hidden: true }),
@@ -9219,7 +9270,7 @@ function sketchNextText() { return L('Next: Extrude this sketch (Features → Ex
 /* Only the sketch tools have a replacement in the sketcher, so only they say "use Line, Arc, Circle...". Every other
    grey tool carries its own reason in the tool's own text; gluing the sketch sentence onto a surface or analysis tool
    told the engineer to draw a rectangle for a job a rectangle cannot do. */
-function plannedToolTip(st, tab) { return (st === 'mk1' || st === 'no') && tab === 'sketch' ? L('Coming in Mark 1 — use Line, Arc, Circle, Corner Rectangle, Slot or Polygon now', 'Akan datang di Mark 1 — pakai Line, Arc, Circle, Corner Rectangle, Slot, atau Polygon sekarang') : ''; }
+function plannedToolTip(st, tab) { return (st === 'mk1' || st === 'no') && tab === 'sketch' ? L('Not available in this build — use Line, Arc, Circle, Corner Rectangle, Slot or Polygon now', 'Belum ada di versi ini — pakai Line, Arc, Circle, Corner Rectangle, Slot, atau Polygon sekarang') : ''; }
 /* ---- end S10 helpers */
 
 /* ---- S10-C: drawing in the viewport. The click point goes through the camera into the sketch plane, snaps to 1 mm
@@ -10271,9 +10322,12 @@ async function partFromSentence(text) {
  * says what it will do, when, and what works instead today. Gearbox demos moved to the Library. */
 const RIB_ST = {
   on: ['Active', 'Aktif', 'Runs now, in this browser (OpenCascade kernel).', 'Jalan sekarang, di browser ini (kernel OpenCascade).'],
-  gb: ['Gearbox', 'Gearbox', 'Works inside a gearbox design; the solver computes it. Not available for a single part yet.', 'Jalan di dalam desain gearbox; dihitung oleh solver. Belum tersedia untuk part tunggal.'],
-  mk1: ['Mark 1', 'Mark 1', 'Planned for IDRIS Mark 1. Not in this build.', 'Direncanakan untuk IDRIS Mark 1. Belum ada di versi ini.'],
-  no: ['Not yet', 'Belum', 'Not in this build and not scheduled for Mark 1. Tell IDRIS if you need it, so it moves up the list.', 'Belum ada di versi ini dan belum dijadwalkan untuk Mark 1. Bilang ke IDRIS kalau kamu butuh, supaya naik prioritasnya.'],
+  /* No chip names a product phase or a machine type any more. A tool that cannot run is grey and gives the reason
+     that belongs to it (the engine's own sentence when there is one). The old `gb` and `mk1` groups stay only as
+     aliases so a saved ribbon keeps working; both read as "not built yet". */
+  gb: ['Design only', 'Khusus desain', 'Changes the open design’s own parameters; it needs a design open, not a single part.', 'Mengubah parameter desain yang sedang terbuka; butuh desain terbuka, bukan part tunggal.'],
+  mk1: ['Not built yet', 'Belum dibangun', 'The ribbon path for this tool is not built yet.', 'Jalur ribbon untuk tombol ini belum dibangun.'],
+  no: ['Not built yet', 'Belum dibangun', 'Not in this build yet. Tell IDRIS if you need it, so it moves up the list.', 'Belum ada di versi ini. Bilang ke IDRIS kalau kamu butuh, supaya naik prioritasnya.'],
 };
 const RI = {
   line: ['M4 19 20 5', 'M4 19h.01', 'M20 5h.01'], rect: ['M4 6h16v12H4z'], circle: ['M12 4a8 8 0 1 0 0 16a8 8 0 1 0 0-16', 'M12 12h.01'],
@@ -10445,10 +10499,10 @@ const RIBBON = [
       T('Thickness Analysis', 'thick', 'no', 'Find thin and thick regions.', 'Temukan bagian tipis dan tebal.', 'Wall Thickness'),
       T('Curvature / Zebra', 'curv', 'on', 'Surface quality from the kernel mesh: the curvature map colours every vertex by its discrete Gaussian curvature (angle defect over mixed area) and reports the range and the share of the surface above the threshold; the isophote bands turn the same normals into stripes against a fixed direction, so a kink or a wobble in the surface bends them. Both are painted on the triangulation the kernel returned.', 'Kualitas surface dari mesh kernel: peta kelengkungan mewarnai tiap titik dengan kelengkungan Gauss diskret (defisit sudut atas luas campuran) dan melaporkan rentang serta porsi permukaan di atas ambang; pita isophote mengubah normal yang sama menjadi garis terhadap arah tetap, jadi patahan atau gelombang permukaan membengkokkan pitanya. Keduanya dilukis di triangulasi yang dikembalikan kernel.', 'Zebra Stripes, Curvature Analysis', { part: 'curv' })]]]],
   ['sim', 'Simulation · FEA', 'Simulasi · FEA', [
-    ['Gearbox (solver)', [T('Gear Rating ISO 6336', 'gear', 'gb', 'Bending and contact safety of the gears.', 'Keamanan bending dan kontak gear.', 'KISSsoft, Romax', 'gbCheck', ALT_GB),
+    ['Gearbox (solver)', [      T('Gear Rating ISO 6336', 'gear', 'on', 'Bending and contact safety of a gear pair from the solver: module, tooth counts, face width, torque and speed go to POST /solve/gear_pair_iso6336, and the result carries SF bending and SF contact with the solver’s benchmarks and limits.', 'Keamanan bending dan kontak sepasang gear dari solver: modul, jumlah gigi, lebar muka, torsi, dan putaran dikirim ke POST /solve/gear_pair_iso6336, dan hasilnya membawa SF bending dan SF kontak dengan benchmark serta batasan solver.', 'KISSsoft, Romax', 'gearCalc'),
       T('Static Stress (FEA)', 'fea', 'on', 'Static stress of the open part (Part Stress, solver), or the gearbox housing check. The solver used is named in the result.', 'Tegangan statik part yang terbuka (Part Stress, solver), atau cek housing gearbox. Solver yang dipakai ditulis di hasil.', 'Static, Linear Stress', 'stressAny'),
       T('Modal / Frequency', 'modal', 'on', 'Natural frequencies of the open part (solver), or the gearbox frequency check against the gear mesh.', 'Frekuensi alami part yang terbuka (solver), atau cek frekuensi gearbox terhadap mesh gear.', 'Frequency', 'modalAny'),
-      T('Thermal', 'therm', 'gb', 'Oil temperature, with or without a fan.', 'Suhu oli, dengan atau tanpa kipas.', 'Heat Transfer', 'gbCheck', ALT_GB),
+      T('Thermal', 'therm', 'on', 'Steady 1D conduction through one wall from the solver (POST /solve/thermal_slab): the temperature drop, heat flow and resistance chain. 1D, not 3D FEA — the result says so.', 'Konduksi 1D tunak melalui satu dinding dari solver (POST /solve/thermal_slab): beda suhu, aliran panas, dan rangkaian hambatan. 1D, bukan FEA 3D — hasilnya menyebut itu.', 'Heat Transfer', 'thermCalc'),
       T('Bearing Life & Fatigue', 'fatigue', 'on', 'ISO 281 modified rating life L_nm of a catalogue deep-groove bearing (calculator S4). Inside a gearbox it runs the solver’s shaft and bearing check instead; the solver used is named in the result.', 'Umur rating termodifikasi L_nm ISO 281 untuk bearing deep-groove dari katalog (kalkulator S4). Di dalam gearbox, yang jalan adalah cek poros dan bearing dari solver; solver yang dipakai ditulis di hasil.', 'Fatigue', 'bearingAny')]],
     ['Advanced', [T('Calculators', 'calc', 'no', 'Engineering calculators built from the solver’s own schema: pressure vessel, bolted joint, bearing life, oil viscosity, mesh GCI and more.', 'Kalkulator teknik dari skema solver sendiri: bejana tekan, sambungan baut, umur bantalan, viskositas oli, GCI mesh, dan lainnya.', 'Engineering Reference'),
       T('Topology Optimisation', 'topo', 'no', 'Remove material that carries no load.', 'Buang material yang tidak menahan beban.', 'Generative Design, Shape Optimization'),
@@ -10459,17 +10513,17 @@ const RIBBON = [
       T('BOM Table', 'bom', 'on', 'Parts list of the open assembly, ready to print or save as CSV.', 'Daftar part assembly yang terbuka, siap dicetak atau disimpan sebagai CSV.', 'Balloons', 'asmBom'),
 
       T('Section / Detail View', 'detail', 'on', 'Cut the part with a kernel boolean at a chosen Y (section A–A, hatched from the cut face, removed volume and cut-face area reported) and add a detail view: a cylinder window cut out of the solid and projected at an ISO magnification, with the holes the kernel measures inside it.', 'Potong part dengan boolean kernel di Y pilihan (potongan A–A, diarsir dari muka potong, volume terbuang dan luas muka potong dilaporkan) dan tambah detail view: jendela silinder yang dipotong dari solid lalu diproyeksikan pada perbesaran ISO, dengan lubang yang diukur kernel di dalamnya.', 'Broken-out Section, Section View, Detail View', 'dwgSection'),
-      T('Dimensions & Notes', 'note', 'no', 'Add dimensions and notes by hand.', 'Tambah dimensi dan catatan manual.', 'Annotations'),
+      T('Dimensions & Notes', 'note', 'on', 'Open the part drawing and add dimensions and notes there: the dimensions are the kernel’s own sizes, the notes are yours, and every number keeps its source.', 'Buka gambar part lalu tambah dimensi dan catatan di sana: dimensinya ukuran kernel sendiri, catatannya milikmu, dan setiap angka menyimpan sumbernya.', 'Annotations', 'dwgNotes'),
       T('GD&T', 'gdt', 'on', 'Flatness and perpendicularity of the part’s B-rep faces, measured by the kernel (each face’s boundary sampled against its own plane; angle between face normals), printed on the sheet as feature control frames with datum A and the measured value.', 'Kerataan dan ketegaklurusan muka B-rep part, diukur kernel (batas tiap muka disampel terhadap bidangnya; sudut antara normal muka), dicetak di lembar sebagai feature control frame dengan datum A dan nilai terukur.', 'Feature Control Frame, Geometric Tolerancing', 'dwgGdt'),
-      T('Export PDF / DXF', 'pdf', 'no', 'Drawing to PDF or DXF. Today drawings are SVG.', 'Gambar ke PDF atau DXF. Saat ini gambar berformat SVG.', '')]]]],
+      T('Export PDF / DXF', 'pdf', 'on', 'The A3 drawing as PDF (the browser’s print dialog, A3 landscape) or DXF (the app’s own DXF writer, layer OUTLINE). Both come from the same measured drawing.', 'Gambar A3 sebagai PDF (dialog cetak browser, A3 landscape) atau DXF (penulis DXF aplikasi ini, layer OUTLINE). Keduanya dari gambar terukur yang sama.', 'Print, Save As', 'expPdf')]]]],
   ['manage', 'Manage', 'Kelola', [
     ['File', [T('Library', 'lib', 'on', 'Example parts and gearbox demos. Numbers are computed when you open one.', 'Contoh part dan demo gearbox. Angka dihitung saat dibuka.', 'Design Library, Samples', 'library'),
       T('Export STEP', 'step', 'on', 'Exact B-rep of the part, opens in any CAD.', 'B-rep eksak part, bisa dibuka di CAD apa pun.', 'Save As STEP', 'expStep'),
       T('Export STL', 'step', 'on', 'Mesh for 3D printing.', 'Mesh untuk cetak 3D.', 'Save As STL', 'expStl'),
-      T('Import STEP', 'imp', 'mk1', 'Open a STEP file from another CAD.', 'Buka file STEP dari CAD lain.', 'Open, Insert Part'),
+      T('Import STEP', 'imp', 'on', 'Open a STEP file from another CAD: the kernel reads the B-rep, measures volume, area and size, and opens it as a part you can measure, section, check for DFM or export again.', 'Buka file STEP dari CAD lain: kernel membaca B-rep-nya, mengukur volume, luas, dan ukuran, lalu membukanya sebagai part yang bisa diukur, dipotong, dicek DFM, atau diekspor lagi.', 'Open, Insert Part', 'impStep'),
       T('Report', 'rep', 'on', 'Every number with its source: the open part (POST /report/part) or the gearbox report.', 'Semua angka dengan sumbernya: part yang terbuka (POST /report/part) atau laporan gearbox.', 'Print, Report', 'reportAny')]],
-    ['Design', [T('Parameters', 'param', 'mk1', 'Named sizes that drive several features.', 'Ukuran bernama yang mengendalikan beberapa fitur.', 'Equations, User Parameters, Global Variables'),
-      T('Configurations', 'config', 'no', 'Sizes of the same part in one file.', 'Beberapa ukuran part yang sama dalam satu file.', 'Design Table, iPart, Family Table'),
+    ['Design', [T('Parameters', 'param', 'on', 'Named sizes that drive several features: a feature field may hold the parameter name or a short expression (t, t*2, L-10), and every step that uses it rebuilds when the value changes.', 'Ukuran bernama yang mengendalikan beberapa fitur: kolom fitur boleh berisi nama parameter atau ekspresi pendek (t, t*2, L-10), dan setiap langkah yang memakainya dibangun ulang saat nilainya berubah.', 'Equations, User Parameters, Global Variables', 'paramTool'),
+      T('Configurations', 'config', 'on', 'Several sets of parameter values for the same part (S / M / L): switch one and the part rebuilds from the kernel. Saved with the part and exported in its .idris.json.', 'Beberapa set nilai parameter untuk part yang sama (S / M / L): pilih satu dan part dibangun ulang kernel. Tersimpan bersama part dan ikut di .idris.json-nya.', 'Design Table, iPart, Family Table', 'configTool'),
       T('Rename Part', 'edit', 'on', 'Change the name of the open part.', 'Ganti nama part yang terbuka.', '', 'rename')]]]],
 ];
 const RIB_ALL = RIBBON.flatMap(([tab, en, id, groups]) => groups.flatMap(([g, tools]) => tools.map((t) => Object.assign(t, { tab, tabEn: en, tabId: id, grp: g }))));
@@ -10506,7 +10560,11 @@ function ribRunnable(t) { return t.st === 'on' || (t.st === 'gb' && !!gbRunner(t
 /* S11-A: no Active / Gearbox / Mark 1 / Not yet chips any more. A tool that cannot run now is grey and says why
  * in its tooltip and popover; it is never hidden, so an engineer can still read what is missing. */
 function ribGrey(t) { return !ribRunnable(t); }
-function ribWhy(t) { return t.st === 'gb' ? L('for gearbox designs', 'untuk desain gearbox') : t.st === 'mk1' ? L('Coming in Mark 1', 'Akan datang di Mark 1') : t.st === 'no' ? L('Not in IDRIS yet', 'Belum ada di IDRIS') : ''; }
+function ribWhy(t) {
+  const m = capReason(t) || ribCapNote(t);
+  if (m) return m;
+  return t.st === 'gb' ? L('Needs an open design', 'Butuh desain terbuka') : t.st === 'mk1' ? L('Not built yet in this build', 'Belum dibangun di versi ini') : t.st === 'no' ? L('Not in IDRIS yet', 'Belum ada di IDRIS') : '';
+}
 function ribClick(t, btn) {
   closeRibPop();
   if (ribRunnable(t)) { palCount({ t: t.n }); return ribAct(t.act, t.n); }
@@ -15640,6 +15698,142 @@ function pipeTool() {
   showF();
 }
 
+/* ---- Batch A: Parameters and Configurations · Batch B: Import STEP ------------------------------------------
+ * Parameters: named sizes a feature field can name. Configurations: parameter sets the part rebuilds from.
+ * Import STEP: the kernel reads the B-rep, the app measures it and keeps the STEP text with the part. */
+function paramRows(p) { if (!Array.isArray(p.params)) p.params = []; return p.params; }
+function paramUsage(p, name) {
+  const out = [];
+  if (!name) return out;
+  (p.features || []).forEach((ft, i) => { for (const [k, v] of Object.entries(ft.p || {})) if (typeof v === 'string' && v.trim() === name) out.push({ ft, i, k }); });
+  return out;
+}
+function paramTool() {
+  const p = state.part;
+  if (!p) return say(para(L('Open a part first: Parameters drive the fields of its steps.', 'Buka part dulu: Parameter mengendalikan kolom langkahnya.'), 'm'));
+  const rows = paramRows(p), box = h('div', { class: 'pform', id: 'paramRows' }), out = h('div', { class: 'tool-out', id: 'paramOut' });
+  const useText = (r) => { const u = paramUsage(p, String(r.name || '').trim());
+    return u.length ? L(`Used by ${u.length} step(s): `, `Dipakai ${u.length} langkah: `) + u.map((x) => `${x.i + 1}. ${(FEAT[x.ft.type] && FEAT[x.ft.type].en) || x.ft.type} · ${x.k}`).join(', ')
+      : L('Not used by any step yet — type this name in a feature field.', 'Belum dipakai langkah mana pun — ketik nama ini di kolom fitur.'); };
+  const draw = () => { box.innerHTML = '';
+    if (!rows.length) box.append(h('p', { class: 'hint' }, L('No parameters yet. Add one, then type its name (or an expression such as t*2) in a feature field.', 'Belum ada parameter. Tambah satu, lalu ketik namanya (atau ekspresi seperti t*2) di kolom fitur.')));
+    rows.forEach((r, i) => {
+      const use = h('div', { class: 'param-use' }, useText(r));
+      const upd = () => { use.textContent = useText(r); };
+      box.append(h('div', { class: 'param-row', 'data-name': String(r.name || '') },
+        h('label', null, h('span', null, L('Name', 'Nama')), h('input', { value: r.name || '', placeholder: 't', 'aria-label': L('Parameter name', 'Nama parameter'), oninput: (e) => { r.name = e.target.value; upd(); } })),
+        h('label', null, h('span', null, L('Value', 'Nilai')), h('input', { type: 'number', step: 'any', value: r.value, 'aria-label': L('Parameter value', 'Nilai parameter'), oninput: (e) => { r.value = e.target.value; } })),
+        h('label', null, h('span', null, L('Unit', 'Satuan')), h('input', { value: r.unit || '', 'aria-label': L('Unit', 'Satuan'), oninput: (e) => { r.unit = e.target.value; } })),
+        h('label', null, h('span', null, L('Note', 'Keterangan')), h('input', { value: r.note || '', 'aria-label': L('Note', 'Keterangan'), oninput: (e) => { r.note = e.target.value; } })),
+        use, h('button', { class: 'chip', onclick: () => { rows.splice(i, 1); draw(); } }, L('Remove', 'Hapus'))));
+    });
+    box.append(h('div', { class: 'pact' }, h('button', { class: 'chip', onclick: () => { rows.push({ name: 'p' + (rows.length + 1), value: 10, unit: 'mm', note: '' }); draw(); } }, L('Add a parameter', 'Tambah parameter'))));
+  };
+  const apply = () => { out.innerHTML = '';
+    const bad = [], seen = new Set();
+    rows.forEach((r) => { const n = String(r.name || '').trim();
+      if (!PARAM_NAME.test(n)) bad.push(`${n || L('(empty)', '(kosong)')}: ${L('a name is letters, digits and _, and starts with a letter or _', 'nama berupa huruf, angka dan _, diawali huruf atau _')}`);
+      else if (seen.has(n)) bad.push(`${n}: ${L('used twice', 'dipakai dua kali')}`);
+      seen.add(n);
+      if (String(r.value).trim() === '' || !isFinite(+r.value)) bad.push(`${n}: ${L('value is not a number', 'nilai bukan angka')}`); });
+    if (bad.length) return out.append(h('div', { class: 'warnbox bad' }, h('b', null, L('Parameters not saved; the model did not change.', 'Parameter tidak disimpan; model tidak berubah.')), h('ul', null, bad.map((x) => h('li', null, x)))));
+    p.params = rows.map((r) => ({ name: String(r.name).trim(), value: +r.value, unit: String(r.unit || ''), note: String(r.note || '') }));
+    savePart(); rebuildPart(true);
+    out.append(sourceLine(L('Parameters written into the part. Every step that names one rebuilt from the kernel; a step whose field is neither a number nor a declared name shows its own error and the rest of the model still builds.', 'Parameter ditulis ke part. Setiap langkah yang memakai nama itu dibangun ulang kernel; langkah yang kolomnya bukan angka atau nama terdaftar menampilkan errornya sendiri dan sisa model tetap dibangun.')));
+  };
+  draw();
+  return toolDlg('paramdlg', L('Parameters', 'Parameter'),
+    h('p', { class: 'hint' }, L('A name that a feature field uses drives that field. Field values may be a number, a name (t), or a short expression (t*2, L-10). Changing a value rebuilds every step that uses it; a name that is not declared is an error on that step, not a guess.', 'Nama yang dipakai kolom fitur mengendalikan kolom itu. Nilai kolom boleh angka, nama (t), atau ekspresi pendek (t*2, L-10). Mengubah nilai membangun ulang setiap langkah yang memakainya; nama yang belum dideklarasikan menjadi error di langkah itu, bukan tebakan.')),
+    box, h('div', { class: 'gen-var' }, h('button', { class: 'chip primary', onclick: apply }, L('Apply and rebuild', 'Terapkan dan bangun ulang'))), out);
+}
+function configTool() {
+  const p = state.part;
+  if (!p) return say(para(L('Open a part first: Configurations store its parameter values.', 'Buka part dulu: Konfigurasi menyimpan nilai parameternya.'), 'm'));
+  if (!Array.isArray(p.configs)) p.configs = [];
+  const box = h('div', { class: 'pform', id: 'configRows' }), out = h('div', { class: 'tool-out', id: 'configOut' });
+  const name = h('input', { value: L('Configuration ', 'Konfigurasi ') + (p.configs.length + 1), 'aria-label': L('Configuration name', 'Nama konfigurasi') });
+  const draw = () => { box.innerHTML = '';
+    if (!p.configs.length) box.append(h('p', { class: 'hint' }, L('No configurations yet. Set the parameter values you want, then save them as a configuration.', 'Belum ada konfigurasi. Atur nilai parameter yang kamu mau, lalu simpan sebagai konfigurasi.')));
+    p.configs.forEach((c, i) => {
+      const used = Object.entries(c.values || {}).map(([k, v]) => `${k} ${v}`).join(' · ') || L('no parameters stored', 'tidak ada parameter tersimpan');
+      box.append(h('div', { class: 'config-row', 'data-name': c.name },
+        h('b', null, c.name), h('span', { class: 'tool-src' }, used),
+        h('div', { class: 'gen-var' },
+          h('button', { class: 'chip primary', onclick: async () => {
+            for (const [k, v] of Object.entries(c.values || {})) { const r = paramRows(p).find((x) => x.name === k); if (r) r.value = v; }
+            savePart(); await rebuildPart(true); out.innerHTML = '';
+            out.append(sourceLine(partInfo && partInfo.vol != null
+              ? L(`“${c.name}” applied: volume ${f(partInfo.vol / 1000, 3)} cm³, size ${partInfo.size.map((x) => f(x, 1)).join(' × ')} mm (kernel).`, `“${c.name}” diterapkan: volume ${f(partInfo.vol / 1000, 3)} cm³, ukuran ${partInfo.size.map((x) => f(x, 1)).join(' × ')} mm (kernel).`)
+              : L(`“${c.name}” applied, but the kernel built no solid: the steps say why.`, `“${c.name}” diterapkan, tetapi kernel tidak membangun solid: langkahnya menyebut kenapa.`)));
+          } }, L('Use it', 'Pakai')),
+          h('button', { class: 'chip', onclick: () => { p.configs.splice(i, 1); savePart(); draw(); } }, L('Remove', 'Hapus')))));
+    });
+  };
+  const snapshot = () => { out.innerHTML = '';
+    const values = {}; paramRows(p).forEach((r) => { if (r.name) values[r.name] = +r.value; });
+    if (!Object.keys(values).length) return out.append(h('div', { class: 'warnbox' }, L('A configuration stores parameter values, and this part has none yet: add Parameters first.', 'Konfigurasi menyimpan nilai parameter, dan part ini belum punya: tambah Parameter dulu.')));
+    p.configs.push({ name: String(name.value || '').trim() || ('Configuration ' + (p.configs.length + 1)), values });
+    savePart(); name.value = L('Configuration ', 'Konfigurasi ') + (p.configs.length + 1); draw();
+    out.append(sourceLine(L('Saved from the part’s current parameter values. Switching to it writes those values back and rebuilds every step.', 'Disimpan dari nilai parameter part saat ini. Berpindah ke konfigurasi itu menulis nilainya kembali dan membangun ulang setiap langkah.')));
+  };
+  const expBtn = h('button', { class: 'chip', onclick: () => dlText(JSON.stringify({ kind: 'idris-part', version: 1, saved: new Date().toISOString(), part: p }, null, 2), (p.name || 'part').replace(/[^\w.-]+/g, '_') + '.idris.json', 'application/json') }, L('Download .idris.json', 'Unduh .idris.json'));
+  const inp = h('input', { type: 'file', accept: '.json,.idris.json,application/json', style: 'display:none' });
+  inp.addEventListener('change', async () => { const f0 = inp.files && inp.files[0]; if (!f0) return; out.innerHTML = '';
+    try { const j = JSON.parse(await f0.text()); const np = j && j.part && Array.isArray(j.part.features) ? j.part : (j && Array.isArray(j.features) ? j : null);
+      if (!np) throw new Error(L('No part in this file.', 'Tidak ada part di file ini.'));
+      if (state.part) savePart(); state.part = np; partSel = null; partArm = null; p.configs = Array.isArray(np.configs) ? np.configs : []; draw(); rebuildPart(true);
+      out.append(sourceLine(L(`Loaded “${np.name || 'part'}” with ${p.configs.length} configuration(s).`, `Memuat “${np.name || 'part'}” dengan ${p.configs.length} konfigurasi.`))); }
+    catch (e) { out.append(h('div', { class: 'warnbox bad' }, L('That file is not an IDRIS part: ', 'File itu bukan part IDRIS: ') + String((e && e.message) || e).slice(0, 200))); } });
+  draw();
+  return toolDlg('configdlg', L('Configurations', 'Konfigurasi'),
+    h('p', { class: 'hint' }, L('One part, several sets of sizes. A configuration stores the parameter values; using it writes them back and the part rebuilds from the kernel. Saved with the part and exported in its .idris.json.', 'Satu part, beberapa set ukuran. Konfigurasi menyimpan nilai parameter; memakainya menulis nilai itu kembali dan part dibangun ulang kernel. Tersimpan bersama part dan ikut di .idris.json.')),
+    h('div', { class: 'dr-f' }, h('span', null, L('New configuration name', 'Nama konfigurasi baru')), name),
+    box, h('div', { class: 'gen-var' }, h('button', { class: 'chip primary', onclick: snapshot }, L('Save the current values as a configuration', 'Simpan nilai sekarang sebagai konfigurasi')), expBtn, h('button', { class: 'chip', onclick: () => inp.click() }, L('Import .idris.json', 'Impor .idris.json')), inp), out);
+}
+function stepBytes(b64) { const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
+function bytesStep(buf) { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
+async function stepImportInfo(R, file) {
+  const buf = await file.arrayBuffer();
+  if (!buf.byteLength) throw new Error(L('The file is empty.', 'File kosong.'));
+  const shape = await R.importSTEP(new Blob([buf]));
+  const bb = shape.boundingBox.bounds;
+  return { b64: bytesStep(buf), vol: R.measureVolume(shape), area: R.measureArea(shape), size: [0, 1, 2].map((k) => bb[1][k] - bb[0][k]), name: file.name || 'imported.step' };
+}
+function importStepTool() {
+  const out = h('div', { class: 'tool-out', id: 'impOut' });
+  const inp = h('input', { type: 'file', accept: '.step,.stp,.STEP,.STP,application/step', 'aria-label': L('STEP file', 'File STEP') });
+  const go = async () => { out.innerHTML = '';
+    const file = inp.files && inp.files[0];
+    if (!file) return out.append(h('div', { class: 'warnbox' }, L('Pick a .step or .stp file first.', 'Pilih file .step atau .stp dulu.')));
+    out.append(para(L('Reading the STEP with the kernel…', 'Membaca STEP dengan kernel…'), 'm'));
+    try {
+      const R = await kernel(), info = await stepImportInfo(R, file);
+      out.innerHTML = '';
+      out.append(h('table', { class: 'tool-tab', id: 'impTable' },
+        h('tr', null, h('td', null, L('Volume (kernel)', 'Volume (kernel)')), h('td', null, h('b', null, `${f(info.vol, 3)} mm³`))),
+        h('tr', null, h('td', null, L('Surface area', 'Luas permukaan')), h('td', null, `${f(info.area, 2)} mm²`)),
+        h('tr', null, h('td', null, L('Size X × Y × Z', 'Ukuran X × Y × Z')), h('td', null, info.size.map((x) => f(x, 3)).join(' × ') + ' mm')),
+        h('tr', null, h('td', null, 'File'), h('td', null, info.name))));
+      out.append(h('div', { class: 'gen-var' }, h('button', { class: 'chip primary', id: 'impOpen', onclick: async () => {
+        if (state.part && state.part.features && state.part.features.length) savePart();
+        state.part = { name: info.name.replace(/\.(step|stp)$/i, ''), material: 'steel', features: [], step: { b64: info.b64, name: info.name } };
+        partSel = null; partArm = null; await rebuildPart(true);
+        say(h('div', { class: 'tipbox' }, h('div', { class: 'tiph' }, h('span', { class: 'tipk' }, L('Imported', 'Diimpor')), h('b', null, info.name)),
+          kvs([[L('Volume', 'Volume'), `${f(info.vol, 3)} mm³`], [L('Area', 'Luas'), `${f(info.area, 2)} mm²`], [L('Size', 'Ukuran'), info.size.map((x) => f(x, 2)).join(' × ') + ' mm']]),
+          para(L('Measured by the kernel from the imported B-rep, not read from the file header. The STEP text is kept with the part, so the shape survives a save and a reload.', 'Diukur kernel dari B-rep yang diimpor, bukan dibaca dari header file. Teks STEP disimpan bersama part, jadi bentuknya tetap ada setelah disimpan dan dimuat ulang.'), 'm')));
+      } }, L('Open it as a part', 'Buka sebagai part'))));
+      out.append(sourceLine(L('Read by OpenCascade importSTEP in this browser.', 'Dibaca OpenCascade importSTEP di browser ini.')));
+    } catch (e) {
+      out.innerHTML = '';
+      out.append(h('div', { class: 'warnbox bad' }, L('The kernel could not read this STEP file: ', 'Kernel tidak bisa membaca file STEP ini: ') + String((e && e.message) || e).slice(0, 220)));
+    }
+  };
+  return toolDlg('impdlg', L('Import STEP', 'Impor STEP'),
+    h('p', { class: 'hint' }, L('Read a STEP file with the kernel and measure it. Nothing is guessed: if the file cannot be read, the kernel’s error is shown.', 'Baca file STEP dengan kernel dan ukur. Tidak ada yang ditebak: kalau file tidak bisa dibaca, error kernel ditampilkan.')),
+    h('div', { class: 'dr-f' }, h('span', null, L('STEP file', 'File STEP')), inp),
+    h('div', { class: 'gen-var' }, h('button', { class: 'chip primary', id: 'impRead', onclick: go }, L('Read and measure', 'Baca dan ukur'))), out);
+}
+
 /* ---- S4: Engineering calculators, built from GET /solvers -------------------------------------------------
  * The form is the solver's schema: every value is typed by the engineer (nothing is defaulted), the published
  * example fills the fields but each one is marked "example value" until it is changed, and the answer carries the
@@ -15654,7 +15848,9 @@ async function calcCatalog() {
 }
 const calcKeep = { id: 'pressure_vessel', vals: {} };
 const calcLabel = (k) => k.replace(/_/g, ' ');
-function calculatorsTool() {
+function calculatorsTool(openId) {
+  /* a ribbon tool that owns one calculation opens that calculation directly (Gear Rating, Thermal) */
+  if (openId) { calcKeep.id = openId; calcKeep.vals = {}; }
   const out = h('div', { class: 'tool-out', id: 'calcOut' });
   const head = h('div', { id: 'calcHead' }, h('p', { class: 'm' }, L('Reading GET /solvers…', 'Membaca GET /solvers…')));
   const form = h('div', { id: 'calcForm' });
@@ -15999,6 +16195,17 @@ async function asmExplode() {
     if (a === 'asmBom') return asmBom();
     if (a === 'asmExplode') return asmExplode();
     return ra.apply(this, arguments); }; }
+
+/* Batch A/B/C: these are ordinary Idris features now. None is labelled by product phase or machine type. */
+{ const ra6 = ribAct; ribAct = function (a, name) {
+    if (a === 'gearCalc') return calculatorsTool('gear_pair_iso6336');
+    if (a === 'thermCalc') return calculatorsTool('thermal_slab');
+    if (a === 'paramTool') return paramTool();
+    if (a === 'configTool') return configTool();
+    if (a === 'dwgNotes') return state.part ? partDrawing(state.part) : say(para(L('Open a part first: the drawing measures it with the kernel.', 'Buka part dulu: gambarnya diukur kernel.'), 'm'));
+    if (a === 'expPdf') { if (state.part) return partDrawing(state.part); const g = gbRunner('gbShop'); return g ? g() : say(para(L('Build a part or open a gearbox design first: PDF and DXF come from its drawing.', 'Bangun part atau buka desain gearbox dulu: PDF dan DXF berasal dari gambarnya.'), 'm')); }
+    if (a === 'impStep') return importStepTool();
+    return ra6.apply(this, arguments); }; }
 
 /* ---- v0.43 sheet metal (P1e): bend allowance, setback and the flat pattern, with a DXF of the flat part.
  * The arithmetic is DIN 6935 / the standard bend-allowance relation BA = theta (R + K t); the K-factor is the
