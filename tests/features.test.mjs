@@ -267,8 +267,9 @@ check('the next-step line names Extrude and Revolve', () => {
   ok(/Extrude/.test(t) && /Revolve/.test(t), t);
 });
 
-check('Mark 1 tools say what works today, active tools carry no such line', () => {
-  ok(/Mark 1/.test(S10.plannedToolTip('mk1', 'sketch')) && /Circle/.test(S10.plannedToolTip('mk1', 'sketch')), 'mk1 tip');
+check('grey tools say what works today, active tools carry no such line', () => {
+  ok(/Not available in this build/.test(S10.plannedToolTip('mk1', 'sketch')) && /Circle/.test(S10.plannedToolTip('mk1', 'sketch')), 'mk1 tip');
+  ok(!/Mark 1/.test(S10.plannedToolTip('mk1', 'sketch')), 'the Mark 1 label is gone');
   ok(S10.plannedToolTip('no', 'sketch').length > 0, 'not-yet tip');
   ok(S10.plannedToolTip('on', 'sketch') === '' && S10.plannedToolTip('gb', 'sketch') === '', 'no tip for working tools');
   /* the tip belongs to the sketch tab: the same status on another tab says nothing */
@@ -374,9 +375,9 @@ check('solids per part: one is quiet, more than one is flagged, silence is not a
 
 /* --------------------------------------------------------------------- S11 --- */
 /* A: the status chips and coloured dots are gone, and every tool that cannot run says why. */
-const whyAt = html.indexOf('function ribWhy(t)'), whyEnd = html.indexOf('\n', whyAt);
-if (whyAt < 0 || whyEnd < 0) throw new Error('ribWhy not found in index.html');
-const ribWhy = new Function('L', html.slice(whyAt, whyEnd) + '\nreturn ribWhy;')(L);
+const whyAt = html.indexOf('function ribWhy(t)'), whyEnd = html.indexOf('\n}\n', whyAt) + 3;
+if (whyAt < 0 || whyEnd < 3) throw new Error('ribWhy not found in index.html');
+const ribWhy = new Function('L', 'capReason', 'ribCapNote', html.slice(whyAt, whyEnd) + '\nreturn ribWhy;')(L, () => '', () => '');
 
 console.log('\nS11 · toolbar labels and the tools that were behind a label');
 check('no Active / Gearbox / Mark 1 / Not yet chips are drawn', () => {
@@ -384,8 +385,9 @@ check('no Active / Gearbox / Mark 1 / Not yet chips are drawn', () => {
   ok(!/xr-dot/.test(html), 'coloured dot left');
 });
 check('a grey tool says why in its tooltip', () => {
-  ok(/gearbox/i.test(ribWhy({ st: 'gb' })), 'gb: ' + ribWhy({ st: 'gb' }));
-  ok(/Mark 1/.test(ribWhy({ st: 'mk1' })), 'mk1: ' + ribWhy({ st: 'mk1' }));
+  ok(/open design/i.test(ribWhy({ st: 'gb' })), 'gb: ' + ribWhy({ st: 'gb' }));
+  ok(/not built/i.test(ribWhy({ st: 'mk1' })), 'mk1: ' + ribWhy({ st: 'mk1' }));
+  ok(!/Mark 1|gearbox/i.test(ribWhy({ st: 'gb' }) + ribWhy({ st: 'mk1' })), 'no product-phase or machine-type label');
   ok(/IDRIS/.test(ribWhy({ st: 'no' })), 'no: ' + ribWhy({ st: 'no' }));
   ok(ribWhy({ st: 'on' }) === '', 'on tools need no excuse');
 });
