@@ -16067,7 +16067,6 @@ async function exportSWMacro() {
   /* new tools in existing groups */
   const grp = (tab, g) => { const T0 = RIBBON.find((r) => r[0] === tab); return T0 && T0[3].find((x) => x[0] === g); };
   const add = (tab, g, n, icon, act, en, id, alias) => { const G = grp(tab, g); if (!G) return; const base = G[1][0]; const nt = Object.assign(T(n, icon, 'on', en, id, alias, act), { tab, tabEn: base.tabEn, tabId: base.tabId, grp: g }); G[1].push(nt); RIB_ALL.push(nt); };
-  add('sim', 'Part', 'Natural Frequencies', 'modal', 'modalPart', 'Natural frequencies and mode shapes of this part, held at the Part Stress supports (solver).', 'Frekuensi alami dan bentuk mode part ini, ditahan di tumpuan Part Stress (solver).', 'Modal, Frequency Study');
   add('manage', 'File', 'Export STEP AP242', 'step', 'expAP242', 'STEP AP242 with product names, colours, mm units and an assembly tree. Faceted faces.', 'STEP AP242 dengan nama produk, warna, satuan mm, dan pohon rakitan. Muka berupa facet.', 'Save As STEP 242');
   add('manage', 'File', 'SolidWorks Macro', 'step', 'expSW', 'VBA macro that rebuilds the feature tree as parametric features in SolidWorks. Not run in SolidWorks by IDRIS.', 'Macro VBA yang membangun ulang pohon fitur sebagai fitur parametrik di SolidWorks. Tidak dijalankan di SolidWorks oleh IDRIS.', 'SLDPRT, Rebuild in SolidWorks');
 }

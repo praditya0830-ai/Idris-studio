@@ -21,14 +21,32 @@ let pass = 0; const fails = [];
 function check(name, fn) { try { fn(); pass++; console.log('  ok   ' + name); } catch (e) { fails.push([name, e]); console.log('  FAIL ' + name + '\n       ' + (e && e.message)); } }
 const ok = (c, m) => { if (!c) throw new Error(m || 'expected true'); };
 
+/* A name may appear twice only as two doors onto one implementation, and only for these pairs:
+ * B10 asks for the same Draft Analysis in Mold and Evaluate, and Features → Thicken opens the one
+ * Surface → Thicken. The doors still have to route to the same place, so an exemption for a name
+ * never covers a second build. */
+const DOOR_PAIRS = ['Draft Analysis', 'Thicken'];
+const route = (a) => (a && typeof a === 'object' ? 'part ' + a.part + ' ' + JSON.stringify(a.p ?? null) : 'act ' + String(a));
+
 check('no two runnable tools share a name', () => {
   const seen = new Map();
   for (const t of all.filter((x) => x.st === 'on')) {
     const prev = seen.get(t.n);
-    /* B10 asks for the same Draft Analysis in Mold and Evaluate: one function, two doors. */
-    if (prev) ok(prev.act === t.act && t.n === 'Draft Analysis', `duplicate runnable tool "${t.n}" (${prev.tabEn} and ${t.tabEn})`);
+    if (prev) ok(DOOR_PAIRS.includes(t.n) && route(prev.act) === route(t.act), `duplicate runnable tool "${t.n}" (${prev.tabEn} and ${t.tabEn})`);
     seen.set(t.n, t);
   }
+});
+check('the two Thicken doors both open the one Surface → Thicken (surfthick)', () => {
+  const doors = all.filter((t) => t.n === 'Thicken' && t.st === 'on');
+  ok(doors.length === 2, 'expected Features and Surface doors, found ' + doors.length);
+  ok(doors.map((t) => t.tabEn).sort().join('+') === 'Features+Surface', 'doors are on ' + doors.map((t) => t.tabEn).join(', '));
+  for (const d of doors) ok(d.act && d.act.part === 'surfthick', `${d.tabEn} → Thicken does not open surfthick: ` + JSON.stringify(d.act));
+});
+check('only the documented door pairs repeat a runnable name', () => {
+  const counts = new Map();
+  for (const t of all.filter((x) => x.st === 'on')) counts.set(t.n, (counts.get(t.n) || 0) + 1);
+  const extra = [...counts].filter(([n, c]) => c > 1 && !DOOR_PAIRS.includes(n)).map(([n, c]) => `${n} ×${c}`);
+  ok(extra.length === 0, 'repeated runnable names: ' + extra.join(', '));
 });
 check('every runnable tool has an action (it can never answer NOTHING)', () => {
   const bad = all.filter((t) => t.st === 'on' && !t.act).map((t) => t.n + ' (' + t.tabEn + ')');
