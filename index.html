@@ -10561,7 +10561,9 @@ function ribRunnable(t) { return t.st === 'on' || (t.st === 'gb' && !!gbRunner(t
  * in its tooltip and popover; it is never hidden, so an engineer can still read what is missing. */
 function ribGrey(t) { return !ribRunnable(t); }
 function ribWhy(t) {
-  const m = capReason(t) || ribCapNote(t);
+  /* the capability gate is optional: when GET /capabilities is wired in, its sentence wins; otherwise the tool keeps
+     its own reason. Both helpers are absent on a build without the gate, so neither is assumed. */
+  const m = (typeof capReason === 'function' ? capReason(t) : '') || (typeof ribCapNote === 'function' ? ribCapNote(t) : '');
   if (m) return m;
   return t.st === 'gb' ? L('Needs an open design', 'Butuh desain terbuka') : t.st === 'mk1' ? L('Not built yet in this build', 'Belum dibangun di versi ini') : t.st === 'no' ? L('Not in IDRIS yet', 'Belum ada di IDRIS') : '';
 }
@@ -10687,7 +10689,7 @@ function openLibrary() {
  * Labels stay honest: functional parts are "Preview", safety parts say strength is not checked, styling is a concept. */
 const GEN_KIND = {
   functional: ['Preview', 'Preview', 'Shape from parameters; check the fit before you print or machine it.', 'Bentuk dari parameter; cek kecocokannya sebelum dicetak atau dibuat.'],
-  interface: ['Preview · strength not checked', 'Preview · kekuatan belum dicek', 'Safety part: do not use it before a strength check (part FEA, Mark 1).', 'Bagian keselamatan: jangan dipakai sebelum dicek kekuatannya (FEA part, Mark 1).'],
+  interface: ['Preview · strength not checked', 'Preview · kekuatan belum dicek', 'Safety part: do not use it before a strength check (part FEA).', 'Bagian keselamatan: jangan dipakai sebelum dicek kekuatannya (FEA part).'],
   styling: ['Concept', 'Konsep', 'Proportion model with measured sizes. Not production surfaces (Class-A) and not a production body.', 'Model proporsi dengan ukuran terukur. Bukan permukaan produksi (Class-A) dan bukan body siap produksi.'],
 };
 const GEN_RECIPES = {
@@ -10772,7 +10774,7 @@ return { body, probes: { clampCut, gripCut } };`,
       if (c) { const d = c.bounds[1][2] - c.bounds[0][2]; out.push([Math.abs(d - P.D) < 0.1 ? 'ok' : 'bad', L('Clamp diameter', 'Diameter klem'), L(`${f(d, 2)} mm measured at the centre, ${f(P.D, 1)} mm asked.`, `${f(d, 2)} mm terukur di tengah, ${f(P.D, 1)} mm diminta.`)]); }
       if (g) { const d = g.bounds[1][2] - g.bounds[0][2]; out.push([Math.abs(d - 22.2) < 0.1 ? 'ok' : 'bad', L('Grip diameter', 'Diameter grip'), L(`${f(d, 2)} mm measured 20 mm from the end; 22.2 mm (7/8″) grips and levers fit.`, `${f(d, 2)} mm terukur 20 mm dari ujung; grip dan handle 22,2 mm (7/8″) pas.`)]); }
       if (c && g) { const rz = (g.bounds[0][2] + g.bounds[1][2]) / 2 - (c.bounds[0][2] + c.bounds[1][2]) / 2; out.push([Math.abs(rz - P.rise) < 0.5 ? 'ok' : 'warn', 'Rise', L(`${f(rz, 1)} mm measured between the centre lines, ${f(P.rise, 1)} mm asked.`, `${f(rz, 1)} mm terukur antar garis tengah, ${f(P.rise, 1)} mm diminta.`)]); }
-      out.push(['warn', L('Strength', 'Kekuatan'), L('Not checked. A handlebar is a safety part: wait for the part FEA (Mark 1) or have it tested before riding.', 'Belum dicek. Stang adalah bagian keselamatan: tunggu FEA part (Mark 1) atau uji dulu sebelum dipakai berkendara.')]);
+      out.push(['warn', L('Strength', 'Kekuatan'), L('Not checked. A handlebar is a safety part: wait for the part FEA or have it tested before riding.', 'Belum dicek. Stang adalah bagian keselamatan: tunggu FEA part atau uji dulu sebelum dipakai berkendara.')]);
       return out; },
     probeLabel: ['Measuring slice (not part of the bar)', 'Irisan ukur (bukan bagian stang)'],
     variants: [['rise', [10, 30, 60]]],
@@ -11058,7 +11060,7 @@ function genFromAI(cad) {
     const blob = kind === 'step' ? new Blob([(await genCall({ t: 'step' }, 60000)).buf], { type: 'application/STEP' }) : new Blob([meshToSTL({ vertices: genRes.mesh.v, triangles: genRes.mesh.t })], { type: 'model/stl' });
     const url = URL.createObjectURL(blob), a = h('a', { href: url, download: `${name}.${kind === 'step' ? 'step' : 'stl'}` }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000); learnMark('shop'); };
   const pt = partTool; partTool = function (k) {
-    if (state.part && state.part.gen && k !== 'measure') { say(para(L('This part is generated from parameters: change it on the right. Toolbar features on top of a generated part come with Mark 1, so the tool starts a new part.', 'Part ini dibangun dari parameter: ubah di panel kanan. Fitur toolbar di atas part generate menyusul di Mark 1, jadi alat ini memulai part baru.'), 'm')); savePart(); state.part = null; genRes = null; viewer.clear(); $('#vempty').classList.remove('hide'); }
+    if (state.part && state.part.gen && k !== 'measure') { say(para(L('This part is generated from parameters: change it on the right. Toolbar features on top of a generated part are not built yet, so the tool starts a new part.', 'Part ini dibangun dari parameter: ubah di panel kanan. Fitur toolbar di atas part generate belum dibangun, jadi alat ini memulai part baru.'), 'm')); savePart(); state.part = null; genRes = null; viewer.clear(); $('#vempty').classList.remove('hide'); }
     if (state.part && state.part.gen && k === 'measure') { cadTab = 'design'; return renderCad(); }
     return pt.apply(this, arguments); };
   const sp = startPart; startPart = function (saved) { genRes = null; const r = sp.apply(this, arguments); if (state.part && state.part.gen && !state.part.features.length) rebuildPart(true); return r; };
